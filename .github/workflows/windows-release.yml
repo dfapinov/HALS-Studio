@@ -1,0 +1,129 @@
+name: Windows installer
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Installer version for a test build (no release is published)
+        required: true
+        default: '0.1.0'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-installer-${{ github.event.release.tag_name || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Compile and test Windows installer
+    runs-on: windows-2022
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: Read release version
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          TEST_VERSION: ${{ inputs.version }}
+        run: |
+          $version = if ($env:RELEASE_TAG) { $env:RELEASE_TAG } else { $env:TEST_VERSION }
+          if ($version -notmatch '^v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?)$') {
+            throw 'Use a release tag such as v0.1.0 or v0.1.0-rc.1.'
+          }
+          "version=$($Matches[1])" >> $env:GITHUB_OUTPUT
+      - name: Install Python dependencies
+        run: |
+          python -m venv .venv
+          if ($LASTEXITCODE -ne 0) { throw 'Creating the build environment failed' }
+          .venv/Scripts/python.exe -m pip install --upgrade pip
+          .venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Installing dependencies failed' }
+      - name: Run numerical tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          .venv/Scripts/python.exe -m pytest -q
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
+      - name: Find Inno Setup
+        id: inno
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (-not (Test-Path -LiteralPath $compiler)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Installing Inno Setup failed' }
+          }
+          if (-not (Test-Path -LiteralPath $compiler)) { throw 'Inno Setup compiler not found' }
+          "compiler=$compiler" >> $env:GITHUB_OUTPUT
+      - name: Compile app and installer
+        env:
+          BUILD_VERSION: ${{ steps.version.outputs.version }}
+          INNO_COMPILER: ${{ steps.inno.outputs.compiler }}
+        run: ./build.ps1 -Version $env:BUILD_VERSION -InnoCompiler $env:INNO_COMPILER -RequireInstaller
+      - name: Smoke-test compiled application
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'studio-self-test.json'
+          $process = Start-Process -FilePath '.\dist\HALS Studio\HALS Studio.exe' -ArgumentList @('--self-test', "`"$report`"") -WindowStyle Hidden -PassThru
+          if (-not $process.WaitForExit(120000)) { $process.Kill(); throw 'Compiled app smoke test timed out' }
+          if (-not (Test-Path -LiteralPath $report)) { throw 'Compiled app did not produce a test report' }
+          $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+          if ($process.ExitCode -ne 0 -or -not $result.ok) { throw ($result | ConvertTo-Json -Depth 8) }
+          Get-Content -LiteralPath $report
+      - name: Record installer checksum
+        env:
+          BUILD_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $name = "HALS-Studio-Setup-$env:BUILD_VERSION.exe"
+          $path = Join-Path 'installer' $name
+          if (-not (Test-Path -LiteralPath $path)) { throw 'Installer was not produced' }
+          $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $name" | Set-Content -Encoding ascii -LiteralPath "$path.sha256"
+      - name: Save installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: HALS-Studio-windows-${{ steps.version.outputs.version }}
+          path: |
+            installer/HALS-Studio-Setup-${{ steps.version.outputs.version }}.exe
+            installer/HALS-Studio-Setup-${{ steps.version.outputs.version }}.exe.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  publish:
+    name: Attach installer to published release
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: HALS-Studio-windows-${{ needs.build.outputs.version }}
+          path: installer
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" installer/* --clobber

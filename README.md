@@ -39,6 +39,6 @@ Keep `studio.spec`, `studio_installer.iss`, `build.ps1`, `studio.ico` and the li
 ./build.ps1 -InnoCompiler 'C:/Program Files (x86)/Inno Setup 6/ISCC.exe' -Version '0.1.0'
 ```
 
-The portable app is produced in `dist/HALS Studio/` and the installer in `installer/`. These are generated artifacts, not repository source. Automatic release builds have not been configured yet; this build entry point is retained for that future work. The installer has a separate application ID from the earlier Atlas installer.
+The portable app is produced in `dist/HALS Studio/` and the installer in `installer/`. These are generated artifacts, not repository source. Publishing a GitHub release triggers the Windows installer workflow. Use a tag such as `v0.1.0` (or `v0.1.0-rc.1`). The tested installer and SHA-256 checksum are attached to that release when the workflow succeeds. Draft releases and ordinary pushes do not trigger a build. For a test build without publishing a release, use **Actions > Windows installer > Run workflow**; download its installer artifact when it finishes. No personal access token is required by the workflow. The installer has a separate application ID from the earlier Atlas installer.
 
 See [migration notes](documentation/studio_migration.md) for compatibility and provenance.

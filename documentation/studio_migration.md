@@ -8,4 +8,4 @@ Earlier projects store UI state under `hals_viewer`; Studio reads that key as a 
 
 `hals_engine/snapshot.json` and `process_engine/snapshot.json` record the original upstream snapshot provenance. These files do not assert that today's Studio engines are byte-identical to HALS Post: Studio has since added its own fixes. The shared CTA implementation is in `hals_engine/stage5_extract_pressures.py`.
 
-The split archives obsolete builds, experiment outputs and legacy manual verification scripts outside the new source repository. No remote or automated release workflow is created by the migration.
+The split archives obsolete builds, experiment outputs and legacy manual verification scripts outside the new source repository. The migration itself did not publish releases. The subsequent Windows installer workflow builds and uploads the installer when a GitHub release is published.

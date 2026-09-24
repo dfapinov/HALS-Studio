@@ -1,10 +1,14 @@
 #ifndef AppVersion
 #define AppVersion "0.1.0"
 #endif
+#ifndef AppNumericVersion
+#define AppNumericVersion AppVersion
+#endif
 [Setup]
 AppId={{AE8A08F4-1936-4270-B797-23AA9C489F5C}
 AppName=HALS Studio
 AppVersion={#AppVersion}
+VersionInfoVersion={#AppNumericVersion}
 AppPublisher=HALS
 DefaultDirName={localappdata}\Programs\HALS Studio
 DefaultGroupName=HALS Studio
