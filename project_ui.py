@@ -7,6 +7,7 @@ from copy import deepcopy
 from PySide6 import QtWidgets as W, QtCore as C, QtGui as G
 from app import Atlas
 from export_engine import DEFAULT_EXPORT
+from project_paths import normalize_project_paths, normalize_session_paths, project_path_value
 
 
 def choose_data(owner):
@@ -46,7 +47,8 @@ def open_data_path(owner, path, options=None):
             owner.set_sphere(None)
             payload = json.loads(Path(project).read_text(encoding='utf-8-sig'))
             saved = payload.get('hals_studio', payload.get('hals_viewer', {}))
-            state = deepcopy(saved.get('session'))
+            project_dir = Path(project).parent
+            state = normalize_session_paths(saved.get('session'), project_dir)
             restored = {name: view for name, view in saved.get('views', {}).items()
                         if name not in ('Beam tunnel', 'Beam tube') and owner.valid_view(view)}
             if restored:
@@ -59,8 +61,9 @@ def open_data_path(owner, path, options=None):
             else:
                 owner.reset_views()
             coeff = pane.config['coeff_path']
-            if not coeff and state and Path(state.get('source') or '').is_file():
-                coeff = state['source']; pane.config['coeff_path'] = coeff
+            if not coeff and state:
+                coeff = project_path_value(state.get('source'), project_dir)
+                pane.config['coeff_path'] = coeff
             if state and owner.valid_view(state.get('view')):
                 state['source'] = coeff
                 state['export_setup'] = dict(pane.config, **state.get('export_setup', {}))
@@ -99,7 +102,9 @@ def save_project(owner):
         pane.config['project_path'] = str(path); owner.project_path = str(path)
         owner.views[owner.current_view] = owner.view_dict()
         payload.pop('hals_viewer', None)
-        payload['hals_studio'] = dict(version=1, views=deepcopy(owner.views), current_view=getattr(owner, 'current_view', ''), session=owner.session_dict())
+        normalize_project_paths(payload, path.parent)
+        session = normalize_session_paths(owner.session_dict(), path.parent, save=True)
+        payload['hals_studio'] = dict(version=1, views=deepcopy(owner.views), current_view=getattr(owner, 'current_view', ''), session=session)
         # Existing HALS processing sections remain intact; viewer state is namespaced.
         temporary = None
         try:

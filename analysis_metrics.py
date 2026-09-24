@@ -9,7 +9,7 @@ from pathlib import Path
 import bootstrap
 import numpy as np
 from cta_coordinates import generate_cta2034_coords
-from hals_engine.stage5_extract_pressures import calculate_cta2034_energy_metrics
+from stage5_extract_pressures import calculate_cta2034_energy_metrics
 
 
 def reference_axis(path):

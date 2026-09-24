@@ -6,6 +6,6 @@ The documentation and misc script sources were copied, so both repositories reta
 
 Earlier projects store UI state under `hals_viewer`; Studio reads that key as a fallback and writes `hals_studio` when saving. Other processing metadata is preserved. Preferences migrate once from `HALS/Atlas` to `HALS/Studio`. The installer uses its own application ID.
 
-`hals_engine/snapshot.json` and `process_engine/snapshot.json` record the original upstream snapshot provenance. These files do not assert that today's Studio engines are byte-identical to HALS Post: Studio has since added its own fixes. The shared CTA implementation is in `hals_engine/stage5_extract_pressures.py`.
+`process_engine/snapshot.json` records upstream snapshot provenance. It does not assert that today's Studio engine is byte-identical to HALS Post: Studio has since added its own fixes. All runtime engine modules and shared CTA calculations now live in `process_engine/`.
 
 The split archives obsolete builds, experiment outputs and legacy manual verification scripts outside the new source repository. The migration itself did not publish releases. The subsequent Windows installer workflow builds and uploads the installer when a GitHub release is published.

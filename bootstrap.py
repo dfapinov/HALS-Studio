@@ -7,11 +7,10 @@ HERE = Path(__file__).resolve().parent
 ROOT = Path.home() / 'Documents' if getattr(sys, 'frozen', False) else HERE
 if (HERE / "_vendor").is_dir():
     sys.path.insert(0, str(HERE / "_vendor"))
-sys.path.insert(0, str(HERE / "hals_engine"))
+sys.path.insert(0, str(HERE / "process_engine"))
 sys.path.append(str(HERE / "misc"))
 CACHE_ROOT = (Path(os.environ.get("LOCALAPPDATA", Path.home())) / "HALS Studio" / "cache") if getattr(sys, "frozen", False) else HERE / "process_cache"
-# All viewer workspaces share the real viewer-owned processing pool. The older
-# Stage 5 snapshot contains a no-op session_pool shim; never cache that shim.
+# All workspaces share the Studio-owned process-engine worker pool.
 if 'session_pool' not in sys.modules and (HERE/'process_engine/session_pool.py').is_file():
     import importlib.util
     spec=importlib.util.spec_from_file_location('session_pool',HERE/'process_engine/session_pool.py')

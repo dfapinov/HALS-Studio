@@ -126,7 +126,7 @@ class Results(W.QWidget):
             for patch in list(view.ax1.patches): patch.remove()
             curves = [line for line in view.ax1.lines if len(line.get_xdata()) > 2]
             if smooth and p.values[1]['enable_smoothing']:
-                smoothing_label = 'FDW + sliding HF smoothing' if meta[name].get('sliding_hf') else 'FDW + fixed smoothing'
+                smoothing_label = 'FDW + Smoothing' if meta[name].get('sliding_hf') else 'FDW + fixed smoothing'
                 if show_both and len(curves)>1: curves[1].set_label(smoothing_label)
                 elif curves: curves[0].set_label(smoothing_label)
                 view.ax1.legend(loc='best', fontsize=8)
@@ -157,6 +157,9 @@ class Results(W.QWidget):
             rows=r[0];f=p.sample.currentData() or next(iter(rows));row=rows[f];view=VIEWS['FrequencyBrowser3DView'](r[5]);plane={'XY':'XY (Z Height)','XZ':'XZ (Y Width)','YZ':'YZ (X Depth)'}[p.plane.currentText()]
             view.update_view(f,row.get('grid'),row['X_vals'],row['Y_vals'],row['Z_vals'],row['final_c'],plane,p.slice_value())
         elif p.stage==3:
+            import sys
+            engine_path = str(bootstrap.HERE / 'process_engine')
+            if engine_path not in sys.path: sys.path.insert(0, engine_path)
             from process_engine.stage3_optimize_she_settings import plot_internal_tail_power,highlight_stage3_choices,format_stage3_ratio_axis,format_stage3_order_axis
             from process_engine.stage3_spl_change import plot_spl_changes
             fig=Figure(figsize=(12,8),layout='constrained');axes=fig.subplots(2,2);ratio,spl,power,notes=axes.ravel();step=r['step1'];orders=step['orders'];options=r['options']
@@ -191,13 +194,18 @@ class Results(W.QWidget):
             f=r['freqs'];i=int(np.argmin(abs(f-p.frequency.value())));xyz=p.spherical_xyz(r['coords_sph']);view=VIEWS['SpatialErrorView']();view.update_view(*xyz.T,f[i],r['N_used'][i],r['P_measured'][i],r['P_measured'][i]-r['residual_vector'][i],p.threshold.value())
             self.show_figure(view.fig)
             from matplotlib.widgets import Slider
-            frequency_ax=view.fig.add_axes([.14,.90,.22,.018]);floor_ax=view.fig.add_axes([.14,.815,.22,.018])
-            self.spatial_sliders=[Slider(frequency_ax,'',0,max(1,len(f)-1),valinit=i,valstep=1),Slider(floor_ax,'',-120,0,valinit=p.threshold.value(),valstep=1)]
+            frequency_ax=view.fig.add_axes([.11,.90,.132,.018]);floor_ax=view.fig.add_axes([.11,.815,.132,.018])
+            frequency_ax.set_xscale('log')
+            self.spatial_sliders=[Slider(frequency_ax,'',float(f[0]),float(f[-1]),valinit=float(f[i])),Slider(floor_ax,'',-120,0,valinit=p.threshold.value(),valstep=1)]
             freq_slider,floor_slider=self.spatial_sliders
             frequency_text=view.fig.text(.025,.923,f'Frequency\n{f[i]:,.1f} Hz',va='top',fontsize=10);floor_text=view.fig.text(.025,.838,f'Floor\n{p.threshold.value():g} dB',va='top',fontsize=10)
             freq_slider.valtext.set_visible(False);floor_slider.valtext.set_visible(False)
+            log_freqs=np.log(f)
             def update(_):
-                index=min(int(freq_slider.val),len(f)-1)
+                index=int(np.argmin(np.abs(log_freqs-np.log(max(float(freq_slider.val),float(f[0]))))))
+                # Snap the handle to the nearest available solve bin while
+                # keeping its position logarithmic in frequency.
+                freq_slider.eventson=False;freq_slider.set_val(float(f[index]));freq_slider.eventson=True
                 p.frequency.blockSignals(True);p.frequency.setValue(float(f[index]));p.frequency.blockSignals(False)
                 p.threshold.blockSignals(True);p.threshold.setValue(floor_slider.val);p.threshold.blockSignals(False)
                 angles=(view.ax.elev,view.ax.azim)
@@ -206,7 +214,10 @@ class Results(W.QWidget):
             for slider in self.spatial_sliders:slider.poly.set_facecolor('#599bda');slider.on_changed(update)
             theme(view.fig);self.canvas.draw_idle();return
         elif kind=='Condition number':
-            view=VIEWS['SHEResultsView']();view.update_cond_view(r['freqs'],r['cond']);self.show_figure(view.fig_cond);return
+            view=VIEWS['SHEResultsView']();f=r['freqs'];orders=r['N_used'];ticks=[0];labels=[str(orders[0])]
+            ticks.extend(i for i in range(1,len(orders)) if orders[i]!=orders[i-1])
+            labels.extend(str(orders[i]) for i in ticks[1:])
+            view.update_cond_view(f,r['cond'],f[ticks],labels);self.show_figure(view.fig_cond);return
         else:
             view=VIEWS['SHEResultsView']();f=r['freqs'];orders=r['N_used'];boundaries=[];start=f[0];n=orders[0]
             for i in range(1,len(f)):

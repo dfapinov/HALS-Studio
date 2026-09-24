@@ -1,7 +1,7 @@
 # Viewer CTA-2034 methodology
 
-Analysis and Export share `calculate_cta2034_energy_metrics` in the viewer-owned
-`hals_engine/stage5_extract_pressures.py`. Its FRD adapter only assigns filenames
+Analysis, Export, and Stage 5 share `calculate_cta2034_energy_metrics` in
+`process_engine/stage5_extract_pressures.py`. Its FRD adapter only assigns filenames
 and reference phase. Both use the coordinate generator in `cta_coordinates.py`.
 There is no second implementation in Analysis. HALS Post is unchanged.
 

@@ -45,9 +45,64 @@ def _resolve_speed_of_sound(c_sound, coeff_path, fallback):
 # CTA-2034 Helpers
 # -------------------------------------------------
 
-# One shared implementation for both viewer snapshots and both workspaces.
+# Shared Stage 5 / Analysis / Export CTA-2034 calculations.
 from cta_coordinates import generate_cta2034_coords
-from hals_engine.stage5_extract_pressures import calculate_cta2034_metrics
+
+def calculate_cta2034_energy_metrics(energy, indices):
+    """Calculate CTA-2034 spatial metrics from squared pressure (energy)."""
+    energy = np.asarray(energy, dtype=float)
+    def avg(keys):
+        return energy[:, [indices[k] for k in keys]].mean(axis=1)
+    def keys(orbit, angles):
+        return [f'{orbit}{a % 360}' for a in angles]
+    groups = {
+        'Floor': keys('V', [-20, -30, -40]),
+        'Ceiling': keys('V', [40, 50, 60]),
+        'Front wall': keys('H', range(-30, 31, 10)),
+        'Side walls': keys('H', list(range(40, 81, 10)) + list(range(-80, -39, 10))),
+        'Rear wall': keys('H', [90, 180, 270]),
+    }
+    out = {name: avg(points) for name, points in groups.items()}
+    out['On axis'] = avg(['H0'])
+    out['Listening window'] = avg(keys('H', range(-30, 31, 10)) + ['V10', 'V350'])
+    out['Early reflections'] = np.mean([out[n] for n in groups], axis=0)
+    out['Horizontal reflections'] = (out['Front wall'] + out['Side walls'] + avg(keys('H', range(90, 271, 10)))) / 3
+    out['Vertical reflections'] = (out['Floor'] + out['Ceiling']) / 2
+    table = np.array([.000604486, .004730189, .008955027, .012387354, .014989611,
+                      .016868154, .018165962, .019006744, .019477787, .019629373,
+                      .019477787, .019006744, .018165962, .016868154, .014989611,
+                      .012387354, .008955027, .004730189, .000604486])
+    weights = np.r_[table, table[-2:0:-1]]
+    combined = np.zeros(energy.shape[1])
+    for orbit in 'HV':
+        for angle, weight in zip(range(0, 360, 10), weights):
+            combined[indices[f'{orbit}{angle}']] += weight * (.5 if angle in (0, 180) else 1)
+        values = energy[:, [indices[f'{orbit}{a}'] for a in range(0, 360, 10)]]
+        out[f'{"Horizontal" if orbit == "H" else "Vertical"} sound power'] = values @ weights / weights.sum()
+    out['Sound power'] = energy @ combined / combined.sum()
+    out['Predicted in-room'] = .12*out['Listening window'] + .44*out['Early reflections'] + .44*out['Sound power']
+    result = {name: 10*np.log10(np.maximum(value, 1e-60)) for name, value in out.items()}
+    result['Sound power DI'] = result['Listening window'] - result['Sound power']
+    result['Early reflections DI'] = result['Listening window'] - result['Early reflections']
+    return result
+
+def calculate_cta2034_metrics(freqs, p_matrix, map_idx, coord_deviations):
+    """Adapt shared energy metrics to the Stage 5 FRD filename convention."""
+    levels = calculate_cta2034_energy_metrics(np.abs(p_matrix)**2, map_idx)
+    ph_ref = np.angle(p_matrix[:, map_idx['H0']], deg=True)
+    names = {
+        'Response_OnAxis': 'On axis', 'Response_ListeningWindow': 'Listening window',
+        'Response_EarlyReflections': 'Early reflections', 'Response_SoundPower': 'Sound power',
+        'Response_PIR': 'Predicted in-room', 'Response_ERDI': 'Early reflections DI',
+        'Response_SPDI': 'Sound power DI',
+        'reflections_breakout/Response_ER_Floor': 'Floor',
+        'reflections_breakout/Response_ER_Ceiling': 'Ceiling',
+        'reflections_breakout/Response_ER_FrontWall': 'Front wall',
+        'reflections_breakout/Response_ER_SideWalls': 'Side walls',
+        'reflections_breakout/Response_ER_RearWall': 'Rear wall',
+    }
+    return {filename: (levels[name], np.zeros_like(ph_ref) if name.endswith(' DI') else ph_ref)
+            for filename, name in names.items()}
 
 # -------------------------------------------------
 # Writers
@@ -198,7 +253,7 @@ def run_cta2034_extraction(
     if save_to_disk:
         print(f"Writing files to {cta_dir}...")
         for name, (mag, phase) in metrics.items():
-            if frd_offset_val != 0.0:
+            if frd_offset_val != 0.0 and name not in ("Response_ERDI", "Response_SPDI"):
                 mag = mag + frd_offset_val
             fpath = cta_dir / f"{name}.frd"
             if "/" in name:

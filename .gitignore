@@ -4,7 +4,14 @@ _vendor/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.pytest-tmp/
+.pytest_tmp/
+pytest_cache/
 pytest-cache-files-*/
+.mypy_cache/
+.ruff_cache/
+.cache/
+**/__pycache__/
 *.egg-info/
 # Generated builds and local installer compiler
 build/
@@ -17,6 +24,12 @@ process_cache/
 outputs/
 output/
 .test-tmp*/
+_pytest_*/
+pytest_tmp*/
+temp/
+tmp/
+**/temp/
+**/tmp/
 *.log
 origins_cache*.pkl
 last_session.json

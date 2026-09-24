@@ -16,7 +16,7 @@ import schema
 from acoustics import Cancelled
 from utils import load_she_h5, spherical_to_cartesian, cartesian_to_spherical
 from stage5_pressure_utils import centered_sweep_angles
-from hals_engine import stage5_extract_pressures as stage5
+import stage5_extract_pressures as stage5
 
 DEFAULT_EXPORT = dict(
     coeff_path='', output_dir=str(bootstrap.ROOT/'outputs'/'response_files'), frd_prefix='HALS',
@@ -262,6 +262,22 @@ def import_project(path):
             break
         except (KeyError, ValueError, TypeError): pass
     c['mic_cal_fallback'] = project.get('mic_cal_fallback', '')
+    # Resolve project assets against this project copy. An absolute legacy path
+    # outside it may belong to another backup copy and must not be followed.
+    root = path.parent.resolve()
+    for key, fallback in (('output_dir', root/'outputs'/'response_files'),
+                           ('mic_cal_file', ''), ('mic_cal_fallback', '')):
+        value = c.get(key)
+        if not value:
+            continue
+        candidate = Path(value)
+        candidate = (root/candidate).resolve() if not candidate.is_absolute() else candidate.resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            c[key] = str(fallback) if fallback else ''
+        else:
+            c[key] = str(candidate)
     if 'dut_depth_x' not in values or c['dut_depth_x'] <= 0:
         vertices, _, valid = cabinet_geometry(c)
         if valid: c['dut_depth_x'] = float(np.linalg.norm(vertices[2]-vertices[1])*1000)

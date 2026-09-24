@@ -113,6 +113,12 @@ class Workspace(Atlas):
         if last not in self.views: last = next(iter(self.views))
         self.apply_view(self.views[last]); self.select_view_name(last)
         self.set_theme(self.settings.value('theme', 'Dark'))
+        # Export embeds a native VTK window. Creating it after this QMainWindow
+        # has been shown makes Qt briefly hide and recreate the top-level HWND
+        # while native child windows are attached. Build it during startup so
+        # opening a project or switching to Export cannot flash the whole app.
+        from project_ui import ensure_export
+        ensure_export(self)
         self.set_workspace(int(self.settings.value('default_workspace', 0)))
 
     @staticmethod
@@ -153,7 +159,7 @@ class Workspace(Atlas):
         self.analysis_split = W.QSplitter(C.Qt.Horizontal)
         self.analysis_split.setHandleWidth(7); self.analysis_split.setChildrenCollapsible(False)
         body.addWidget(self.analysis_split)
-        scroll = W.QScrollArea(); scroll.setWidgetResizable(True); scroll.setMinimumWidth(150); scroll.setFrameShape(W.QFrame.NoFrame)
+        scroll = W.QScrollArea(); scroll.setWidgetResizable(True); scroll.setMinimumWidth(150); scroll.setFrameShape(W.QFrame.NoFrame); self.analysis_scroll = scroll
         scroll.setHorizontalScrollBarPolicy(C.Qt.ScrollBarAlwaysOff)
         sidebar = W.QWidget(); self.sidebar = W.QVBoxLayout(sidebar); self.sidebar.setContentsMargins(4, 4, 12, 4); self.sidebar.setSizeConstraint(W.QLayout.SetNoConstraint); sidebar.setMinimumWidth(0); scroll.setWidget(sidebar); self.analysis_split.addWidget(scroll)
         self.dataset_label = label('', 'eyebrow'); self.dataset_label.setWordWrap(True); self.dataset_label.setStyleSheet('font-size:14px;font-weight:600;letter-spacing:0px;color:#52d9ec;'); self.dataset_info = label('', 'muted'); self.dataset_info.setWordWrap(True)
@@ -183,7 +189,9 @@ class Workspace(Atlas):
         plot_area.installEventFilter(self)
         self.analysis_split.addWidget(plot_area)
         self.analysis_split.setStretchFactor(0, 0); self.analysis_split.setStretchFactor(1, 1)
-        self.analysis_split.setSizes([245, 1350])
+        analysis_width = int(self.settings.value('analysis_sidebar_width', 245))
+        self.analysis_split.setSizes([analysis_width, 1350])
+        self.analysis_split.splitterMoved.connect(lambda *_: self.settings.setValue('analysis_sidebar_width', self.analysis_split.sizes()[0]))
         self.azimuth = number(0, -180, 180, '°'); self.elevation = number(0, -90, 90, '°')
         # Shared probe state; each balloon supplies its own visible editors.
         for widget in (self.azimuth, self.elevation):
@@ -403,6 +411,12 @@ class Workspace(Atlas):
             except Exception as exc: self.error(str(exc))
 
     def refresh(self):
+        # Plot refreshes can synchronously render VTK/Matplotlib widgets. While
+        # a splitter is being dragged, defer them until the pointer is released
+        # to avoid recursive Qt paints during repeated resize events.
+        if W.QApplication.mouseButtons() & C.Qt.MouseButton.LeftButton:
+            self.refresh_timer.start(100)
+            return
         from mic_calibration import sync
         sync(self)
         if self.export_workspace: self.export_workspace.refresh_custom_panes()
@@ -449,6 +463,7 @@ class Workspace(Atlas):
         if not count:
             text = label('Right-click a pane → Plot setup → Pin settings to add controls here.', 'muted')
             text.setWordWrap(True); self.pinned_layout.addWidget(text)
+        self._pinned_control_count = count
 
     def view_dict(self):
         configs = []
@@ -641,8 +656,8 @@ class Workspace(Atlas):
         return dict(version=2, theme=self.theme_name, source=self.source_path, reconstruction=self.source_options, view=self.view_dict(),
                     overlays=self.overlays, axis=list(self.axis), axis_source=self.axis_source,
                     export_setup=self.export_workspace.config if self.export_workspace else self.export_setup,
-                    export_layout=dict(side=self.export_workspace.split.sizes(), outer=self.export_workspace.frames.sizes(), rows=[r.sizes() for r in self.export_workspace.rows]) if self.export_workspace else None,
-                    analysis_split=self.analysis_split.sizes(), view_order=list(self.views),
+                    export_layout=dict(outer=self.export_workspace.frames.sizes(), rows=[r.sizes() for r in self.export_workspace.rows]) if self.export_workspace else None,
+                    view_order=list(self.views),
                     workspace_mode=self.workspace_mode.currentData(),
                     process_layout=self.process_workspace.layout_state() if self.process_workspace else None,
                     frequency=float(self.sphere.freqs[self.frequency.value()]) if self.sphere is not None else 1000., probe=[self.azimuth.value(), self.elevation.value()])
@@ -668,7 +683,6 @@ class Workspace(Atlas):
         if state.get('view_order'):
             self.views = {name: self.views[name] for name in dict.fromkeys([*state['view_order'], *self.views]) if name in self.views}
             self.rebuild_view_buttons(); self.select_view_name(self.current_view)
-        if state.get('analysis_split'): self.analysis_split.setSizes(state['analysis_split'])
         self.axis = tuple(state.get('axis', (0., 0.))); self.axis_source = state.get('axis_source'); self.cea_cache.clear()
         self.overlays = state.get('overlays', []); self.overlay_revision += 1
         self.azimuth.setValue(state['probe'][0]); self.elevation.setValue(state['probe'][1]); self.jump_frequency(state['frequency'])
@@ -677,7 +691,7 @@ class Workspace(Atlas):
         if self.export_workspace and self.export_setup: self.export_workspace.apply_config(self.export_setup)
         self.set_workspace(state.get('workspace_mode', 0))
         if self.export_workspace and state.get('export_layout'):
-            saved = state['export_layout']; self.export_workspace.split.setSizes(saved['side']); self.export_workspace.frames.setSizes(saved['outer'])
+            saved = state['export_layout']; self.export_workspace.frames.setSizes(saved['outer'])
             for row, sizes in zip(self.export_workspace.rows, saved['rows']): row.setSizes(sizes)
         self.set_theme(state.get('theme', self.theme_name))
 

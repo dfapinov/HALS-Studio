@@ -832,6 +832,7 @@ class SHEResultsView:
         
         self.fig_cond = None
         self.ax_cond = None
+        self.ax_cond_n = None
 
     @silence_log_warnings
     def update_view(self, f_sel, pct_error, db_error, boundaries, tick_locs, tick_labels, min_n, max_n, is_db=True):
@@ -872,7 +873,7 @@ class SHEResultsView:
         self.fig.canvas.draw_idle()
 
     @silence_log_warnings
-    def update_cond_view(self, f_sel, res_cond):
+    def update_cond_view(self, f_sel, res_cond, order_ticks=None, order_labels=None):
         if self.fig_cond is None:
             self.fig_cond, self.ax_cond = plt.subplots(figsize=(10, 6))
             self.fig_cond.subplots_adjust(bottom=0.2)
@@ -886,11 +887,19 @@ class SHEResultsView:
             self.ax_cond.set_ylabel('Condition Number')
             self.ax_cond.set_title('SHE Solver: Matrix Condition Number vs Frequency')
             self.ax_cond.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=1)
+            self.ax_cond_n = self.ax_cond.twiny()
+            self.ax_cond_n.set_xscale('log')
+            self.ax_cond_n.set_xlabel('Order N')
         
         self.ax_cond.set_xlim(f_sel[0], f_sel[-1])
+        self.ax_cond_n.set_xlim(f_sel[0], f_sel[-1])
         self.line_cond.set_data(f_sel, res_cond)
         self.ax_cond.relim()
         self.ax_cond.autoscale_view()
+        if order_ticks is not None:
+            self.ax_cond_n.set_xticks(order_ticks)
+            self.ax_cond_n.set_xticklabels(order_labels or [])
+            self.ax_cond_n.minorticks_off()
         self.fig_cond.canvas.draw_idle()
 
 def plot_she_results(f_sel: np.ndarray, pct_error: np.ndarray, res_cond: np.ndarray, n_used: np.ndarray, condition_metrics: bool, P_measured: np.ndarray = None, resid_vec: np.ndarray = None, save_path_prefix: str = None, she_dict: dict = None, coords_sph: np.ndarray = None, c_sound: float = 343.0) -> None:

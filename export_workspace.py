@@ -74,7 +74,7 @@ class ExportWorkspace(W.QWidget):
         self.project_summary = W.QLabel(); self.project_summary.setWordWrap(True)
         self.project_summary.setStyleSheet('color:#91aabe;padding:2px 0;'); self.project_summary.hide()
         self.split = W.QSplitter(); root.addWidget(self.split, 1)
-        sidebar = W.QWidget(); sidebar.setMinimumWidth(320)
+        sidebar = W.QWidget(); sidebar.setMinimumWidth(200)
         sidebar_layout = W.QVBoxLayout(sidebar); sidebar_layout.setContentsMargins(5, 5, 5, 5)
         self.sidebar_selector = W.QComboBox(); sidebar_layout.addWidget(self.sidebar_selector)
         self.sidebar = W.QStackedWidget(); sidebar_layout.addWidget(self.sidebar, 1)
@@ -82,6 +82,7 @@ class ExportWorkspace(W.QWidget):
         self.split.addWidget(sidebar)
         left = W.QWidget(); side = W.QVBoxLayout(left); side.setContentsMargins(0, 0, 5, 0)
         self.tabs = W.QTabWidget(); side.addWidget(self.tabs, 1)
+        self.tabs.tabBar().setExpanding(False)
         self.forms = {}
         for name in ('Geometry', 'Output', 'Advanced'):
             scroll = W.QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(W.QFrame.NoFrame)
@@ -133,11 +134,15 @@ class ExportWorkspace(W.QWidget):
         self.cancel_button = W.QPushButton('Cancel'); self.cancel_button.clicked.connect(self.cancel); row.addWidget(self.cancel_button); self.cancel_button.hide()
         self.open_folder = W.QPushButton('Open Export Folder'); self.open_folder.clicked.connect(self.reveal); self.open_folder.setEnabled(False); row.addWidget(self.open_folder)
         self.frames = W.QSplitter(C.Qt.Vertical); self.split.addWidget(self.frames)
+        self.frames.setMinimumWidth(0); self.frames.setSizePolicy(W.QSizePolicy.Ignored, W.QSizePolicy.Expanding)
         self.rows = [W.QSplitter(C.Qt.Horizontal), W.QSplitter(C.Qt.Horizontal)]
         for splitter in [self.frames, *self.rows]:
             splitter.setHandleWidth(7); splitter.setChildrenCollapsible(False)
+            if splitter is not self.frames:
+                splitter.setMinimumWidth(0); splitter.setSizePolicy(W.QSizePolicy.Ignored, W.QSizePolicy.Preferred)
         for row in self.rows: self.frames.addWidget(row)
         scene = W.QWidget(); scene_layout = W.QVBoxLayout(scene); scene_layout.setContentsMargins(5, 5, 5, 5)
+        scene.setMinimumWidth(0); scene.setSizePolicy(W.QSizePolicy.Ignored, W.QSizePolicy.Preferred)
         bar = W.QHBoxLayout(); scene_layout.addLayout(bar)
         origin = W.QCheckBox('Acoustic origin'); self.controls['show_stage2_origin'] = origin
         origin.setMinimumWidth(140)
@@ -148,7 +153,11 @@ class ExportWorkspace(W.QWidget):
         frequency.valueChanged.connect(lambda value: self.change('stage2_origin_frequency_hz', value)); bar.addWidget(frequency); bar.addStretch()
         for name, fn in [('Top', lambda: self.camera('top')), ('Front', lambda: self.camera('front')), ('Iso', lambda: self.camera('iso')), ('Save image…', self.save_image)]:
             button = W.QPushButton(name); button.clicked.connect(fn); bar.addWidget(button)
-        self.plotter = QtInteractor(scene); self.plotter.set_background('#101c28', top='#193344')
+        # Export's 3D scene is resized continuously while the user drags the
+        # workspace splitters.  The periodic auto-update render can re-enter
+        # QVTK's paint path during those resizes, so render only on explicit
+        # scene updates and user interaction.
+        self.plotter = QtInteractor(scene, auto_update=False); self.plotter.set_background('#101c28', top='#193344')
         self.plotter.enable_terrain_style(); self.plotter.render_window.SetMultiSamples(0)
         self.zoom = SceneZoom(self); self.plotter.interactor.installEventFilter(self.zoom)
         scene_layout.addWidget(self.plotter.interactor, 1); self.scene_note = W.QLabel(); self.scene_note.setWordWrap(True); scene_layout.addWidget(self.scene_note)
@@ -156,6 +165,7 @@ class ExportWorkspace(W.QWidget):
         self.rows[0].addWidget(scene)
         from export_charts import ResponsePanel, ImpulsePanel
         self.response_panel = ResponsePanel(self); self.chart = self.response_panel.chart
+        self.response_panel.setMinimumWidth(0); self.response_panel.setSizePolicy(W.QSizePolicy.Ignored, W.QSizePolicy.Preferred)
         self.rows[0].addWidget(self.response_panel)
         row = self.response_panel.toolbar
         row.addWidget(self.response_panel.point_label)
@@ -170,6 +180,8 @@ class ExportWorkspace(W.QWidget):
         from csd_plot import CSDPanel
         self.csd_panel = CSDPanel(); self.rows[1].addWidget(self.csd_panel)
         self.ir_panel = ImpulsePanel(); self.rows[1].addWidget(self.ir_panel)
+        for panel in (self.csd_panel, self.ir_panel):
+            panel.setMinimumWidth(0); panel.setSizePolicy(W.QSizePolicy.Ignored, W.QSizePolicy.Preferred)
         for splitter in self.rows: splitter.setSizes([600, 650])
         self.frames.setSizes([650, 350])
         self.points = W.QTableWidget(0, 4); self.points.setHorizontalHeaderLabels(['Point', 'r / m', 'θ / °', 'φ / °'])
@@ -195,9 +207,12 @@ class ExportWorkspace(W.QWidget):
                 (self.rows[1], 1, self.ir_panel, 'Export impulse response')]):
             native.setParent(None)
             host = ExportPane(self, index, native, title)
+            host.setMinimumWidth(0); host.setSizePolicy(W.QSizePolicy.Ignored, W.QSizePolicy.Preferred)
             splitter.insertWidget(position, host)
             self.custom_panes.append(host)
-        self.split.setSizes([350, 1270]); self.split.setStretchFactor(0, 0); self.split.setStretchFactor(1, 1)
+        export_width = int(self.owner.settings.value('export_sidebar_width', 350))
+        self.split.setSizes([export_width, 1270]); self.split.splitterMoved.connect(lambda *_: self.owner.settings.setValue('export_sidebar_width', self.split.sizes()[0]))
+        self.split.setStretchFactor(0, 0); self.split.setStretchFactor(1, 1)
         self.split.setHandleWidth(7); self.split.setChildrenCollapsible(False)
         self.status = W.QLabel('Choose coefficients or import a HALS project.'); root.addWidget(self.status)
         self.progress = W.QProgressBar(); self.progress.setMaximumHeight(7); self.progress.setTextVisible(False); root.addWidget(self.progress)
@@ -417,10 +432,23 @@ class ExportWorkspace(W.QWidget):
             faces = [4, 0, 1, 2, 3, 4, 4, 7, 6, 5, 4, 0, 4, 5, 1, 4, 1, 5, 6, 2, 4, 2, 6, 7, 3, 4, 3, 7, 4, 0]
             p.add_mesh(pv.PolyData(vertices, faces), color='#345268', smooth_shading=False, specular=.65, specular_power=30, show_edges=True)
             p.add_mesh(pv.PolyData(vertices[:4], [4, 0, 1, 2, 3]), color='#52798e', specular=.6)
-        # Explicit axis origin marker instead of an invented cabinet when project geometry is absent.
-        p.add_mesh(pv.Sphere(radius=scale*.015), color='#aec7d4', specular=.7)
+        # Mark the actual reference origin at the arrow stem, not the unused
+        # world-coordinate zero when the project origin has been offset.
+        p.add_mesh(pv.Sphere(radius=scale*.012, center=data['origin']), color='#7ae2b1', specular=.8)
         p.add_mesh(pv.Arrow(start=data['origin'], direction=data['forward'], scale=scale*.7, shaft_radius=.009, tip_radius=.035), color='#7ae2b1', specular=.6)
-        p.add_point_labels([data['origin']], ['Reference'], font_size=10, text_color='#7ae2b1', shape=None, show_points=False, always_visible=True)
+        from vtkmodules.vtkRenderingCore import vtkBillboardTextActor3D
+        camera_pos = np.asarray(p.camera_position[0], float)
+        def add_ball_label(point, text, actor_name):
+            point = np.asarray(point, float)
+            toward_camera = camera_pos - point
+            norm = np.linalg.norm(toward_camera)
+            if norm: point = point + toward_camera / norm * scale * .014
+            actor = vtkBillboardTextActor3D(); actor.SetInput(text); actor.SetPosition(*point)
+            actor.SetDisplayOffset(0, 20)
+            prop = actor.GetTextProperty(); prop.SetFontSize(10); prop.SetColor(184/255, 214/255, 232/255)
+            prop.SetJustificationToCentered(); prop.SetVerticalJustificationToBottom(); prop.SetBold(True)
+            p.add_actor(actor, name=actor_name, reset_camera=False, render=False, pickable=False)
+        add_ball_label(data['origin'], 'Reference origin', 'reference-origin-label')
         colors = np.array([[71, 215, 236] if name.startswith('H') else [255, 186, 104] if name.startswith('V') else [166, 146, 255] for name in data['names']], dtype=np.uint8)
         self.point_mesh = pv.PolyData(xyz); self.point_mesh['rgb'] = colors
         p.add_mesh(self.point_mesh, scalars='rgb', rgb=True, point_size=11, render_points_as_spheres=True, name='points', pickable=True)
@@ -439,9 +467,13 @@ class ExportWorkspace(W.QWidget):
                 frequency, origin = acoustic_origin(self.config)
                 named.append((f'Acoustic origin · {frequency:g} Hz', origin))
             except (OSError, KeyError, ValueError): self.log.appendPlainText('Acoustic origin is unavailable in this coefficient file.')
-        for name, point in named:
-            p.add_mesh(pv.Sphere(radius=scale*.012, center=point), color='#fa7b95', specular=.6)
-            p.add_point_labels([point], [name], font_size=10, shape=None, text_color='#fa7b95', show_points=False, always_visible=True)
+        from plots import COLORS
+        for index, (name, point) in enumerate(named):
+            if name == 'Project reference' and np.allclose(point, data['origin']):
+                continue  # Already shown by the green reference-origin marker.
+            color = COLORS[index % len(COLORS)]
+            p.add_mesh(pv.Sphere(radius=scale*.012, center=point), color=color, specular=.6)
+            add_ball_label(point, name, f'waypoint-label-{index}')
         p.add_axes(xlabel='X / forward', ylabel='Y', zlabel='Z / up')
         p.show_grid(color='#7895a8', xtitle='X / m', ytitle='Y / m', ztitle='Z / m',
                     font_size=9, n_xlabels=3, n_ylabels=3, n_zlabels=3, grid='back', location='outer')
@@ -460,6 +492,7 @@ class ExportWorkspace(W.QWidget):
         self.scene_note.setText(f'{len(xyz)} exact export positions · click a point to inspect · drag to orbit · '+('Project cabinet' if known else 'No project cabinet geometry loaded'))
 
     def camera(self, mode='iso'):
+        self.plotter.disable_parallel_projection()
         if mode == 'front': self.plotter.view_yz()
         elif mode == 'top': self.plotter.view_xy()
         else: self.plotter.view_isometric()

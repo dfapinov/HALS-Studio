@@ -14,7 +14,7 @@ def run(output):
         from PySide6 import QtWidgets as W, QtCore as C
         from workspace import Workspace
         import process_service
-        from hals_engine.stage5_extract_pressures import calculate_cta2034_energy_metrics
+        from stage5_extract_pressures import calculate_cta2034_energy_metrics
         from cta_coordinates import generate_cta2034_coords
         import numpy as np
         for path in ('studio.ico', 'assets/speaker.svg', 'process_schema.json', 'process_engine/session_pool.py'):

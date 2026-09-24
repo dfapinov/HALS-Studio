@@ -52,7 +52,7 @@ class ProcessWorkspace(W.QWidget):
                 edit=W.QPushButton('Edit manual order table');edit.setSizePolicy(W.QSizePolicy.Fixed,W.QSizePolicy.Fixed);edit.clicked.connect(self.edit_orders);advancedform.addRow(edit)
         actions=W.QHBoxLayout();box.addLayout(actions);self.run_button=W.QPushButton('Run Stage 1');self.run_button.setObjectName('primary');self.run_button.clicked.connect(lambda:self.run());actions.addWidget(self.run_button)
         self.cancel_button=W.QPushButton('Cancel');self.cancel_button.setEnabled(False);self.cancel_button.clicked.connect(lambda:self.cancel());actions.addWidget(self.cancel_button)
-        self.split.addWidget(left);self.right=W.QSplitter(C.Qt.Vertical);self.split.addWidget(self.right)
+        self.left_panel=left;left.setMinimumWidth(0);left.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Expanding);self.split.addWidget(left);self.right=W.QSplitter(C.Qt.Vertical);self.right.setMinimumWidth(0);self.right.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Expanding);self.split.addWidget(self.right)
         result=W.QWidget();resultbox=W.QVBoxLayout(result);resultbox.setContentsMargins(5,5,5,5);bar=W.QHBoxLayout();bar.setContentsMargins(0,0,0,0)
         self.result_bar=W.QWidget();self.result_bar.setLayout(bar);resultbox.addWidget(self.result_bar);self.main_result_bar=bar
         self.plot_label=W.QLabel('Plot type');bar.addWidget(self.plot_label);self.view=W.QComboBox();self.view.setSizeAdjustPolicy(W.QComboBox.AdjustToContents);self.view.setMaximumWidth(240);self.view.currentTextChanged.connect(self.draw);bar.addWidget(self.view)
@@ -82,7 +82,9 @@ class ProcessWorkspace(W.QWidget):
         self.summary=W.QLabel('Open a HALS project or create one to begin.');self.summary.setWordWrap(True);resultbox.addWidget(self.summary);self.right.addWidget(result)
         cli=W.QWidget();cl=W.QVBoxLayout(cli);cl.setContentsMargins(5,5,5,5);cr=W.QHBoxLayout();cr.addWidget(W.QLabel('CLI OUTPUT'));cr.addStretch();b=W.QPushButton('Clear');b.clicked.connect(lambda:self.log.clear());cr.addWidget(b);b=W.QPushButton('Save log');b.clicked.connect(self.save_log);cr.addWidget(b);cl.addLayout(cr)
         self.log=W.QPlainTextEdit();self.log.setReadOnly(True);self.log.setMaximumBlockCount(30000);cl.addWidget(self.log);self.right.addWidget(cli)
-        self.split.setSizes([420,980]);self.right.setSizes([650,280]);self.select_stage(1)
+        self._sidebar_width=int(owner.settings.value('process_sidebar_width',420))
+        self.split.setSizes([self._sidebar_width,980]);self.split.splitterMoved.connect(lambda *_: owner.settings.setValue('process_sidebar_width',self.split.sizes()[0]));self.right.setSizes([650,280]);self.select_stage(1)
+        C.QTimer.singleShot(0,self.restore_sidebar_width)
         self.controls[1,'enable_auto_gain'].toggled.connect(self.controls[1,'target_peak_db'].setEnabled);self.controls[1,'target_peak_db'].setEnabled(self.controls[1,'enable_auto_gain'].isChecked())
         for key in ('noise_floor_start_db','noise_floor_max_db','max_lambda'):
             control=self.controls[4,key];form=control.parentWidget().layout();caption=form.labelForField(control)
@@ -91,6 +93,10 @@ class ProcessWorkspace(W.QWidget):
     @staticmethod
     def form_button(form,title,callback):
         b=W.QPushButton(title);b.clicked.connect(callback);form.addRow(b)
+    def restore_sidebar_width(self):
+        if self.split.width() > 0:
+            width=int(self.owner.settings.value('process_sidebar_width',self._sidebar_width))
+            self.split.setSizes([width,max(0,self.split.width()-width)])
     def select_stage(self,stage):
         self.stage4_navigation.setVisible(stage==4)
         self.metadata_button.setChecked(stage==0);self.speed_settings.setVisible(stage==0);self.pages.setVisible(stage!=0);self.run_button.setVisible(stage!=0);self.cancel_button.setVisible(stage!=0)
@@ -144,9 +150,9 @@ class ProcessWorkspace(W.QWidget):
                 with open(self.cache(stage),'rb') as stream:self.results[stage]=pickle.load(stream)
         state=data.get('hals_studio', data.get('hals_viewer',{})).get('session',{}).get('process_layout') or {}
         if state.get('input_ir_folder'):self.ir_folder.setText(state['input_ir_folder'])
-        self.split.setSizes(state.get('split',[420,980]));self.right.setSizes(state.get('right',[650,280]));self.select_stage(state.get('stage',1));self.start_host()
+        self.right.setSizes(state.get('right',[650,280]));self.select_stage(state.get('stage',1));self.start_host()
     def layout_state(self):
-        return dict(stage=self.stage,split=self.split.sizes(),right=self.right.sizes(),input_ir_folder=self.ir_folder.text())
+        return dict(stage=self.stage,right=self.right.sizes(),input_ir_folder=self.ir_folder.text())
     def project_payload(self):
         return dict(project_name=self.project_name.text().strip(),**{f'stage{s}_vars':deepcopy(v) for s,v in self.values.items()},stage4_manual_table=self.manual_table,
             global_vars=dict(enable_manual_speed_of_sound=self.manual_speed.isChecked(),speed_of_sound=str(self.speed.value())))
