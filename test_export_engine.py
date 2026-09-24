@@ -66,6 +66,12 @@ def test_files_and_atomic_cancellation(config, tmp_path):
         if a.suffix == '.npz':
             with np.load(a) as first, np.load(b) as second:
                 for key in first: np.testing.assert_array_equal(first[key], second[key])
+        elif a.suffix == '.wav':
+            import soundfile as sf
+            first, first_rate = sf.read(a, dtype='float32')
+            second, second_rate = sf.read(b, dtype='float32')
+            assert first_rate == second_rate
+            np.testing.assert_array_equal(first, second)
         else: assert a.read_bytes() == b.read_bytes()
     assert (dest/'atlas-export.json').is_file()
     before = set(Path(c['output_dir']).iterdir()); stop = []
