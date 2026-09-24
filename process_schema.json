@@ -1,0 +1,210 @@
+{
+  "1": {
+    "fdw_rft_ms": {
+      "label": "Reflection Free Time (ms)",
+      "default": "5.0",
+      "help": "Reflection Free Time (ms): Defines the fixed window length at high frequencies."
+    },
+    "fdw_oct_res": {
+      "label": "Octave Resolution (1/x)",
+      "default": "12",
+      "help": "Target Octave Resolution: Sets the fractional octave smoothing (e.g., 12 for 1/12th oct)."
+    },
+    "fdw_max_cap_ms": {
+      "label": "Max Window Cap (ms)",
+      "default": "200.0",
+      "help": "Optional cap (ms) on the maximum window length. Will limit oct res at LF."
+    },
+    "enable_auto_gain": {
+      "label": "Enable Auto Gain",
+      "default": false,
+      "help": "Enable global normalization across all files in the batch."
+    },
+    "target_peak_db": {
+      "label": "Target Peak (dB)",
+      "default": "-3.0",
+      "help": "Target peak level (dBFS) for the loudest file in the set."
+    },
+    "smoothing_oct_res": {
+      "label": "Smoothing Octave Res (1/x)",
+      "default": "Auto",
+      "help": "Auto = octave resolution x2 so that smoothing does not reduce resolution of initial FDW."
+    },
+    "fdw_alpha_hf": {
+      "label": "Alpha HF",
+      "default": "0.2",
+      "help": "Taper alpha for High Frequencies (0.0=Rectangular, 1.0=Hann)."
+    },
+    "fdw_alpha_lf": {
+      "label": "Alpha LF",
+      "default": "1.0",
+      "help": "Taper alpha for Low Frequencies."
+    },
+    "fdw_windows_per_oct": {
+      "label": "Windows per Octave",
+      "default": "3",
+      "help": "Windows per octave. Interpolation is performed in complex domain between windows."
+    },
+    "peak_detect_threshold_db": {
+      "label": "Peak Detect Threshold (dB)",
+      "default": "-12.0",
+      "help": "Peak detection finds loudest peak, then searches for earlier peaks above this threshold. A reflection may be louder than the true direct sound peak."
+    },
+    "enable_smoothing": {
+      "label": "Enable Smoothing",
+      "default": true,
+      "help": "Enable or disable complex smoothing."
+    },
+    "keep_raw_and_smoothed": {
+      "label": "Keep Raw & Smoothed",
+      "default": false,
+      "help": "Save both files if True."
+    }
+  },
+  "2": {
+    "octave_resolution": {
+      "label": "Octave Resolution (1/x)",
+      "default": "6",
+      "help": "Octave frequency step resolution."
+    },
+    "tweeter_x": {
+      "label": "Tweeter X (mm)",
+      "default": "0.0",
+      "help": "Seed coordinate for search (Depth)."
+    },
+    "tweeter_y": {
+      "label": "Tweeter Y (mm)",
+      "default": "0.0",
+      "help": "Seed coordinate for search (Width)."
+    },
+    "tweeter_z": {
+      "label": "Tweeter Z (mm)",
+      "default": "0.0",
+      "help": "Seed coordinate for search (Height)."
+    },
+    "freq_start_hz": {
+      "label": "Start Frequency (Hz)",
+      "default": "20.0",
+      "help": "Lower boundary of the acoustic origin search."
+    },
+    "freq_end_hz": {
+      "label": "End Frequency (Hz)",
+      "default": "20000.0",
+      "help": "Upper boundary of the acoustic origin search."
+    },
+    "target_n_max_origins": {
+      "label": "Max Harmonic Order (N)",
+      "default": "4",
+      "help": "Max cap on the spherical harmonic order."
+    },
+    "initial_simplex_step": {
+      "label": "Initial Simplex Step (mm)",
+      "default": "15.0",
+      "help": "Size of the initial Nelder-Mead simplex."
+    },
+    "max_iterations": {
+      "label": "Max Iterations",
+      "default": "50",
+      "help": "Maximum amoeba optimization steps per frequency."
+    },
+    "x_bounds": {
+      "label": "X Bounds",
+      "default": "-500.0, 500.0",
+      "help": "Search area constraint for depth."
+    },
+    "y_bounds": {
+      "label": "Y Bounds",
+      "default": "-500.0, 500.0",
+      "help": "Search area constraint for width."
+    },
+    "z_bounds": {
+      "label": "Z Bounds",
+      "default": "-500.0, 500.0",
+      "help": "Search area constraint for height."
+    },
+    "grid_res_mm": {
+      "label": "Grid Res (mm)",
+      "default": "15.0",
+      "help": "Resolution of the physical grid slices."
+    },
+    "plot_results_origins": {
+      "label": "Show Validation Plot",
+      "default": true,
+      "help": "Launch the interactive Validation UI after search completes."
+    }
+  },
+  "3": {
+    "freq_end_hz": {
+      "label": "Upper Test Range (Hz)",
+      "default": "20000.0",
+      "help": ""
+    },
+    "freq_start_hz": {
+      "label": "Lower Test Range (Hz)",
+      "default": "10000.0",
+      "help": ""
+    },
+    "test_order_range": {
+      "label": "Test Order Range (min, max)",
+      "default": "2, 15",
+      "help": "Range of orders N to test."
+    },
+    "octave_resolution": {
+      "label": "Octave Resolution (1/x; 0 = all bins)",
+      "default": "12",
+      "help": "Test frequencies at 1/x-octave spacing: 12 = 1/12 octave, 24 = 1/24 octave. 0 tests every positive frequency bin in the range. Finer spacing takes longer. All Stage 3 diagnostics use these frequencies."
+    },
+    "spl_sphere_points": {
+      "label": "Directivity-change sphere points",
+      "default": "1000",
+      "help": "Approximately uniform directions. More points can catch narrower directivity features but take longer."
+    },
+    "spl_radius_m": {
+      "label": "Directivity-change sphere radius (m)",
+      "default": "1.0",
+      "help": "Fixed sphere centred on the measurement coordinate origin. It should enclose the source."
+    }
+  },
+  "4": {
+    "target_n_max": {
+      "label": "Target N Max",
+      "default": "8",
+      "help": "Hard upper cap on harmonic order N."
+    },
+    "kr_offset": {
+      "label": "KR Offset",
+      "default": "2.0",
+      "help": "Shifts the growth of Order N with frequency."
+    },
+    "use_manual_table": {
+      "label": "Use manual table",
+      "default": false,
+      "help": ""
+    },
+    "enable_regularization": {
+      "label": "Enable regularization",
+      "default": false,
+      "help": ""
+    },
+    "noise_floor_start_db": {
+      "label": "Noise Floor Start (dB)",
+      "default": "-30.0",
+      "help": "Damping start."
+    },
+    "noise_floor_max_db": {
+      "label": "Noise Floor Max (dB)",
+      "default": "-40.0",
+      "help": "Threshold where damping reaches maximum strength."
+    },
+    "max_lambda": {
+      "label": "Max Lambda",
+      "default": "0.00000100",
+      "help": "Maximum damping strength."
+    },
+    "use_optimized_origins": {
+      "label": "Use Optimized Origins",
+      "default": true,
+      "help": "Essential for best fit."
+    }
+  }
+}

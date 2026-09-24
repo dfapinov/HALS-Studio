@@ -1,0 +1,25 @@
+# Local environments and downloaded dependencies
+.venv/
+_vendor/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+pytest-cache-files-*/
+*.egg-info/
+# Generated builds and local installer compiler
+build/
+dist/
+installer/
+tools/
+# Measurements, caches, test runs and logs
+artifacts/
+process_cache/
+outputs/
+output/
+.test-tmp*/
+*.log
+origins_cache*.pkl
+last_session.json
+misc/system_testing/**/input_irs_synth/
+misc/system_testing/**/test_exports/
+misc/system_testing/**/real_tweeter/

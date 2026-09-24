@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hals-studio"
+version = "0.1.0"
+description = "HALS loudspeaker measurement processing, analysis and export desktop app"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {file = "LICENSE"}
+dynamic = ["dependencies"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pyinstaller>=6.0"]
+
+[tool.setuptools]
+py-modules = []
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}

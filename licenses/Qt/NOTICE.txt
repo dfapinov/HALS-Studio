@@ -1,0 +1,21 @@
+HALS Atlas uses unmodified Qt and PySide6 6.11.2 shared libraries.
+Copyright The Qt Company Ltd. and other contributors.
+
+Qt/PySide6 are available under open-source LGPL/GPL terms as applicable
+to each module, or a separate commercial license. This distribution uses
+the open-source distribution. See the included license texts and upstream
+per-module notices. LicenseRef-Qt-Commercial.txt is retained from the wheel;
+its presence is not a claim that the end user has a commercial Qt license.
+
+Upstream source and notices for this version:
+https://code.qt.io/cgit/qt/qtbase.git/tree/?h=v6.11.2
+https://code.qt.io/cgit/pyside/pyside-setup.git/tree/?h=v6.11.2
+https://download.qt.io/official_releases/qt/6.11/6.11.2/submodules/
+
+The shared libraries remain separate under the application's _internal
+directory and can be replaced with compatible builds. No restriction on
+modifying/relinking these libraries or reverse engineering for debugging
+such modifications is imposed by this application.
+
+HALS Atlas application source is provided in the _internal/source directory
+of the application bundle. Its MIT license is in ../HALS-MIT.txt.
