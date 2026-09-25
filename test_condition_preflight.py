@@ -16,22 +16,29 @@ def test_matrix_matches_solver_condition():
     assert matrix_condition(coords, 4, 18.) == pytest.approx(metrics['cond_pre'])
 
 
-def test_prediction_budget_and_upper_cutoff_round_trip():
-    freqs = np.arange(100., 4100., 100.)
-    proposed = np.minimum(8, 2 + np.arange(len(freqs))//2)
+@pytest.mark.parametrize('bin_count', [40, 400])
+def test_bounded_search_and_upper_cutoff_round_trip(bin_count):
+    freqs = np.linspace(100., 4000., bin_count)
+    proposed = np.minimum(8, 2 + ((freqs - 100.) / 200.).astype(int))
+    entries = {n: np.flatnonzero(proposed >= n)[0] for n in range(3, 9)}
     calls = []
     def condition(n, i):
         calls.append((n, i))
-        return 1e4 if n <= 4 else 1e7 * (freqs[i]/freqs[2*(n-2)])**-8
+        return 1e4 if n <= 4 else 1e7 * (freqs[i]/freqs[entries[n]])**-8
     result = optimise_transitions(freqs, proposed, condition)
     assert result['status'] == 'ok'
-    assert len(calls) <= 3*6
+    # Each higher order permits its original entry, a search start, five
+    # offset samples and two refinements. The bound is independent of the
+    # number of frequency bins; cached/reused samples can cost fewer calls.
+    for n in entries:
+        assert sum(order == n for order, _ in calls) <= (1 if n <= 4 else 9)
+    assert result['evaluations'] == len(calls) == len(set(calls))
     np.testing.assert_array_less(result['adjusted_orders'], proposed+1)
     assert np.all(np.diff(result['adjusted_orders']) >= 0)
     assert any(r['activation_hz'] != r['original_hz'] for r in result['transitions'])
     for row in result['transitions']:
         if row['activation_hz'] is not None and row['order'] > 4:
-            assert row['condition'] <= 1e5
+            assert row['target_lower'] <= row['condition'] <= row['target_upper']
     np.testing.assert_array_equal([_get_table_limit(f, True, result['manual_table']) for f in freqs],
                                   result['adjusted_orders'])
 

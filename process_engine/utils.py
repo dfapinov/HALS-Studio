@@ -134,6 +134,10 @@ def load_she_h5(source: Union[str, Path, Dict[str, np.ndarray]]) -> Dict[str, np
 
 def write_wav(audio_data: np.ndarray, fs: int, filepath: Union[str, Path], desc: str = ""):
     """Writes a NumPy array to a 32-bit float WAV file."""
+    # Export parity is covered by test_export_engine.py::test_files_and_atomic_cancellation.
+    # Review that test when changing audio encoding, sample rate or samples.
+    # Keep comparisons on decoded audio and format: incidental metadata such
+    # as creation timestamps can differ between otherwise equivalent exports.
     # Ensure data is float32 for writing
     audio_data = audio_data.astype(np.float32)
     # Normalize if peak is > 1.0 to prevent clipping

@@ -12,6 +12,11 @@ def optimise_transitions(freqs, proposed, condition):
     sample is inside the target band after a sample above it, bisect twice to
     refine the first crossing. A degree is activated only on a checked bin;
     an unqualified degree and higher degrees remain inactive.
+
+    Test contract: test_condition_preflight.py::test_bounded_search_and_upper_cutoff_round_trip
+    covers the evaluation budget, condition band, monotonic order limits and
+    manual-table round trip. When intentionally changing these behaviours,
+    review and update that test alongside the implementation.
     """
     freqs = np.asarray(freqs, float)
     proposed = np.asarray(proposed, int)
@@ -37,6 +42,8 @@ def optimise_transitions(freqs, proposed, condition):
     rows = []
     previous = entries[4]
     blocked = False
+    # Changing sample count or refinement depth below changes the test's
+    # per-order evaluation bound; keep its documented budget in sync.
     sample_factors = (1.15, 1.30, 1.50, 1.80, 2.20)
 
     for n, entry in entries.items():

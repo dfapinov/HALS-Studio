@@ -68,6 +68,11 @@ def test_files_and_atomic_cancellation(config, tmp_path):
                 for key in first: np.testing.assert_array_equal(first[key], second[key])
         elif a.suffix == '.wav':
             import soundfile as sf
+            # Compare the audio contract, not container bytes: WAV metadata
+            # may include a creation timestamp that differs between exports.
+            first_info, second_info = sf.info(a), sf.info(b)
+            assert first_info.format == second_info.format == 'WAV'
+            assert first_info.subtype == second_info.subtype
             first, first_rate = sf.read(a, dtype='float32')
             second, second_rate = sf.read(b, dtype='float32')
             assert first_rate == second_rate
