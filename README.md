@@ -8,13 +8,15 @@ Rather than treating each microphone measurement as an independent frequency res
 
 The HALS system consists of two applications:
 
-**HALS Control — Part 1: Measurement**\
+**HALS Control — Part 1: Measurement**  
 Controls the HALS measurement robot, audio interface and measurement sequence. It captures impulse responses around the loudspeaker together with key geometry and project metadata.
 
-**HALS Studio — Part 2: Processing, Analysis & Export**\
+**HALS Studio — Part 2: Processing, Analysis & Export**  
 Takes the measurement dataset produced by HALS Control and turns it into a 'holographic' acoustic model. Studio provides tools for inspecting and analysing the reconstructed sound field and an Export workspace for extracting FRD and impulse-response (IR) data for use in other applications.
 
 ---
+
+![HALS Studio](./images/main_cartoon_small.png)
 
 # What makes HALS different?
 
@@ -101,6 +103,8 @@ The solve simultaneously separates the internally generated loudspeaker field fr
 
 Once Stage 4 is complete, the model is ready for **Analysis** and **Export**.
 
+![process_screenshot](./images/process_screenshot.png)
+
 ---
 
 # Analysis
@@ -148,6 +152,10 @@ CSD progressively removes the earlier part of the impulse response to show what 
 
 Both are particularly useful for revealing resonances and stored or delayed energy in the reflection-free HALS data.
 
+![analysis_screenshot](./images/analysis_screenshot.png)
+
+![analysis2_screenshot](./images/analysis2_screenshot.png)
+
 ---
 
 # Export
@@ -194,7 +202,9 @@ Time-of-flight phase can optionally be removed, making the underlying phase resp
 
 As the model retains full complex pressure information, it can also be exported as **impulse responses (IRs)**.
 
-IR exports retain the physical time-of-flight propagation delay, behaving like an impulse response captured by a real microphone at the chosen virtual position.
+IR exports retain the physical time-of-flight propagation delay, behaving like an impulse response captured by a real microphone at the chosen virtual position.  
+
+![export_screenshot](./images/export_screenshot.png)
 
 ---
 
