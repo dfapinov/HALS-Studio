@@ -1,16 +1,17 @@
 """Qt Process workspace backed exclusively by the viewer's processing snapshot."""
-import json,os,pickle,sys,hashlib,subprocess
+import json,os,pickle,sys,subprocess
 from pathlib import Path
 from copy import deepcopy
 import numpy as np
 from PySide6 import QtCore as C,QtGui as G,QtWidgets as W
 import bootstrap
+import process_cache
 from plots import Chart,style
 from pyvistaqt import QtInteractor
 import pyvista as pv
 
 SCHEMA=json.loads((bootstrap.HERE/'process_schema.json').read_text(encoding='utf-8'))
-VIEWS={1:['FDW results'],2:['Validation','3D coordinate cloud','3D grid scan'],3:['Order recommendations'],4:['Fit error','Condition number','Spatial error']}
+VIEWS={1:['FDW results'],2:['Validation','3D coordinate cloud','3D grid scan'],3:['Order recommendations'],4:['Fit error','Condition number']}
 MAIN={1:['fdw_rft_ms','fdw_oct_res','fdw_max_cap_ms','enable_auto_gain','target_peak_db','enable_smoothing','smoothing_oct_res'],2:['octave_resolution','tweeter_x','tweeter_y','tweeter_z'],3:['freq_end_hz'],4:['target_n_max']}
 
 class ProcessWorkspace(W.QWidget):
@@ -38,21 +39,27 @@ class ProcessWorkspace(W.QWidget):
             toggle.toggled.connect(expand);form=W.QFormLayout();pagebox.addLayout(form);pagebox.addStretch();scroll.setWidget(page);self.pages.addWidget(scroll)
             for key,spec in SCHEMA[str(stage)].items():
                 value=self.values[stage][key]
-                if isinstance(value,bool):control=W.QCheckBox();control.setChecked(value);control.toggled.connect(lambda v,s=stage,k=key:self.values[s].update({k:v}))
+                if isinstance(value,bool):
+                    control=W.QCheckBox()
+                    invert=(stage==4 and key=='use_manual_table')
+                    control.setChecked(not value if invert else value)
+                    control.toggled.connect(lambda v,s=stage,k=key,inv=invert:self.values[s].update({k:not v if inv else v}))
                 else:control=W.QLineEdit(str(value));control.textChanged.connect(lambda v,s=stage,k=key:self.values[s].update({k:v}))
                 control.setToolTip(spec['help']);caption=W.QLabel(spec['label']);caption.setWordWrap(False)
                 if isinstance(control,W.QLineEdit):control.setFixedWidth(145 if key.endswith('bounds') or key=='test_order_range' else 105)
                 (mainform if key in MAIN[stage] else advancedform).addRow(caption,control);self.controls[stage,key]=control
             if stage==1:self.form_button(form,'Reflection-free time calculator',self.rft_calculator)
             if stage==3:
-                self.order_choice=W.QComboBox();self.order_choice.setSizeAdjustPolicy(W.QComboBox.AdjustToContents)
+                self.controls[3,'condition_preflight'].toggled.connect(self.refresh_order_action)
+                self.order_choice=W.QComboBox();self.order_choice.setSizeAdjustPolicy(W.QComboBox.AdjustToContents);self.order_choice.currentIndexChanged.connect(self.refresh_order_action)
                 self.reference_order=W.QComboBox();self.reference_order.setSizeAdjustPolicy(W.QComboBox.AdjustToContents);self.reference_order.currentIndexChanged.connect(self.change_reference)
             if stage==4:
-                control=self.controls[4,'use_manual_table'];caption=advancedform.labelForField(control);advancedform.removeWidget(control);advancedform.removeWidget(caption);caption.deleteLater();control.setText('Use manual order table');advancedform.addRow(control)
+                control=self.controls[4,'use_manual_table'];caption=advancedform.labelForField(control);advancedform.removeWidget(control);advancedform.removeWidget(caption);caption.deleteLater();control.setText(SCHEMA['4']['use_manual_table']['label']);advancedform.addRow(control)
                 edit=W.QPushButton('Edit manual order table');edit.setSizePolicy(W.QSizePolicy.Fixed,W.QSizePolicy.Fixed);edit.clicked.connect(self.edit_orders);advancedform.addRow(edit)
         actions=W.QHBoxLayout();box.addLayout(actions);self.run_button=W.QPushButton('Run Stage 1');self.run_button.setObjectName('primary');self.run_button.clicked.connect(lambda:self.run());actions.addWidget(self.run_button)
         self.cancel_button=W.QPushButton('Cancel');self.cancel_button.setEnabled(False);self.cancel_button.clicked.connect(lambda:self.cancel());actions.addWidget(self.cancel_button)
-        self.left_panel=left;left.setMinimumWidth(0);left.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Expanding);self.split.addWidget(left);self.right=W.QSplitter(C.Qt.Vertical);self.right.setMinimumWidth(0);self.right.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Expanding);self.split.addWidget(self.right)
+        self.left_panel=left;left.setMinimumWidth(0);left.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Expanding)
+        self.sidebar_split=W.QSplitter(C.Qt.Vertical);self.sidebar_split.setChildrenCollapsible(False);self.sidebar_split.addWidget(left);self.split.addWidget(self.sidebar_split)
         result=W.QWidget();resultbox=W.QVBoxLayout(result);resultbox.setContentsMargins(5,5,5,5);bar=W.QHBoxLayout();bar.setContentsMargins(0,0,0,0)
         self.result_bar=W.QWidget();self.result_bar.setLayout(bar);resultbox.addWidget(self.result_bar);self.main_result_bar=bar
         self.plot_label=W.QLabel('Plot type');bar.addWidget(self.plot_label);self.view=W.QComboBox();self.view.setSizeAdjustPolicy(W.QComboBox.AdjustToContents);self.view.setMaximumWidth(240);self.view.currentTextChanged.connect(self.draw);bar.addWidget(self.view)
@@ -79,11 +86,17 @@ class ProcessWorkspace(W.QWidget):
         self.analysis_button=W.QPushButton('Analysis');self.analysis_button.clicked.connect(lambda:self.publish(0));navigation.addWidget(self.analysis_button)
         self.export_button=W.QPushButton('Export');self.export_button.clicked.connect(lambda:self.publish(1));navigation.addWidget(self.export_button)
         resultbox.addWidget(self.stage4_navigation)
-        self.summary=W.QLabel('Open a HALS project or create one to begin.');self.summary.setWordWrap(True);resultbox.addWidget(self.summary);self.right.addWidget(result)
-        cli=W.QWidget();cl=W.QVBoxLayout(cli);cl.setContentsMargins(5,5,5,5);cr=W.QHBoxLayout();cr.addWidget(W.QLabel('CLI OUTPUT'));cr.addStretch();b=W.QPushButton('Clear');b.clicked.connect(lambda:self.log.clear());cr.addWidget(b);b=W.QPushButton('Save log');b.clicked.connect(self.save_log);cr.addWidget(b);cl.addLayout(cr)
-        self.log=W.QPlainTextEdit();self.log.setReadOnly(True);self.log.setMaximumBlockCount(30000);cl.addWidget(self.log);self.right.addWidget(cli)
+        self.summary=W.QLabel('Open a HALS project or create one to begin.');self.summary.setWordWrap(True);resultbox.addWidget(self.summary)
+        result.setMinimumWidth(0);result.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Expanding);self.split.addWidget(result)
+        cli=W.QFrame();cli.setFrameShape(W.QFrame.StyledPanel);cl=W.QVBoxLayout(cli);cl.setContentsMargins(5,5,5,5);cr=W.QHBoxLayout();cr.addWidget(W.QLabel('CLI OUTPUT'));cr.addStretch();b=W.QPushButton('Clear');b.clicked.connect(lambda:self.log.clear());cr.addWidget(b);b=W.QPushButton('Save log');b.clicked.connect(self.save_log);cr.addWidget(b);cl.addLayout(cr)
+        self.log=W.QPlainTextEdit();self.log.setReadOnly(True);self.log.setMaximumBlockCount(30000);cl.addWidget(self.log);self.sidebar_split.addWidget(cli)
         self._sidebar_width=int(owner.settings.value('process_sidebar_width',420))
-        self.split.setSizes([self._sidebar_width,980]);self.split.splitterMoved.connect(lambda *_: owner.settings.setValue('process_sidebar_width',self.split.sizes()[0]));self.right.setSizes([650,280]);self.select_stage(1)
+        self.split.setSizes([self._sidebar_width,980]);self.split.splitterMoved.connect(lambda *_: owner.settings.setValue('process_sidebar_width',self.split.sizes()[0]))
+        cli_fraction=float(owner.settings.value('process_cli_height_fraction',.3))
+        cli_fraction=max(.05,min(.95,cli_fraction))
+        self.sidebar_split.setSizes([round(1000*(1-cli_fraction)),round(1000*cli_fraction)])
+        self.sidebar_split.splitterMoved.connect(self.save_cli_split)
+        self.select_stage(1)
         C.QTimer.singleShot(0,self.restore_sidebar_width)
         self.controls[1,'enable_auto_gain'].toggled.connect(self.controls[1,'target_peak_db'].setEnabled);self.controls[1,'target_peak_db'].setEnabled(self.controls[1,'enable_auto_gain'].isChecked())
         for key in ('noise_floor_start_db','noise_floor_max_db','max_lambda'):
@@ -97,8 +110,12 @@ class ProcessWorkspace(W.QWidget):
         if self.split.width() > 0:
             width=int(self.owner.settings.value('process_sidebar_width',self._sidebar_width))
             self.split.setSizes([width,max(0,self.split.width()-width)])
+    def save_cli_split(self,*_):
+        sizes=self.sidebar_split.sizes();total=sum(sizes)
+        if total:self.owner.settings.setValue('process_cli_height_fraction',sizes[1]/total)
     def select_stage(self,stage):
-        self.stage4_navigation.setVisible(stage==4)
+        coeff_path=self.coefficient_path()
+        self.stage4_navigation.setVisible(stage==4 and coeff_path is not None and coeff_path.is_file())
         self.metadata_button.setChecked(stage==0);self.speed_settings.setVisible(stage==0);self.pages.setVisible(stage!=0);self.run_button.setVisible(stage!=0);self.cancel_button.setVisible(stage!=0)
         self.result_bar.setVisible(stage!=0);self.stage2_tools.setVisible(stage==2);self.stage3_tools.setVisible(stage==3)
         if stage==0:
@@ -128,7 +145,7 @@ class ProcessWorkspace(W.QWidget):
         except (KeyError,ValueError,TypeError):pass
     def set_value(self,stage,key,value):
         control=self.controls[stage,key]
-        if isinstance(control,W.QCheckBox):control.setChecked(bool(value))
+        if isinstance(control,W.QCheckBox):control.setChecked(not bool(value) if stage==4 and key=='use_manual_table' else bool(value))
         else:control.setText(str(value))
     def adopt_project(self,force=False):
         path=self.owner.project_path
@@ -145,20 +162,25 @@ class ProcessWorkspace(W.QWidget):
         if all(grid.get('wp_tw_'+k) not in (None,'') for k in ('r','phi','z')):
             r,phi,z=[float(grid['wp_tw_'+k]) for k in ('r','phi','z')]
             for key,val in zip('xyz',(r*np.cos(np.deg2rad(phi)),r*np.sin(np.deg2rad(phi)),z)):self.set_value(2,'tweeter_'+key,round(val,3))
-        for stage in range(1,5):
+        self.cache(1).unlink(missing_ok=True)
+        npz=folder/'outputs'/f'{self.project_name.text()}_complex_data.npz'
+        if npz.is_file():
+            try:self.results[1]=process_cache.load_stage1(npz,self.values[1])
+            except FileNotFoundError:pass
+        for stage in range(2,5):
             if self.cache(stage).exists():
-                with open(self.cache(stage),'rb') as stream:self.results[stage]=pickle.load(stream)
+                self.results[stage]=process_cache.load(self.cache(stage),stage)
         state=data.get('hals_studio', data.get('hals_viewer',{})).get('session',{}).get('process_layout') or {}
         if state.get('input_ir_folder'):self.ir_folder.setText(state['input_ir_folder'])
-        self.right.setSizes(state.get('right',[650,280]));self.select_stage(state.get('stage',1));self.start_host()
+        self.select_stage(state.get('stage',1));self.start_host()
     def layout_state(self):
-        return dict(stage=self.stage,right=self.right.sizes(),input_ir_folder=self.ir_folder.text())
+        return dict(stage=self.stage,input_ir_folder=self.ir_folder.text())
     def project_payload(self):
         return dict(project_name=self.project_name.text().strip(),**{f'stage{s}_vars':deepcopy(v) for s,v in self.values.items()},stage4_manual_table=self.manual_table,
             global_vars=dict(enable_manual_speed_of_sound=self.manual_speed.isChecked(),speed_of_sound=str(self.speed.value())))
     def cache(self,stage):
-        digest=hashlib.sha256(str(self.owner.project_path).encode()).hexdigest()[:20]
-        return bootstrap.CACHE_ROOT/digest/f'stage{stage}.pkl'
+        project=Path(self.owner.project_path)
+        return project.parent/'process_cache'/project.stem/f'stage{stage}.pkl'
     def new_project(self):
         if self.job:return
         path,_=W.QFileDialog.getSaveFileName(self,'New HALS project','project.json','HALS project (*.json)')
@@ -186,6 +208,9 @@ class ProcessWorkspace(W.QWidget):
             except ValueError:W.QMessageBox.warning(self,'Harmonic order','The solver requires a maximum order of at least 2 without a manual order table.');return
         if not name or Path(name).name!=name or any(c in name for c in '<>:"/\\|?*'):W.QMessageBox.warning(self,'Project name','Use a valid filename without path separators.');return
         request=dict(stage=self.stage,settings=deepcopy(self.values[self.stage]),folder=str(Path(self.owner.project_path).parent),name=name,ir_folder=self.ir_folder.text(),cache=str(self.cache(self.stage)),manual_table=self.manual_table,speed=self.speed.value(),manual_speed=self.manual_speed.isChecked(),action=action)
+        if self.stage==3 and action=='growth':
+            request['selected_order_N']=int(self.order_choice.currentData())
+            request['preflight_settings']=deepcopy(self.values[4])
         if edits:request['edits']=edits
         if action=='reference':request['reference']=self.reference_order.currentData()['n']
         if action=='load_origins':request['origin_cache']=self.origin_cache_path
@@ -193,6 +218,7 @@ class ProcessWorkspace(W.QWidget):
             if 2 not in self.results:return
             request['rescan']=[float(self.sample.currentData())]
         self.active_request=request;self._cli_line='';self.start_host();self.job=True;self.active_stage=self.stage;self.run_button.setEnabled(False);self.cancel_button.setEnabled(True)
+        self.refresh_order_action()
         self.log.appendPlainText(f'\nStage {self.stage} - {action} - {name}\n')
         from process_job import ProcessJob
         self.host=ProcessJob(request,self.owner.pool,self);self.host.message.connect(self.append_output);self.host.completed.connect(self.finished);self.host.start();self.summary.setText(f'Stage {self.stage} running - inspect CLI output below')
@@ -234,42 +260,62 @@ class ProcessWorkspace(W.QWidget):
     def finished(self,event):
         if self.host:self.host.wait()
         self.job=False;self.run_button.setEnabled(True);self.cancel_button.setEnabled(False)
+        self.refresh_order_action()
         if not event['ok']:self.summary.setText('Processing failed - see CLI output');return
         stage=int(event['stage'])
-        with open(event['cache'],'rb') as stream:self.results[stage]=pickle.load(stream)
+        self.results[stage]=process_cache.load_stage1(event['cache'],self.values[1]) if stage==1 else process_cache.load(event['cache'],stage)
         if stage==1:
             meta=self.results[1][3];transition=max((float(v.get('f_trans',0)) for v in meta.values()),default=0)
             if transition:self.set_value(3,'freq_start_hz',np.ceil(transition/1000)*1000)
         if stage==3 and self.results[3].get('below_rft'):self.set_value(3,'freq_start_hz',self.results[3]['test_band_hz'][0])
+        if stage==3 and getattr(self,'active_request',{}).get('action')=='growth':
+            result=self.results[3];n=result.get('selected_order_N')
+            if n is not None:
+                self.set_value(4,'target_n_max',n)
+                preflight=result.get('condition_preflight',{})
+                if preflight.get('status')=='ok':
+                    self.manual_table=dict(preflight['manual_table'])
+                    self.set_value(4,'use_manual_table',True)
+                    for key in ('kr_offset','use_optimized_origins'):
+                        self.set_value(4,key,preflight['settings'][key])
+                else:
+                    self.set_value(4,'use_manual_table',False)
         self.select_stage(stage)
         if getattr(self,'active_request',{}).get('action')=='rescan':
             index=self.sample.findData(self.active_request['rescan'][0]);self.sample.setCurrentIndex(index);self.view.setCurrentText('3D grid scan')
-        self.autosave_plots();self._cli_line='';self.log.appendPlainText(f'Stage {stage} complete. Results saved.');self.summary.setText(f'Stage {stage} completed - {Path(self.owner.project_path).parent / "outputs"}')
+        reference_change=stage==3 and getattr(self,'active_request',{}).get('action')=='reference'
+        if not reference_change:self.autosave_plots()
+        if stage==3 and not reference_change:
+            self._stage3_pulse_pending=True
+            self.draw()
+        self._cli_line='';self.log.appendPlainText(f'Stage {stage} complete. Results saved.');self.summary.setText(f'Stage {stage} completed - {Path(self.owner.project_path).parent / "outputs"}')
         if stage==4:self.reload_coefficients(force=True)
     def host_finished(self,*_):
-        if self.job:self.job=False;self.run_button.setEnabled(True);self.cancel_button.setEnabled(False);self.summary.setText('Processing stopped. See CLI output.')
+        if self.job:self.job=False;self.run_button.setEnabled(True);self.cancel_button.setEnabled(False);self.summary.setText('Processing stopped. See CLI output.');self.refresh_order_action()
     def cancel(self,restart=True):
         if self.host and self.host.isRunning():
             self.owner.pool.close();self.host.wait()
             from worker_pool import WarmPool
             if restart:self.owner.pool=WarmPool(int(self.owner.settings.value('worker_count',0)) or None);self.owner.pool.start()
         self.job=False;self.run_button.setEnabled(True);self.cancel_button.setEnabled(False)
+        self.refresh_order_action()
     def shutdown(self):self.cancel(restart=False)
     def load_existing(self):
         if not self.owner.project_path:return
         root=Path(self.owner.project_path).parent;name=self.project_name.text()
         try:
-            if self.cache(self.stage).exists():
-                with open(self.cache(self.stage),'rb') as stream:self.results[self.stage]=pickle.load(stream)
-            elif self.stage==1:
-                with np.load(root/'outputs'/f'{name}_complex_data.npz',allow_pickle=True) as d:self.results[1]=(d['freqs'],d['data'].item(),None,d['meta'].item() if 'meta' in d else {})
+            if self.stage==1:
+                self.results.pop(1,None)
+                self.results[1]=process_cache.load_stage1(root/'outputs'/f'{name}_complex_data.npz',self.values[1])
+            elif self.cache(self.stage).exists():
+                self.results[self.stage]=process_cache.load(self.cache(self.stage),self.stage)
             elif self.stage==2:
                 path,_=W.QFileDialog.getOpenFileName(self,'Open HALS origin cache',str(root/'outputs'),'HALS origin cache (*.pkl)')
                 if path:self.origin_cache_path=path;self.run('load_origins')
                 return
             elif self.stage==4:
                 import h5py
-                with h5py.File(root/'outputs'/'coefficients'/f'{name}_coefficients.h5') as f:self.results[4]={k:f[k][()] for k in f}
+                with h5py.File(root/'outputs'/'coefficients'/f'{name}_coefficients.h5') as f:self.results[4]={k:f[k][()] for k in ('freqs','N_used','cond','pct_error')}
             else:raise ValueError('Run this stage to obtain its full diagnostics.')
             self.update_selectors();self.draw()
         except Exception as e:W.QMessageBox.warning(self,'Results',str(e))
@@ -289,7 +335,7 @@ class ProcessWorkspace(W.QWidget):
                 reference=r.get('step1',{}).get('tail_reference',{}).get('n')
                 for i in range(self.reference_order.count()):
                     if self.reference_order.itemData(i).get('n')==reference:self.reference_order.setCurrentIndex(i)
-                recommended=r.get('options',{}).get(r.get('recommended_key'),{}).get('n')
+                recommended=r.get('selected_order_N',r.get('options',{}).get(r.get('recommended_key'),{}).get('n'))
                 index=self.order_choice.findData(recommended)
                 if index>=0:self.order_choice.setCurrentIndex(index)
                 self.reference_order.blockSignals(False)
@@ -371,6 +417,7 @@ class ProcessWorkspace(W.QWidget):
         # The Tk result windows performed these saves; the Qt workspace owns them now.
         kinds={1:['FDW results'],2:['Validation'],3:['Order recommendations'],4:['Fit error','Condition number']}[self.stage]
         selected=self.view.currentText()
+        self._autosaving_plots=True
         try:
             self.view.blockSignals(True)
             for kind in kinds:
@@ -381,18 +428,47 @@ class ProcessWorkspace(W.QWidget):
         except Exception as exc:
             self.log.appendPlainText(f'Could not save result plot: {exc}')
         finally:
-            self.view.setCurrentText(selected);self.view.blockSignals(False);self.draw()
+            self.view.setCurrentText(selected);self.view.blockSignals(False);self.draw();self._autosaving_plots=False
     def save_log(self):
         path,_=W.QFileDialog.getSaveFileName(self,'Save processing log','','Text (*.txt)')
         if path:Path(path).write_text(self.log.toPlainText(),encoding='utf-8')
-    def use_order(self):
+    def refresh_order_action(self,*_):
+        results=getattr(self,'original_results',None)
+        if results is None:return
+        button=results.findChild(W.QPushButton,'stage3_growth_action')
+        if button is None:return
+        n=self.order_choice.currentData();result=self.results.get(3,{})
+        running=self.job and getattr(self,'active_request',{}).get('action')=='growth'
+        ready=(bool(result.get('condition_preflight')) and result.get('selected_order_N')==n) or not self.values[3].get('condition_preflight')
+
+        text='Optimizing..' if running else 'Use in Stage 4' if ready else 'Optimise growth rate'
+        button.setText(text);button.setFixedSize(184,38);button.setEnabled(not self.job and n is not None)
+        button.setStyleSheet('QPushButton { background:#24824b; border:1px solid #59d98b; color:white; font-weight:bold; border-radius:5px; } QPushButton:hover { background:#2b9959; }' if ready and not running else '')
+        for radio in results.findChildren(W.QRadioButton):radio.setEnabled(not self.job)
+    def order_action(self):
+        if self.job or self.order_choice.currentData() is None:return
+        result=self.results.get(3,{})
+        ready=bool(result.get('condition_preflight')) and result.get('selected_order_N')==self.order_choice.currentData()
+        if ready:self.use_order()
+        elif self.values[3].get('condition_preflight'):self.optimize_order_growth()
+        else:self.use_kr_order()
+    def optimize_order_growth(self):
+        if self.stage!=3 or self.job:return
+        if self.order_choice.currentData() is None:return
+        self.run('growth')
+    def use_kr_order(self):
         n=self.order_choice.currentData()
-        if n is not None:self.set_value(4,'target_n_max',n);self.select_stage(4)
+        if n is None:return
+        self.set_value(4,'target_n_max',n)
+        self.set_value(4,'use_manual_table',False)
+        self.select_stage(4)
+    def use_order(self):
+        self.select_stage(4)
     def change_reference(self):
         if self.stage!=3 or self.reference_order.currentData() is None:return
         self.run('reference')
     def edit_orders(self):
-        rows=self.table_dialog('Manual harmonic order table',['Upper frequency / Hz','Order N'],sorted(self.manual_table.items()),True)
+        rows=self.table_dialog('Manual harmonic order table',['Upper frequency / Hz','Order N'],[[f'{f:.0f}',n] for f,n in sorted(self.manual_table.items())],True)
         if rows is not None:
             try:self.manual_table={float(f):int(n) for f,n in rows}
             except ValueError:W.QMessageBox.warning(self,'Order table','Enter numeric frequencies and integer orders.')
@@ -404,6 +480,7 @@ class ProcessWorkspace(W.QWidget):
             except ValueError:W.QMessageBox.warning(self,'Origins','Enter numeric coordinates.')
     def table_dialog(self,title,headers,rows,add):
         d=W.QDialog(self);d.setWindowTitle(title);box=W.QVBoxLayout(d);table=W.QTableWidget(len(rows),len(headers));table.setHorizontalHeaderLabels(headers);box.addWidget(table)
+        table.horizontalHeader().setSectionResizeMode(W.QHeaderView.ResizeToContents)
         for i,row in enumerate(rows):
             for j,v in enumerate(row):table.setItem(i,j,W.QTableWidgetItem(str(v)))
         if add:

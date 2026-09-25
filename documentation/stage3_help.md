@@ -370,3 +370,42 @@ recommendations. The results window reports the output directory.
 The selected recommendation is not applied until **Use in Stage 4** is pressed.
 
 ---
+## Experimental condition preflight
+
+Enable **Preflight condition optimisation** in Stage 3 to propose delayed order
+activations after Stage 3 has selected its recommended maximum order. The preflight
+uses that selected N as the hard cap, then starts with Stage 4's KR+offset schedule
+and grid limit. It uses Stage 4's input data, origin setting and saved sound speed.
+Existing manual tables are replaced when you transfer a successful preflight.
+The selected recommended order still supplies the final maximum-order cap.
+
+The preflight checks the raw, unscaled dual-basis matrix at each degree's first
+eligible frequency bin, without fitting pressure coefficients or regularizing.
+The first actual N=4 bin supplies the target. Orders through N=4 stay unchanged;
+higher degrees are accepted only when a checked entry lies between one-fifth and ten times
+the target. It samples five progressively higher frequency offsets and refines a
+descending crossing twice. This is a bounded search with at most nine condition
+evaluations per degree and no iterative pressure solves.
+An unsuccessful degree and higher degrees remain inactive. If no finite N=4
+reference exists, the original workflow is retained and the result explains why.
+
+Review original and adjusted entry frequencies and conditions in the results panel.
+**Use in Stage 4** transfers the resulting upper-frequency cutoff table and enables
+the manual-table setting. The KR offset and origin setting used by the preflight
+are also transferred. Rerun Stage 3 after changing input data or these settings.
+Stage 4 still applies its KR, grid and selected maximum-order limits.
+
+This is a sparse entry-condition heuristic: conditions can be non-monotonic and
+intermediate frequencies are not verified. A raw matrix condition is different
+from Stage 4's post-regularization condition when regularization is enabled.
+With the checkbox unchecked, Stage 3 runs its existing workflow.
+
+
+Stage 3 order growth is a separate second step. First review and select the
+recommended maximum order N. Click **Optimise growth rate** to run the
+condition preflight for that selection. The button displays **Optimizing..** while it runs, then **Use in Stage 4**.
+The table is transferred automatically; details remain in the CLI. The selected N becomes Stage
+4's Target N Max, which remains a hard cap even if the order table contains higher
+orders. In Stage 4's Advanced Settings, **Ignore order table - use pure KR** is unchecked by default, so the transferred table controls growth. Check
+it to ignore the table and use the KR+offset rule alone. **Edit manual order table**
+remains available.

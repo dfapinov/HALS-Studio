@@ -65,6 +65,20 @@ def _get_table_limit(f_hz: float, use_manual_table: bool, manual_order_table: di
     return manual_order_table[sorted_cuts[-1]]
 
 
+def proposed_order(f, r, N_grid, cfg):
+    N_kr = get_kr_limit(f, r, cfg['speed_of_sound'], cfg['kr_offset'])
+    N_table = _get_table_limit(f, cfg['use_manual_table'], cfg['manual_order_table'])
+
+    N_target = min(N_kr, N_grid, N_table, cfg['target_n_max'])
+
+    # If manual table is not used, enforce a minimum order of 2.
+    # This prevents order from dropping too low when using a low kr_offset.
+    if not cfg['use_manual_table']:
+        N_target = max(2, N_target)
+
+    return N_target, N_kr, N_table
+
+
 # =============================================================================
 # --- Worker Wrapper ---
 # =============================================================================
@@ -86,15 +100,7 @@ def _worker_wrapper(args: Tuple) \
 
     kw = 2 * math.pi * f / cfg['speed_of_sound']
     
-    N_kr = get_kr_limit(f, r, cfg['speed_of_sound'], cfg['kr_offset'])
-    N_table = _get_table_limit(f, cfg['use_manual_table'], cfg['manual_order_table'])
-    
-    N_target = min(N_kr, N_grid, N_table, cfg['target_n_max'])
-
-    # If manual table is not used, enforce a minimum order of 2.
-    # This prevents order from dropping too low when using a low kr_offset.
-    if not cfg['use_manual_table']:
-        N_target = max(2, N_target)
+    N_target, N_kr, N_table = proposed_order(f, r, N_grid, cfg)
 
     coeffs, metrics = _solve_one_frequency(
         f_hz=f,

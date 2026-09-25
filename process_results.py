@@ -69,12 +69,16 @@ def theme(fig):
 
 class Results(W.QWidget):
     def __init__(self):
-        super().__init__();self.box=W.QVBoxLayout(self);self.box.setContentsMargins(0,0,0,0);self.canvas=None;self.fig=None
+        super().__init__();self.box=W.QVBoxLayout(self);self.box.setContentsMargins(0,0,0,0);self.canvas=None;self.fig=None;self.scroll=None
     def show_figure(self,fig):
         while self.box.count():
             widget=self.box.takeAt(0).widget();widget.setParent(None);widget.deleteLater()
         self.fig=fig;theme(fig);self.canvas=FigureCanvasQTAgg(fig);self.canvas.setMinimumHeight(720 if len(fig.axes)>=3 else 400)
-        scroll=W.QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(W.QFrame.NoFrame);scroll.setWidget(self.canvas);self.box.addWidget(scroll,1);self.canvas.draw_idle()
+        self.scroll=W.QScrollArea();self.scroll.setWidgetResizable(True);self.scroll.setFrameShape(W.QFrame.NoFrame);self.scroll.setWidget(self.canvas);self.box.addWidget(self.scroll,1)
+        from matplotlib.colors import to_hex
+        self.scroll.viewport().setObjectName('process_plot_background')
+        self.scroll.viewport().setStyleSheet(f'QWidget#process_plot_background {{background:{to_hex(fig.get_facecolor())};}}')
+        self.canvas.draw_idle()
         def zoom(event):
             ax=event.inaxes
             if ax is None or not hasattr(ax,'zaxis'):return
@@ -88,9 +92,20 @@ class Results(W.QWidget):
         if p.stage==1:
             from process_engine.stage1_fdwsmooth import load_and_prep_ir
             from pathlib import Path
-            f,raw,smooth,meta=r;name=p.sample.currentData() or next(iter(raw));n_fft=2*(len(f)-1);data,fs=load_and_prep_ir(str(Path(p.ir_folder.text())/name),crop_samples=n_fft);data=np.pad(data,(0,max(0,n_fft-len(data))))
+            f,raw,smooth,meta=r[:4];name=p.sample.currentData() or next(iter(raw));n_fft=2*(len(f)-1);fs=float(r[4]) if len(r)>4 else 2*float(f[-1]);data=None
+            try:
+                data,fs_wav=load_and_prep_ir(str(Path(p.ir_folder.text())/name),crop_samples=n_fft)
+                data=np.pad(data,(0,max(0,n_fft-len(data))));fs=fs_wav
+            except (OSError,RuntimeError,ValueError):
+                # The NPZ is sufficient for the frequency response and smoothing curves.
+                # A WAV is only needed for the optional time-domain IR panel.
+                pass
             show_both=p.values[1]['keep_raw_and_smoothed'];primary=smooth[name] if smooth and p.values[1]['enable_smoothing'] and not show_both else raw[name]
             view=VIEWS['FDWView'](figsize=(12,8));view.update_view(name,p.sample.currentIndex(),f,primary,smooth.get(name) if smooth and show_both else None,meta[name],data,fs,float(p.values[1]['fdw_rft_ms']))
+            if data is None:
+                for label in view.ax2.texts:
+                    if label.get_text()=='Error loading wav':
+                        label.set_text('WAV unavailable\nShowing saved NPZ results')
             from process_engine.utils import _ph_pat
             match=_ph_pat.match(name)
             if match:
@@ -174,21 +189,47 @@ class Results(W.QWidget):
                 ratio.text(.5,.5,'Unavailable for order selection\nOutside the usable separation range',ha='center',va='center',transform=ratio.transAxes,bbox=dict(facecolor='#101c28',alpha=.9))
                 if not step['tail_reference'].get('manual'):power.text(.5,.5,'Select a reference order manually\nto use sound power discarded',ha='center',va='center',transform=power.transAxes,bbox=dict(facecolor='#101c28',alpha=.9))
             self.show_figure(fig)
-            panel=W.QScrollArea(self.canvas);panel.setWidgetResizable(True);panel.setFrameShape(W.QFrame.NoFrame);content=W.QWidget();layout=W.QVBoxLayout(content);layout.setContentsMargins(8,8,8,8);panel.setWidget(content)
+            panel=W.QScrollArea(self.canvas);panel.setWidgetResizable(True);panel.setFrameShape(W.QFrame.NoFrame);content=W.QWidget();layout=W.QVBoxLayout(content);layout.setContentsMargins(12,12,12,12);panel.setWidget(content)
             from viewer_theme import NAME
             bg='#101c28' if NAME=='Dark' else '#ffffff'
-            panel.setStyleSheet(f'QWidget {{background:{bg};font-size:14px;}} QRadioButton::indicator {{width:16px;height:16px;border:1px solid #599bda;border-radius:8px;background:{bg};}} QRadioButton::indicator:checked {{background:#599bda;border:3px solid #a9d2f7;}} QPushButton {{background:#285b85;border:1px solid #599bda;padding:7px;border-radius:4px;color:white;}}')
+            panel.setStyleSheet(f'QWidget {{background:{bg};font-size:14px;border:none;}} QRadioButton::indicator {{width:16px;height:16px;border:1px solid #599bda;border-radius:8px;background:{bg};}} QRadioButton::indicator:checked {{background:#599bda;border:3px solid #a9d2f7;}} QPushButton {{background:#285b85;border:1px solid #599bda;padding:7px;border-radius:4px;color:white;}}')
             radio_off=(bootstrap.HERE/'assets/radio-off.svg').as_posix();radio_on=(bootstrap.HERE/'assets/radio-on.svg').as_posix()
             panel.setStyleSheet(panel.styleSheet()+f' QRadioButton, QRadioButton:checked, QRadioButton:hover {{background:transparent;}} QRadioButton::indicator, QRadioButton::indicator:checked {{width:20px;height:20px;border:none;background:transparent;image:url("{radio_off}");}} QRadioButton::indicator:checked {{image:url("{radio_on}");}}')
-            layout.addWidget(W.QLabel('Recommended order'));group=W.QButtonGroup(content);self.recommendation_buttons=[]
+            attention=W.QFrame(content);attention.setObjectName('stage3_recommendation')
+            attention_layout=W.QVBoxLayout(attention);attention_layout.setContentsMargins(10,10,10,10);attention_layout.setSpacing(5)
+            attention.setStyleSheet(f'QFrame#stage3_recommendation {{ border: 1px solid #3978a8; border-radius: 8px; background: {bg}; }}')
+            layout.addWidget(attention,alignment=C.Qt.AlignHCenter)
+            attention_layout.addWidget(W.QLabel('Recommended order'))
+            group=W.QButtonGroup(content);self.recommendation_buttons=[]
             for key,opt in options.items():
-                radio=W.QRadioButton(f"{opt.get('label',key)}: N={opt['n']}");radio.setText({'knee':'Internal / external ratio','tail':'Sound power discarded','spl':'Directivity change'}.get(key,key)+f" — N={opt['n']}");group.addButton(radio);layout.addWidget(radio);self.recommendation_buttons.append(radio)
-                detail=W.QLabel(opt.get('reason',''));detail.setWordWrap(True);layout.addWidget(detail)
-                radio.setChecked(key==r.get('recommended_key'));radio.toggled.connect(lambda on,n=opt['n']:p.order_choice.setCurrentIndex(p.order_choice.findData(int(n))) if on else None)
+                radio=W.QRadioButton(f"{opt.get('label',key)}: N={opt['n']}")
+                radio.setText({'knee':'Internal / external ratio','tail':'Sound power discarded','spl':'Directivity change'}.get(key,key)+f" — N={opt['n']}")
+                group.addButton(radio);attention_layout.addWidget(radio);self.recommendation_buttons.append(radio)
+                if opt.get('reason'):
+                    detail=W.QLabel(opt['reason']);detail.setWordWrap(True);attention_layout.addWidget(detail)
+                radio.setChecked(opt['n']==p.order_choice.currentData())
+                radio.toggled.connect(lambda on,n=opt['n']:p.order_choice.setCurrentIndex(p.order_choice.findData(int(n))) if on else None)
             if not group.checkedButton() and self.recommendation_buttons:self.recommendation_buttons[0].setChecked(True)
-            use=W.QPushButton('Use in Stage 4');use.clicked.connect(p.use_order);layout.addWidget(use,alignment=C.Qt.AlignLeft);layout.addStretch()
+            info=W.QLabel('Choose the recommendation you want to use, then optimise growth rate:')
+            info.setWordWrap(True);attention_layout.addWidget(info)
+            action=W.QPushButton();action.setObjectName('stage3_growth_action');action.setFixedSize(184,38)
+            action.clicked.connect(p.order_action);attention_layout.addWidget(action,alignment=C.Qt.AlignLeft)
+            p.refresh_order_action()
+            preflight=r.get('condition_preflight')
+            attention_ready=(not preflight or r.get('selected_order_N') is None)
+            if attention_ready and getattr(p,'_stage3_pulse_pending',False) and not getattr(p,'_autosaving_plots',False):
+                from PySide6 import QtGui as G
+                effect=W.QGraphicsDropShadowEffect(attention);effect.setOffset(0,0)
+                effect.setColor(G.QColor(45,155,255,220));effect.setBlurRadius(4);attention.setGraphicsEffect(effect)
+                sequence=C.QSequentialAnimationGroup(attention)
+                up=C.QPropertyAnimation(effect,b'blurRadius',sequence);up.setDuration(450);up.setStartValue(4);up.setEndValue(24);sequence.addAnimation(up)
+                down=C.QPropertyAnimation(effect,b'blurRadius',sequence);down.setDuration(650);down.setStartValue(24);down.setEndValue(4);sequence.addAnimation(down)
+                sequence.setLoopCount(4);p._stage3_attention_animation=sequence;sequence.start();p._stage3_pulse_pending=False
+            layout.addStretch()
             def position(*_):
-                bounds=notes.get_window_extent();scale=self.canvas.device_pixel_ratio;panel.setGeometry(round(bounds.x0/scale),round(self.canvas.height()-bounds.y1/scale),round(bounds.width/scale),round(bounds.height/scale))
+                bounds=notes.get_window_extent();scale=self.canvas.device_pixel_ratio
+                available_width=max(280,min(480,round(bounds.width/scale)));available_height=round(bounds.height/scale)
+                panel.setGeometry(round(bounds.x0/scale)+(round(bounds.width/scale)-available_width)//2,round(self.canvas.height()-bounds.y1/scale),available_width,available_height)
             self.canvas.mpl_connect('draw_event',position);self.canvas.mpl_connect('resize_event',position);panel.show();self.canvas.draw();position();return
         elif kind=='Spatial error':
             f=r['freqs'];i=int(np.argmin(abs(f-p.frequency.value())));xyz=p.spherical_xyz(r['coords_sph']);view=VIEWS['SpatialErrorView']();view.update_view(*xyz.T,f[i],r['N_used'][i],r['P_measured'][i],r['P_measured'][i]-r['residual_vector'][i],p.threshold.value())

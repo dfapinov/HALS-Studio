@@ -163,13 +163,18 @@
       "label": "Directivity-change sphere radius (m)",
       "default": "1.0",
       "help": "Fixed sphere centred on the measurement coordinate origin. It should enclose the source."
+    },
+    "condition_preflight": {
+      "label": "Optimise order growth after choosing N",
+      "default": true,
+      "help": "After Stage 3 recommendations appear, select the order N you want and run the bounded condition-guided growth optimisation."
     }
   },
   "4": {
     "target_n_max": {
       "label": "Target N Max",
       "default": "8",
-      "help": "Hard upper cap on harmonic order N."
+      "help": "Hard upper cap on harmonic order N, applied after the KR limit and order-table limit."
     },
     "kr_offset": {
       "label": "KR Offset",
@@ -177,9 +182,9 @@
       "help": "Shifts the growth of Order N with frequency."
     },
     "use_manual_table": {
-      "label": "Use manual table",
-      "default": false,
-      "help": ""
+      "label": "Ignore order table - use pure KR",
+      "default": true,
+      "help": "When unchecked, Stage 4 uses the order table transferred from Stage 3 or edited below. Check to use the pure KR+offset growth rule and ignore the table."
     },
     "enable_regularization": {
       "label": "Enable regularization",

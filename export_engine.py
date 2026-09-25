@@ -300,11 +300,11 @@ def acoustic_origin(config):
         return nearest_acoustic_origin(data[schema.FREQS][...], data[schema.ORIGINS_MM][...], config['stage2_origin_frequency_hz'])
 
 
-def cabinet_geometry(config):
-    """Read HALS cylindrical waypoints in mm; keep the same rear-X convention."""
+def baffle_geometry(config):
+    """Read the flat baffle and named waypoints, independently of legacy depth."""
     grid = config.get('project_geometry', {}); named = []
     def point(prefix): return waypoint(grid, prefix)
-    for name, prefix in [('Tweeter', 'tw'), ('Project reference', 'ref_origin'), ('Top critical', 'top'), ('Bottom critical', 'bot')]:
+    for name, prefix in [('Tweeter', 'tw'), ('Project reference', 'ref_origin')]:
         try: named.append((name, point(prefix)))
         except (KeyError, ValueError, TypeError): pass
     for user in grid.get('user_positions', []):
@@ -316,7 +316,15 @@ def cabinet_geometry(config):
         bl, tr = point('baffle_bl'), point('baffle_tr')
         try: tl = point('baffle_tl')
         except (KeyError, ValueError, TypeError): tl = np.array([bl[0], bl[1], tr[2]])
-        front = np.array([bl, tl, tr, bl+tr-tl]); back = front.copy()
-        back[:, 0] = (tl[0]+tr[0])/2-config['dut_depth_x']/1000
-        return np.concatenate([front, back]), named, True
+        return np.array([bl, tl, tr, bl+tr-tl]), named, True
     except (KeyError, ValueError, TypeError): return None, named, False
+
+
+def cabinet_geometry(config):
+    """Legacy geometry adapter for older project importers."""
+    front, named, known = baffle_geometry(config)
+    if not known:
+        return front, named, known
+    back = front.copy()
+    back[:, 0] = (front[1, 0]+front[2, 0])/2-float(config.get('dut_depth_x', 200.))/1000
+    return np.concatenate([front, back]), named, True

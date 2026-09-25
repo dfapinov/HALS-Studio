@@ -5,6 +5,7 @@ import bootstrap
 sys.path.insert(0,str(bootstrap.HERE/'process_engine'))
 os.environ['MPLBACKEND']='Agg'
 import numpy as np
+import process_cache
 
 class FileMapping(dict):
     @property
@@ -28,7 +29,7 @@ def run(request):
     elif stage==2:
         from stage2_centre_origin import run_origin_search,export_interpolated_origins
         if request.get('action') in ('save_origins','rescan'):
-            with open(request['cache'],'rb') as stream: result=pickle.load(stream)
+            result=process_cache.hydrate_stage2(process_cache.load(request['cache'],2),out/filename)
             for row in result[0].values():
                 row.setdefault('original_c',np.array(row['final_c']).copy());row.setdefault('original_error',row['error'])
             for freq,xyz in request.get('edits',[]):result[0][float(freq)]['final_c']=np.asarray(xyz)
@@ -53,7 +54,7 @@ def run(request):
                 tweeter_coords_mm=tuple(float(v['tweeter_'+k]) for k in 'xyz'),octave_resolution=1/float(v['octave_resolution']),
                 freq_start_hz=float(v['freq_start_hz']),freq_end_hz=float(v['freq_end_hz']),initial_simplex_step=float(v['initial_simplex_step']),
                 max_iterations=int(v['max_iterations']),x_bounds=bounds('x_bounds'),y_bounds=bounds('y_bounds'),z_bounds=bounds('z_bounds'),grid_res_mm=float(v['grid_res_mm']),
-                target_n_max_origins=int(v['target_n_max_origins']),manual_order_table=None,save_to_disk=True,plot_results_origins=False,
+                target_n_max_origins=int(v['target_n_max_origins']),manual_order_table=None,save_to_disk=False,plot_results_origins=False,
                 speed_of_sound=float(request.get('speed',343)),optimize_speed_of_sound=not request.get('manual_speed',False),use_process_pool=True,return_state=True,
                 use_cache=request.get('action')=='load_origins',read_cache_file=request.get('origin_cache',''))
         if result is None: raise ValueError('Origin search returned no results')
@@ -74,9 +75,23 @@ def run(request):
         from stage3_optimize_she_settings import run_open_branch_optimizer
         from session_pool import borrow_pool
         orders=tuple(int(x.strip()) for x in v['test_order_range'].split(','))
-        if request.get('action')=='reference':
+        action=request.get('action')
+        if action=='growth':
+            from condition_preflight import run_condition_preflight
+            from utils import load_and_parse_npz
+            with open(request['cache'],'rb') as stream:result=pickle.load(stream)
+            selected_n=int(request['selected_order_N'])
+            settings=request.get('preflight_settings',{})
+            cfg=dict(target_n_max=selected_n,
+                     kr_offset=float(settings.get('kr_offset',2.)),
+                     use_optimized_origins=settings.get('use_optimized_origins',True),
+                     use_manual_table=False,manual_order_table={})
+            result['selected_order_N']=selected_n
+            result['condition_preflight']=run_condition_preflight(load_and_parse_npz(str(out/filename)),cfg)
+        elif action=='reference':
             from stage3_optimize_she_settings import stage3_order_choices,recommended_stage3_choice
             with open(request['cache'],'rb') as stream:result=pickle.load(stream)
+            result.pop('condition_preflight',None);result.pop('selected_order_N',None)
             step=result['step1'];selected=step['tail_by_reference'][str(request['reference'])];tail_only=result.get('tail_only',False)
             step['internal_tail_power_db']=selected['power_db'];step['tail_reference'].update(selected,manual=True)
             updated=stage3_order_choices(step['orders'],step['ratios'],step['residuals'],step.get('rolloff_knee'),selected['power_db'],selected['n'],tail_only=tail_only,manual_reference=tail_only)
@@ -93,9 +108,11 @@ def run(request):
             noise_floor_start_db=float(v['noise_floor_start_db']),noise_floor_max_db=float(v['noise_floor_max_db']),max_lambda=float(v['max_lambda']) if v['enable_regularization'] else 0.,
             condition_metrics=True,use_optimized_origins=v['use_optimized_origins'],save_to_disk=True,speed_of_sound=343.,jobs=None,show_plot=False,use_process_pool=True)
     if result is None:raise ValueError('Processing returned no results; inspect the CLI output')
-    cache=Path(request['cache']);cache.parent.mkdir(parents=True,exist_ok=True)
-    with open(cache.with_suffix('.tmp'),'wb') as stream:pickle.dump(result,stream,pickle.HIGHEST_PROTOCOL)
-    os.replace(cache.with_suffix('.tmp'),cache)
+    cache=Path(request['cache'])
+    if stage==1:
+        cache.unlink(missing_ok=True)
+        return str(out/filename)
+    process_cache.save(cache,stage,result)
     return str(cache)
 
 def main():

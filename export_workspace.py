@@ -9,7 +9,7 @@ import pyvista as pv
 from pyvistaqt import QtInteractor
 import bootstrap
 from acoustics import Cancelled
-from export_engine import (DEFAULT_EXPORT, geometry, cabinet_geometry, import_project, run_export,
+from export_engine import (DEFAULT_EXPORT, geometry, baffle_geometry, import_project, run_export,
                            project_files, coefficient_files, acoustic_origin)
 from plot_interaction import PlotInteraction
 from complex_to_ir_core import complex_to_ir
@@ -46,7 +46,7 @@ class ExportWorkspace(W.QWidget):
         super().__init__(); self.owner = owner; self.config = deepcopy(DEFAULT_EXPORT)
         self.job = None; self.result = None; self.selected = 0; self.destination = None
         self.controls = {}; self.loading = False; self.dirty = True; self.pending_preview = False
-        self.generation = 0; self.scene_initialized = False; self.full_limits = {}
+        self.generation = 0; self.scene_initialized = False; self.full_limits = {}; self.baffle_visible = True
         self.preview_cache = PreviewCache(); self.free_zoom_out = True
         self.busy_timer = C.QTimer(self); self.busy_timer.setSingleShot(True); self.busy_timer.setInterval(500)
         self.busy_timer.timeout.connect(self.show_busy)
@@ -151,8 +151,12 @@ class ExportWorkspace(W.QWidget):
         frequency.setFixedWidth(116)
         self.controls['stage2_origin_frequency_hz'] = frequency
         frequency.valueChanged.connect(lambda value: self.change('stage2_origin_frequency_hz', value)); bar.addWidget(frequency); bar.addStretch()
-        for name, fn in [('Top', lambda: self.camera('top')), ('Front', lambda: self.camera('front')), ('Iso', lambda: self.camera('iso')), ('Save image…', self.save_image)]:
+        for name, fn in [('Top', lambda: self.camera('top')), ('Front', lambda: self.camera('front')), ('Iso', lambda: self.camera('iso'))]:
             button = W.QPushButton(name); button.clicked.connect(fn); bar.addWidget(button)
+        self.baffle_button = W.QPushButton('Baffle'); self.baffle_button.setCheckable(True)
+        self.baffle_button.setChecked(True); self.baffle_button.setToolTip('Show or hide the flat project baffle.')
+        self.baffle_button.setStyleSheet('QPushButton:checked { background: #285b85; color: white; }'); self.baffle_button.toggled.connect(self.set_baffle_visible); bar.addWidget(self.baffle_button)
+        button = W.QPushButton('Save image...'); button.clicked.connect(self.save_image); bar.addWidget(button)
         # Export's 3D scene is resized continuously while the user drags the
         # workspace splitters.  The periodic auto-update render can re-enter
         # QVTK's paint path during those resizes, so render only on explicit
@@ -427,11 +431,12 @@ class ExportWorkspace(W.QWidget):
         for elevation, azimuth, strength in [(30, -40, .95), (-20, 45, .3), (55, 145, .6)]:
             light = pv.Light(light_type='camera light', intensity=strength); light.set_direction_angle(elevation, azimuth); p.add_light(light)
         xyz = data['xyz']; scale = max(.2, float(np.max(np.linalg.norm(xyz-data['origin'], axis=1))))
-        vertices, named, known = cabinet_geometry(self.config)
-        if known:
-            faces = [4, 0, 1, 2, 3, 4, 4, 7, 6, 5, 4, 0, 4, 5, 1, 4, 1, 5, 6, 2, 4, 2, 6, 7, 3, 4, 3, 7, 4, 0]
-            p.add_mesh(pv.PolyData(vertices, faces), color='#345268', smooth_shading=False, specular=.65, specular_power=30, show_edges=True)
-            p.add_mesh(pv.PolyData(vertices[:4], [4, 0, 1, 2, 3]), color='#52798e', specular=.6)
+        vertices, named, known = baffle_geometry(self.config)
+        if known and self.baffle_visible:
+            # Show only the front baffle plane. Cabinet depth is not part of this view.
+            baffle = pv.PolyData(vertices[:4], [4, 0, 1, 2, 3])
+            p.add_mesh(baffle, color='#7199b0', opacity=1., lighting=False, culling=False,
+                       show_edges=True, edge_color='#c7e1ed', line_width=2, name='baffle', pickable=False)
         # Mark the actual reference origin at the arrow stem, not the unused
         # world-coordinate zero when the project origin has been offset.
         p.add_mesh(pv.Sphere(radius=scale*.012, center=data['origin']), color='#7ae2b1', specular=.8)
@@ -489,7 +494,11 @@ class ExportWorkspace(W.QWidget):
         else: self.camera('iso')
         self.scene_key = scene_key
         self.scene_initialized = True; self.highlight()
-        self.scene_note.setText(f'{len(xyz)} exact export positions · click a point to inspect · drag to orbit · '+('Project cabinet' if known else 'No project cabinet geometry loaded'))
+        self.scene_note.setText(f'{len(xyz)} exact export positions · click a point to inspect · drag to orbit · '+(('Project baffle shown' if self.baffle_visible else 'Project baffle hidden') if known else 'No project baffle geometry loaded'))
+
+    def set_baffle_visible(self, visible):
+        self.baffle_visible = bool(visible)
+        self.update_scene()
 
     def camera(self, mode='iso'):
         self.plotter.disable_parallel_projection()

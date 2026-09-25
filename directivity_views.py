@@ -4,6 +4,33 @@ import pyvista as pv
 from plots import audio_ticks, audio_frequency
 
 
+def position_globe_handle(pane, ax, rotation):
+    """Keep the grab handle attached to the globe's angular orientation."""
+    key = pane._globe_rotation_axes[ax]
+    angle = np.deg2rad((140 if key == 'horizontal' else 40) + rotation)
+    radial = np.array([np.cos(angle), np.sin(angle)])
+    tangent = np.array([-radial[1], radial[0]])
+    center = np.array([.5, .5])
+    grip = center + .68*radial
+    pane._globe_handles[ax] = tuple(grip)
+    stem, hook, arrow = pane._globe_handle_artists[ax]
+    stem_points = center + np.outer([.52, .648], radial)
+    stem.set_data(stem_points[:, 0], stem_points[:, 1])
+    arc_angles = np.linspace(np.pi, np.deg2rad(430), 25)
+    arc_points = grip + .032*(np.outer(np.cos(arc_angles), radial) +
+                               np.outer(np.sin(arc_angles), tangent))
+    hook.set_data(arc_points[:, 0], arc_points[:, 1])
+    end_angle = arc_angles[-1]
+    direction = -np.sin(end_angle)*radial + np.cos(end_angle)*tangent
+    side = np.array([-direction[1], direction[0]])
+    end = arc_points[-1]
+    tip = end + .015*direction
+    wings = np.array([end - .004*direction + .011*side,
+                      end - .004*direction - .011*side])
+    arrow_points = np.array([end, tip, wings[0], tip, wings[1]])
+    arrow.set_data(arrow_points[:, 0], arrow_points[:, 1])
+
+
 def cut_data(sphere, relative, config):
     angles, horizontal, vertical = sphere.cuts(relative)
     mask = (sphere.freqs > 0) & (sphere.freqs >= config['fmin']) & (sphere.freqs <= config['fmax'])
@@ -76,10 +103,17 @@ def draw_globe(pane, sphere, relative):
     fig = pane.chart.fig; fig.clear(); fig.set_layout_engine('constrained')
     grid = fig.add_gridspec(1, 3, width_ratios=[1, 1, .045], wspace=.12)
     axes = []
+    rotation = c.get('globe_rotation', 0.)
+    rotations = rotation if isinstance(rotation, dict) else {'horizontal': float(rotation), 'vertical': float(rotation)}
+    pane._globe_rotation_axes = {}
+    pane._globe_handles = {}
+    pane._globe_handle_artists = {}
     for column, (title, values) in enumerate([('Horizontal', h), ('Vertical', v)]):
         ax = fig.add_subplot(grid[0, column], projection='polar'); axes.append(ax)
         ax.set_anchor('C'); ax.set_title(title, pad=20)
-        ax.set_theta_zero_location('S', offset=c.get('globe_rotation', 0.)); ax.set_theta_direction(1)
+        key = title.lower()
+        pane._globe_rotation_axes[ax] = key
+        ax.set_theta_zero_location('S', offset=rotations.get(key, 0.)); ax.set_theta_direction(1)
         ax.grid(False)
         img = ax.pcolormesh(np.deg2rad(angles), radius, values, shading='nearest', cmap='PColor', vmin=-c['span'], vmax=0)
         if c.get('contours', True):
@@ -92,8 +126,20 @@ def draw_globe(pane, sphere, relative):
         degrees = np.arange(0, 360, 30)
         ax.set_thetagrids(degrees, [f'{d if d <= 180 else d-360}\N{DEGREE SIGN}' for d in degrees])
         ax.grid(True, alpha=.35); ax.set_rlabel_position(0)
+        # The thin stem and curved grip use axes coordinates, so both scale
+        # with the globe and can be positioned as its angle changes.
+        text_color = ax.get_xticklabels()[0].get_color()
+        stem, = ax.plot([], [], transform=ax.transAxes, color=text_color,
+                        linewidth=2, solid_capstyle='round', clip_on=False, zorder=30)
+        hook, = ax.plot([], [], transform=ax.transAxes, color=text_color,
+                        linewidth=2, solid_capstyle='round', clip_on=False, zorder=30)
+        arrow, = ax.plot([], [], transform=ax.transAxes, color=text_color,
+                         linewidth=2, solid_capstyle='round', clip_on=False, zorder=30)
+        for artist in (stem, hook, arrow): artist.set_in_layout(False)
+        pane._globe_handle_artists[ax] = (stem, hook, arrow)
+        position_globe_handle(pane, ax, rotations.get(key, 0.))
     colour_axis = fig.add_subplot(grid[0, 2])
     fig.colorbar(img, cax=colour_axis, label='Relative level / dB')
     pane.interaction.finish(axes)
     pane.chart.done()
-    pane.note.setText('Horizontal / vertical globes share frequency and colour scales. Drag either outer edge to rotate both in 10-degree steps.')
+    pane.note.setText('Horizontal / vertical globes share frequency and colour scales. Drag the curved handle outside either globe to rotate it independently.')

@@ -17,6 +17,38 @@ try:
 except ImportError:
     SPEED_OF_SOUND = None
 
+def build_she_matrix(coords_sph, order_N, k):
+    """Unscaled dual basis shared by the solver and condition preflight."""
+    r, th, ph = coords_sph
+    kr = r * k
+    # Build Matrix
+    A_cols = []
+    final_N = order_N
+    for n in range(order_N + 1):
+        hn = hankel2(n, kr)
+        jn = spherical_jn(n, kr)
+        if not (np.all(np.isfinite(hn)) and np.all(np.isfinite(jn))):
+            final_N = n - 1
+            break
+        for m_ord in range(-n, n + 1):
+            Y = sph_harm_y(n, m_ord, th, ph)
+            A_cols.extend([hn * Y, jn * Y])
+
+    return (np.column_stack(A_cols) if A_cols else np.empty((len(r), 0), complex)), final_N
+
+
+def matrix_condition(coords_sph, order_N, k):
+    """Raw 2-norm condition, without coefficients or regularization."""
+    matrix, final_n = build_she_matrix(coords_sph, order_N, k)
+    if final_n != order_N or matrix.shape[0] < matrix.shape[1]:
+        return float('inf')
+    try:
+        singular = np.linalg.svd(matrix, compute_uv=False)
+    except np.linalg.LinAlgError:
+        return float('inf')
+    return float(singular[0] / singular[-1]) if singular.size and singular[-1] > 0 else float('inf')
+
+
 def _solve_one_frequency(
     f_hz: float,
     P_complex: np.ndarray,
@@ -40,27 +72,11 @@ def _solve_one_frequency(
             raise ValueError("Speed of Sound not found and 'k_val' not provided.")
         k = 2 * math.pi * f_hz / SPEED_OF_SOUND
 
-    r, th, ph = coords_sph
-    kr = r * k
     base_norm = np.linalg.norm(P_complex)
-
-    # Build Matrix
-    A_cols = []
-    final_N = order_N
-    for n in range(order_N + 1):
-        hn = hankel2(n, kr)
-        jn = spherical_jn(n, kr)
-        if not (np.all(np.isfinite(hn)) and np.all(np.isfinite(jn))):
-            final_N = n - 1
-            break
-        for m_ord in range(-n, n + 1):
-            Y = sph_harm_y(n, m_ord, th, ph)
-            A_cols.extend([hn * Y, jn * Y])
-
+    A_solve, final_N = build_she_matrix(coords_sph, order_N, k)
     if final_N < 0:
         return np.array([]), {'residual_norm': base_norm, 'cond_pre': 0.0, 'cond_post': 0.0, 'final_N': -1, 'stop_reason': "Instability"}
 
-    A_solve = np.column_stack(A_cols)
     b_solve = P_complex
 
     # Two-Threshold Progressive Lambda / Generalized Tikhonov Logic

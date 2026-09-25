@@ -316,6 +316,9 @@ def run_speed_of_sound_candidate_batch(
     use_process_pool=True
 ):
     workers = min(cpu_count(), len(candidates))
+    shared_pool = borrow_pool(workers) if use_process_pool else None
+    if shared_pool is not None:
+        workers = shared_pool.workers
     print(f"\n{label}: {candidates[0]:g} to {candidates[-1]:g} m/s ({len(candidates)} candidates)")
     print(f"Parallel candidate workers: {workers}")
 
@@ -325,7 +328,7 @@ def run_speed_of_sound_candidate_batch(
     ]
     if use_process_pool:
         ctx = get_context('spawn')
-        with borrow_pool(workers) or ctx.Pool(processes=workers) as pool:
+        with shared_pool or ctx.Pool(processes=workers) as pool:
             return list(pool.imap_unordered(_worker_speed_of_sound_candidate, worker_args))
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -415,6 +418,9 @@ def generate_3d_landscape_volumetric(context):
     # The low/high-frequency search branches can invoke grid scans concurrently.
     # Split CPU capacity between them so two full-grid pools cannot oversubscribe.
     grid_workers = max(1, cpu_count() // 2)
+    shared_pool = borrow_pool(grid_workers) if cfg.get('use_process_pool', True) else None
+    if shared_pool is not None:
+        grid_workers = shared_pool.workers
     res = cfg['grid_res_mm']
     x_vals = np.arange(cfg['x_bounds'][0], cfg['x_bounds'][1] + res, res)
     y_vals = np.arange(cfg['y_bounds'][0], cfg['y_bounds'][1] + res, res)
@@ -446,7 +452,7 @@ def generate_3d_landscape_volumetric(context):
                 sys.stdout.flush()
 
     if cfg.get('use_process_pool', True):
-        with borrow_pool(grid_workers) or get_context('spawn').Pool(grid_workers) as pool:
+        with shared_pool or get_context('spawn').Pool(grid_workers) as pool:
             consume_results(pool.imap(_worker_landscape_3d, pixels, chunksize=200))
     else:
         with ThreadPoolExecutor(max_workers=grid_workers) as executor:

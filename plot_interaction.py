@@ -75,12 +75,20 @@ class PlotInteraction(C.QObject):
     def press(self, event):
         ax = self.main_ax
         if event.button == 1 and self.pane.config.get('kind', '').startswith('globe_') and ax is not None and event.x is not None and event.y is not None:
-            for ax in self.axes:
-                center = ax.transAxes.transform((.5, .5))
+            handles = getattr(self.pane, '_globe_handles', {})
+            axes_keys = getattr(self.pane, '_globe_rotation_axes', {})
+            stored = self.pane.config.get('globe_rotation', 0.)
+            rotations = dict(stored) if isinstance(stored, dict) else {'horizontal': float(stored), 'vertical': float(stored)}
+            for candidate in self.axes:
+                center = candidate.transAxes.transform((.5, .5))
                 dx, dy = event.x-center[0], event.y-center[1]
-                radius = min(ax.bbox.width, ax.bbox.height)/2
-                if abs(np.hypot(dx, dy)-radius) <= max(16., radius*.09):
-                    self.globe_drag = (ax, center, np.arctan2(dy, dx), self.pane.config.get('globe_rotation', 0.))
+                radius = min(candidate.bbox.width, candidate.bbox.height)/2
+                handle = candidate.transAxes.transform(handles.get(candidate, (.5, .5)))
+                on_handle = np.hypot(event.x-handle[0], event.y-handle[1]) <= max(14., radius*.12)
+                on_edge = abs(np.hypot(dx, dy)-radius) <= max(16., radius*.09)
+                if on_handle or on_edge:
+                    key = axes_keys.get(candidate, 'horizontal')
+                    self.globe_drag = (candidate, center, np.arctan2(dy, dx), rotations.get(key, 0.), key)
                     self.pane.chart.fig.set_layout_engine('none')
                     self.pane.chart.canvas.setCursor(C.Qt.ClosedHandCursor)
                     return
@@ -97,15 +105,19 @@ class PlotInteraction(C.QObject):
 
     def move(self, event):
         if self.globe_drag and event.x is not None and event.y is not None:
-            ax, center, previous, rotation = self.globe_drag
+            ax, center, previous, rotation, key = self.globe_drag
             angle = np.arctan2(event.y-center[1], event.x-center[0])
             rotation += np.degrees(np.arctan2(np.sin(angle-previous), np.cos(angle-previous)))
-            self.globe_drag = (ax, center, angle, rotation)
+            self.globe_drag = (ax, center, angle, rotation, key)
             snapped = float(10*np.round(rotation/10)) % 360
-            self.pane.config['globe_rotation'] = snapped
-            for axis in self.axes:
-                axis.set_theta_zero_location('S', offset=snapped)
-                axis.set_rlabel_position(0)
+            rotations = self.pane.config.get('globe_rotation', 0.)
+            rotations = dict(rotations) if isinstance(rotations, dict) else {'horizontal': float(rotations), 'vertical': float(rotations)}
+            rotations[key] = snapped
+            self.pane.config['globe_rotation'] = rotations
+            ax.set_theta_zero_location('S', offset=snapped)
+            ax.set_rlabel_position(0)
+            from directivity_views import position_globe_handle
+            position_globe_handle(self.pane, ax, snapped)
             self.pane.chart.canvas.draw_idle()
             return
         if self.pan and event.x is not None and event.y is not None:
