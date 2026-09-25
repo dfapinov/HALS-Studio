@@ -14,8 +14,6 @@ Controls the HALS measurement robot, audio interface and measurement sequence. I
 **HALS Studio — Part 2: Processing, Analysis & Export**  
 Takes the measurement dataset produced by HALS Control and turns it into a 'holographic' acoustic model. Studio provides tools for inspecting and analysing the reconstructed sound field and an Export workspace for extracting FRD and impulse-response (IR) data for use in other applications.
 
----
-
 ![HALS Studio](./images/main_cartoon_small.png)
 
 # What makes HALS different?
