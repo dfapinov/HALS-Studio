@@ -9,7 +9,7 @@ OUTPUT_DIR_FDW    = "outputs"       # Root directory for all pipeline outputs.
 OUTPUT_FILENAME_FDW   = "complex_data.npz" # Name of the consolidated complex data file. complex_data_centered.npz
 
 # --- FDW (Frequency Dependent Window) Parameters ---
-FDW_RFT_MS        = 5.0             # Reflection Free Time (ms): Defines the fixed window length at high frequencies.
+FDW_RFT_MS        = 5.0             # Reflection Free Time (ms): Defines the highlighted reflection-free range and Stage 3 lower frequency.
 FDW_OCT_RES       = 12              # Target Octave Resolution: Sets the fractional octave smoothing (e.g., 12 for 1/12th oct).
 FDW_MAX_CAP_MS    = 200  #None      # Optional cap (ms) on the maximum window length. Will limit oct res at LF.
 

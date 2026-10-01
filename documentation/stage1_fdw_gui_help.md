@@ -72,7 +72,7 @@ The progress of Stage 1 processing is displayed in the console pane. The viewer 
 
 The clean time window before the first significant reflection reaches the microphone. It should be determined and calculated based on the nearest reflecting boundary to the HALS measurement system. Use the built-in calculator to help.
 
-At high frequencies, the frequency dependent windowing uses this as the fixed window length.
+FDW continues shortening its windows through the high end. RFT defines the highlighted reflection-free range and the saved Stage 3 trial boundary.
 
 Note that the Reflection Free Time and the Octave Resolution settings interact to set the reflection free frequency range.
 
@@ -124,26 +124,19 @@ The value is in dBFS. For example, `-3.0` means the loudest peak in the batch is
 
 Turns complex frequency-domain smoothing on or off. Enabled by default.
 
-For normal HALS processing, leave this enabled. Turn it off when you want to inspect or compare the raw FDW result. With smoothing disabled, the sliding complex-smoothing pass is skipped.
+For normal HALS processing, leave this enabled. Turn it off when you want to inspect or compare the raw FDW result. With smoothing disabled, the complex-smoothing pass is skipped.
 
 ### Smoothing Octave Res (1/x)
 
-The base resolution of the complex smoothing pass.
+The fixed octave resolution of the complex smoothing pass.
 
 Stage 1 has two smoothing effects. FDW naturally smooths the response through time windowing. Complex smoothing is a separate pass that averages the complex response, affecting both magnitude and phase.
 
 `Auto` means the app uses twice the FDW octave-resolution denominator. For example, if **Octave Resolution (1/x)** is `12`, the base complex smoothing is `24` (1/24 octave). This adds a light touch of complex smoothing where windowing already provides most of the smoothing.
 
-### Sliding HF smoothing
+### Fixed octave smoothing
 
-Always used when complex smoothing is enabled. Below the fixed-window RFT transition, complex smoothing keeps the base bandwidth. Above the transition, its bandwidth gradually increases toward the selected FDW octave bandwidth as frequency increases.
-
-For example, with FDW set to `12` and smoothing set to `Auto`, complex smoothing stays at 1/24 octave in the FDW range and widens toward 1/12 octave in the high-frequency fixed-window range.
-
-The adjustment follows the estimated number of cycles within the fixed window, using the same cycles-to-resolution relationship as FDW. There is no separate eased-onset frequency band. As the fixed window contributes less smoothing in octave terms, complex smoothing progressively picks up the difference.
-
-Sliding smoothing is always used when complex smoothing is enabled. A manually selected base denominator must be at least the FDW denominator (for example, 24 for FDW 12). Older project settings cannot select fixed smoothing.
-
+The same fractional-octave kernel is used through the high end. Auto uses twice the FDW denominator: FDW 1/12 uses smoothing at 1/24 octave. Manual positive denominators are also supported.
 
 ## Advanced Settings
 
@@ -250,7 +243,7 @@ To solve this, the practical approach uses a series of overlapping windows rathe
 
 The **Reflection-Free Time (RFT)** is the window of "clean" data available in your specific physical setup. It is the time gap between the direct sound arriving at the microphone and the very first reflection (usually from the floor or a nearby wall) hitting the capsule.
 
-Since this period is intrinsically reflection-free, it defines our starting window length. Because this window is fixed in time, the number of wave cycles it contains changes with frequency. To maintain a target octave resolution, there is a **"Frequency Floor"**â€”the point below which a fixed RFT window simply doesn't have enough cycles to give you the detail you want.
+This period defines a reflection-free reference boundary rather than a minimum window length. Because this window is fixed in time, the number of wave cycles it contains changes with frequency. To maintain a target octave resolution, there is a **"Frequency Floor"**â€”the point below which a fixed RFT window simply doesn't have enough cycles to give you the detail you want.
 
 To determine the Reflection-Free Time (RFT), you need to calculate the difference between the direct sound path and the shortest reflected path (usually the floor). If your speaker and microphone are at the same height ($h$) and separated by a distance ($d$), the reflected sound travels a longer, triangular path. By calculating this distance difference and dividing it by the speed of sound ($c \approx 343\text{ m/s}$), you find the "time window" available before the first reflection corrupts your measurement.
 
@@ -274,7 +267,9 @@ $$\text{RFT (ms)} = \left( \frac{\sqrt{D^2 + 4D_r^2} - D}{343} \right) \times 10
 2) 5ms RFT, 1/12 target Oct res = 17 cycles needed = 3300Hz frequency floor.
 3) 10ms RFT, 1/12 target Oct res = 17 cycles needed = 1650Hz frequency floor.
 
-Above this Frequency Floor, the fixed RFT window is actually longer than necessary for the target resolution, so we keep it as is. Only below this RFT window do we begin to apply the FDW logic of expanding the window to maintain resolution. At this point, we are making a conscious trade-off: we accept a small amount of reflection data in exchange for maintaining the target octave resolution at lower frequencies.
+Above this frequency floor, FDW continues shortening the window to maintain the target octave resolution. The RFT highlight identifies windows that fit within the reflection-free time. Below the boundary, longer windows may include reflections. The existing maximum window cap and available IR length still limit low-frequency resolution. The RFT boundary remains saved for Stage 3 trials.
+
+At the upper data limit, a window centre is omitted if less than half the normal frequency step remains above it (measured in octaves). The shortest retained window then covers the remaining high-frequency range. For 48 kHz data with three windows per octave, the last centre is about 19.05 kHz and its window continues to 24 kHz. The existing Nyquist taper is retained.
 
 ---
 
@@ -296,14 +291,7 @@ By applying smoothing to the Real and Imaginary parts simultaneously, we smooth 
 
 ## How Windowing and Complex Smoothing Share the Work
 
-The primary smoothing mechanism changes across the frequency range:
-
-- **FDW range:** the window length follows frequency to maintain approximately the requested octave resolution. Windowing provides most of the smoothing, while the narrower complex-smoothing kernel adds a light touch.
-- **Fixed-window RFT range:** the window length stays constant, so it contains more cycles as frequency rises. Its smoothing bandwidth becomes narrower in octave terms. Sliding complex smoothing gradually widens to compensate, approaching the requested FDW octave bandwidth at high frequencies.
-
-For FDW 1/12 octave with `Auto` complex smoothing, the kernel therefore stays at 1/24 octave below the transition and approaches 1/12 octave above it. Its width follows the cycle-based estimate of the fixed window's remaining smoothing contribution, rather than the crossfade between FDW windows.
-
-This is an approximate balance between two different smoothing mechanisms, not an exact combined octave resolution. In particular, FDW 1/12 plus complex smoothing 1/24 produces slightly stronger smoothing than FDW 1/12 alone.
+FDW maintains the requested octave resolution through the high end. Optional complex smoothing uses a fixed fractional-octave kernel throughout. **Auto** selects twice the FDW denominator: FDW 1/12 uses complex smoothing at 1/24 octave. The combined smoothing is slightly stronger than FDW alone. The existing low-frequency cap and available IR length still limit resolution where longer windows would be needed.
 
 ## The Bonus Effect: Reflection Rejection
 Beyond just making the data easier to process, Complex Smoothing provides a secondary, powerful benefit: it further cleans the measurement of room reflections.

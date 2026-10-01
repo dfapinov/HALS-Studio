@@ -52,7 +52,7 @@ Code Pipeline Overview
 
 1) SCAN: Reads all .wav files in the input directory, determines global max samples needed, and caches peaks.
 2) SORT: Parses filenames using natural sorting to ensure deterministic ordering.
-3) WINDOW CALCULATION: Determines frequency-dependent window lengths based on target octave resolution and reflection-free time.
+3) WINDOW CALCULATION: Determines frequency-dependent window lengths based on target octave resolution through the high end, subject to the LF cap.
 4) PARALLEL PROCESSING: Distributes files and their cached peaks across multiple CPU cores.
 5) FDW ANALYSIS: Windows the IR in the time domain, applies frequency-specific weights, and re-stitches in the frequency domain.
 6) COMPLEX SMOOTHING: Optionally performs phase-aware Gaussian smoothing on the combined response.
@@ -100,7 +100,7 @@ def load_and_prep_ir(file_path, crop_samples=None):
 
 def process_file_worker(file_info, ir_dir, gain, fs_common, n_fft, freqs, eff_smooth_res, crop_samples,
                         enable_smoothing, fdw_rft_ms, fdw_oct_res, fdw_max_cap_ms,
-                        fdw_windows_per_oct, fdw_alpha_hf, fdw_alpha_lf, sliding_hf=True, compare_smoothing=False):
+                        fdw_windows_per_oct, fdw_alpha_hf, fdw_alpha_lf, sliding_hf=False, compare_smoothing=False):
     """
     Worker function to process a single IR file.
     Applies gain, zero padding to optimal FFT size, FDW analysis, and optional smoothing.
@@ -123,14 +123,11 @@ def process_file_worker(file_info, ir_dir, gain, fs_common, n_fft, freqs, eff_sm
     
     H_smooth = None
     if enable_smoothing:
-        resolution = eff_smooth_res
-        from experimental_smoothing import sliding_resolution
-        resolution = sliding_resolution(freqs, fdw_rft_ms, fdw_oct_res, eff_smooth_res, fdw_oct_res)
+        H_smooth = apply_complex_smoothing(freqs, H_raw, eff_smooth_res, m['t_peak'])
+        m['sliding_hf'] = False
         if compare_smoothing:
-            m['fixed_smoothing'] = apply_complex_smoothing(freqs, H_raw, eff_smooth_res, m['t_peak'])
-        m['sliding_hf'] = True
-        H_smooth = apply_complex_smoothing(freqs, H_raw, resolution, m['t_peak'])
-        
+            m['fixed_smoothing'] = H_smooth
+
     return fname, H_raw, H_smooth, m
 
 # ─── 3. Main Pipeline ─────────────────────────────────────────────────────────
@@ -155,7 +152,7 @@ def fdwsmooth(
     target_peak_db=-3.0,
     keep_raw_and_smoothed=False,
     use_process_pool=True,
-    sliding_hf=True, compare_smoothing=False, workers=None
+    sliding_hf=False, compare_smoothing=False, workers=None
 ):
     """
     Main pipeline function that orchestrates the scanning, parallel processing,
@@ -205,18 +202,21 @@ def fdwsmooth(
     
     # Prepare worker settings
     gain = (10**(target_peak_db/20.0) / max_peak) if enable_auto_gain and max_peak > 0 else 1.0
-    eff_smooth_res = smoothing_oct_res if smoothing_oct_res else fdw_oct_res
+    eff_smooth_res = (2 * fdw_oct_res if smoothing_oct_res is None or
+                      str(smoothing_oct_res).lower() == "auto" or smoothing_oct_res == 0
+                      else float(smoothing_oct_res))
     from session_pool import borrow_pool
     num_workers = int(workers) if workers else (os.cpu_count() or 1)
     shared_pool = borrow_pool(num_workers) if use_process_pool else None
     if shared_pool is not None: num_workers = shared_pool.workers
-    sliding_hf = True
-    if enable_smoothing and eff_smooth_res < fdw_oct_res:
-        raise ValueError("Sliding HF smoothing requires base resolution >= FDW resolution.")
+    # Retain legacy keyword compatibility; Stage 1 always uses fixed octave smoothing.
+    sliding_hf = False
+    if enable_smoothing and (not np.isfinite(eff_smooth_res) or eff_smooth_res <= 0):
+        raise ValueError("Smoothing resolution must be positive and finite.")
     
     print(f"Configuration: N_fft={n_fft}, Freq Bins={len(freqs)}, Gain={20*np.log10(gain):.2f}dB")
     backend = "processes" if use_process_pool else "threads"
-    if enable_smoothing: print(f"Complex smoothing: {'sliding HF' if sliding_hf else 'fixed'}; base 1/{eff_smooth_res:g} octave" + (f" -> HF 1/{fdw_oct_res:g} octave" if sliding_hf else ""))
+    if enable_smoothing: print(f"Complex smoothing: fixed; 1/{eff_smooth_res:g} octave")
     print(f"Parallel Processing: Using {num_workers} {backend}.")
 
     results_raw, results_smooth, meta = {}, {}, {}
@@ -324,7 +324,7 @@ def fdwsmooth(
                 np.savez(out_path, **build_save_payload(results_smooth))
                 print(f"Saved SMOOTHED data to {out_path} (Raw discarded)")
     
-        if enable_smoothing and sliding_hf and compare_smoothing:
+        if enable_smoothing and compare_smoothing:
             base, ext = os.path.splitext(output_filename)
             fixed_path = os.path.join(out_dir, f'{base}_fixed_smoothing{ext}')
             np.savez(fixed_path, **build_save_payload({name: row['fixed_smoothing'] for name, row in meta.items()}))

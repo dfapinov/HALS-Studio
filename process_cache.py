@@ -74,3 +74,46 @@ def hydrate_stage2(result, npz_path):
         source.close()
     return (result[0], parsed['freqs'], parsed['filenames'], parsed['complex_data'],
             (parsed['r_arr'], parsed['th_arr'], parsed['ph_arr']), result[5], data)
+
+
+def load_stage4_summary(coeff_path):
+    import h5py
+    with h5py.File(coeff_path) as source:
+        return {key: source[key][()] for key in ('freqs', 'N_used', 'cond', 'pct_error')}
+
+
+def hydrate_stage4(npz_path, coeff_path, *, process_pool=None):
+    """Load saved NPZ/H5 into the original 1/96-octave spatial computation."""
+    from process_engine.utils import load_and_parse_npz, load_she_h5
+    from process_engine.spatial_error_viewer import compute_spatial_error_data
+    she = load_she_h5(coeff_path)
+    parsed = load_and_parse_npz(npz_path)
+    try:
+        freqs = parsed['freqs']
+        indices = np.searchsorted(freqs, she['freqs'])
+        if (np.any(indices >= len(freqs)) or
+                not np.allclose(freqs[indices], she['freqs'], rtol=1e-8, atol=1e-8)):
+            raise ValueError('The measurement NPZ and coefficients have different frequency bins.')
+        if not parsed['filenames']:
+            raise ValueError('The measurement NPZ contains no usable microphone coordinates.')
+        measured = np.column_stack([parsed['complex_data'][name][indices]
+                                    for name in parsed['filenames']])
+        coords = np.column_stack((np.degrees(parsed['th_arr']),
+                                  np.degrees(parsed['ph_arr']), parsed['r_arr']))
+        speed = she.get('speed_of_sound_mps')
+        if speed is None:
+            speed = parsed.get('speed_of_sound_mps')
+        speed = 343. if speed is None else float(speed)
+        if she['origins_mm'] is None:
+            she['origins_mm'] = np.zeros((len(she['freqs']), 3))
+        _, _, _, sub_freqs, sub_orders, measured, reconstructed = compute_spatial_error_data(
+            she, measured, coords, speed, process_pool=process_pool, show_progress=False)
+        return dict(freqs=sub_freqs, N_used=sub_orders, P_measured=measured,
+                    coords_sph=coords, speed_of_sound_mps=speed,
+                    P_reconstructed=reconstructed)
+    finally:
+        parsed['raw_data'].close()
+
+
+def spatial_reconstruction(result, index):
+    return result['P_reconstructed'][index]

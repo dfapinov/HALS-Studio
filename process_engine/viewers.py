@@ -52,7 +52,7 @@ class FDWView:
         self.ax1 = self.fig.add_subplot(self.gs[0])
         self.ax2 = self.fig.add_subplot(self.gs[1]) 
         self.ax3 = self.fig.add_subplot(self.gs[2], sharex=self.ax1)
-        self.fig.subplots_adjust(bottom=0.08, right=0.88, left=0.08, top=0.95)
+        self.fig.subplots_adjust(bottom=0.08, right=0.79, left=0.08, top=0.95)
 
     @staticmethod
     def _first_non_dc_freq(freqs):
@@ -82,6 +82,7 @@ class FDWView:
     def update_view(self, fname, index, freqs, H_raw, H_smooth, meta_dict, wav_data, fs, fdw_rft_ms):
         m = meta_dict
         plot_f_min = self._first_non_dc_freq(freqs)
+        plot_f_max = fs / 2
         
         self.ax1.clear()
 
@@ -97,18 +98,19 @@ class FDWView:
 
         mag_y_min, mag_y_max = self.ax1.get_ylim()
         mag_y_mid = mag_y_min + ((mag_y_max - mag_y_min) * 0.5)
-        window_label_step = (mag_y_max - mag_y_min) * 0.045
+        window_label_step = (mag_y_max - mag_y_min) * 0.14
         
         f_trans = m['f_trans']
         f_anchor = m.get('f_lf_anchor', 200.0)
         
         self.ax1.axvspan(f_trans, fs/2, color='#E0F7FA', alpha=0.5)
-        self.ax1.text(np.sqrt(f_trans*(fs/2)), mag_y_mid, f"Fixed Window\n({fdw_rft_ms} ms)", 
-                     color='#006064', fontsize=9, fontweight='bold', va='center', ha='center', 
+        self.ax1.text(np.sqrt(f_trans*(fs/2)), 0.9, f"RFT range\n({fdw_rft_ms} ms)",
+                     color='#006064', fontsize=9, fontweight='bold', va='center', ha='center',
+                     transform=self.ax1.get_xaxis_transform(),
                      bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'), zorder=20)
         
         cmap = plt.get_cmap('YlOrRd')
-        num_octaves = np.log2(f_trans / plot_f_min) if f_trans > plot_f_min else 1
+        num_octaves = np.log2(plot_f_max / plot_f_min) if plot_f_max > plot_f_min else 1
         
         self.ax2.clear()
         
@@ -140,16 +142,16 @@ class FDWView:
 
         valid_band_idx = 0 
         for i, fc in enumerate(m['f_centers']):
-            if fc < plot_f_min or fc > f_trans: continue
+            if fc < plot_f_min or fc > plot_f_max: continue
             
-            norm_pos = np.log2(f_trans / fc) / num_octaves
+            norm_pos = np.log2(plot_f_max / fc) / num_octaves
             line_color = cmap(0.1 + (0.5 * np.clip(norm_pos, 0, 1)))
             self.ax1.axvline(fc, color=line_color, ls='-', alpha=0.8, linewidth=1.2)
             
             t_win_ms = m['t_windows'][i] * 1000
-            label_y = mag_y_mid + (((valid_band_idx % 2) * 2) - 1) * window_label_step
-            label_va = 'top' if valid_band_idx % 2 == 0 else 'bottom'
-            self.ax1.text(fc, label_y, f"{fc:.0f}Hz\n{t_win_ms:.1f}ms", ha='center', va=label_va, fontsize=8, bbox=dict(facecolor='white', alpha=0.6, edgecolor='none'), zorder=20)
+            label_y = mag_y_mid + ((valid_band_idx % 3) - 1) * window_label_step
+            label_va = 'center'
+            self.ax1.text(fc, label_y, f"{fc:.0f}Hz\n{t_win_ms:.1f}ms", ha='right' if np.isclose(fc, plot_f_max) else 'center', va=label_va, fontsize=8, bbox=dict(facecolor='white', alpha=0.6, edgecolor='none'), zorder=20)
             
             if len(t_ms) > 0:
                 win_len_ms = t_win_ms
@@ -175,7 +177,8 @@ class FDWView:
                 self.ax2.plot(t_full[valid], y_full[valid], color=line_color, lw=2, alpha=0.8, zorder=10, label=f"{fc:.0f}Hz: {win_len_ms:.1f}ms")
             valid_band_idx += 1
 
-        self.ax2.legend(loc='center left', bbox_to_anchor=(1.01, 0.8), fontsize=9)
+        self.ax2.legend(loc='upper left', bbox_to_anchor=(0.80, 0.90),
+                        bbox_transform=self.fig.transFigure, fontsize=8, labelspacing=0.3)
         self.ax2.set_ylabel("Amplitude")
         self.ax2.set_xlabel("Time (ms)")
         self.ax2.set_title("Impulse Response Waveform & FDW Envelopes")

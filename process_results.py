@@ -118,10 +118,10 @@ class Results(W.QWidget):
                 from viewer_theme import colour
                 probe=colour('#47d7ec')
                 ramp=LinearSegmentedColormap.from_list('fdw',['#b49bf5','#7ebeff','#68d9ca'])
-                transition=float(meta[name]['f_trans'])
-                centers=np.asarray(meta[name]['f_centers']);valid=centers[(centers>=view.ax1.get_xlim()[0]) & (centers<=transition)]
+                top_frequency=fs/2
+                centers=np.asarray(meta[name]['f_centers']);valid=centers[(centers>=view.ax1.get_xlim()[0]) & (centers<=top_frequency)]
                 low=max(float(valid.min()) if len(valid) else 10.,1.)
-                def window_color(freq):return ramp(np.clip(np.log(max(freq,low)/low)/max(np.log(transition/low),1e-9),0,1))
+                def window_color(freq):return ramp(np.clip(np.log(max(freq,low)/low)/max(np.log(top_frequency/low),1e-9),0,1))
                 for i,line in enumerate(view.ax2.lines):
                     if i<2:line.set_color(probe if i==0 else '#ffb56f')
                     else:
@@ -139,6 +139,9 @@ class Results(W.QWidget):
                         for target,source in zip(legend.legend_handles,handles):target.set_color(source.get_color())
                 view.ax3.lines[0].set_color(probe)
             for patch in list(view.ax1.patches): patch.remove()
+            rft_lower = float(meta[name]['f_trans'])
+            if rft_lower < fs / 2:
+                view.ax1.axvspan(rft_lower, fs / 2, color='#47d7ec', alpha=0.12)
             curves = [line for line in view.ax1.lines if len(line.get_xdata()) > 2]
             if smooth and p.values[1]['enable_smoothing']:
                 smoothing_label = 'FDW + Smoothing' if meta[name].get('sliding_hf') else 'FDW + fixed smoothing'
@@ -232,7 +235,9 @@ class Results(W.QWidget):
                 panel.setGeometry(round(bounds.x0/scale)+(round(bounds.width/scale)-available_width)//2,round(self.canvas.height()-bounds.y1/scale),available_width,available_height)
             self.canvas.mpl_connect('draw_event',position);self.canvas.mpl_connect('resize_event',position);panel.show();self.canvas.draw();position();return
         elif kind=='Spatial error':
-            f=r['freqs'];i=int(np.argmin(abs(f-p.frequency.value())));xyz=p.spherical_xyz(r['coords_sph']);view=VIEWS['SpatialErrorView']();view.update_view(*xyz.T,f[i],r['N_used'][i],r['P_measured'][i],r['P_measured'][i]-r['residual_vector'][i],p.threshold.value())
+            from process_cache import spatial_reconstruction
+            r=p.spatial_results()
+            f=r['freqs'];i=int(np.argmin(abs(f-p.frequency.value())));xyz=p.spherical_xyz(r['coords_sph']);view=VIEWS['SpatialErrorView']();view.update_view(*xyz.T,f[i],r['N_used'][i],r['P_measured'][i],spatial_reconstruction(r,i),p.threshold.value())
             self.show_figure(view.fig)
             from matplotlib.widgets import Slider
             frequency_ax=view.fig.add_axes([.11,.90,.132,.018]);floor_ax=view.fig.add_axes([.11,.815,.132,.018])
@@ -250,7 +255,7 @@ class Results(W.QWidget):
                 p.frequency.blockSignals(True);p.frequency.setValue(float(f[index]));p.frequency.blockSignals(False)
                 p.threshold.blockSignals(True);p.threshold.setValue(floor_slider.val);p.threshold.blockSignals(False)
                 angles=(view.ax.elev,view.ax.azim)
-                view.update_view(*xyz.T,f[index],r['N_used'][index],r['P_measured'][index],r['P_measured'][index]-r['residual_vector'][index],floor_slider.val)
+                view.update_view(*xyz.T,f[index],r['N_used'][index],r['P_measured'][index],spatial_reconstruction(r,index),floor_slider.val)
                 view.ax.view_init(*angles);frequency_text.set_text(f'Frequency\n{f[index]:,.1f} Hz');floor_text.set_text(f'Floor\n{floor_slider.val:g} dB');theme(view.fig);self.canvas.draw_idle()
             for slider in self.spatial_sliders:slider.poly.set_facecolor('#599bda');slider.on_changed(update)
             theme(view.fig);self.canvas.draw_idle();return

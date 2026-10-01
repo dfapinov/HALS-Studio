@@ -25,7 +25,7 @@ def run(request):
             fdw_alpha_hf=float(v['fdw_alpha_hf']),fdw_alpha_lf=float(v['fdw_alpha_lf']),fdw_windows_per_oct=int(v['fdw_windows_per_oct']),
             peak_detect_threshold_db=float(v['peak_detect_threshold_db']),enable_auto_gain=v['enable_auto_gain'],target_peak_db=float(v['target_peak_db']),
             keep_raw_and_smoothed=v['keep_raw_and_smoothed'],use_process_pool=True,
-            sliding_hf=True, compare_smoothing=False, workers=request.get('workers'))
+            workers=request.get('workers'))
     elif stage==2:
         from stage2_centre_origin import run_origin_search,export_interpolated_origins
         if request.get('action') in ('save_origins','rescan'):

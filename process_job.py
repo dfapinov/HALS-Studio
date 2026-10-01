@@ -36,3 +36,20 @@ class ProcessJob(C.QThread):
         except Exception:
             self.message.emit(traceback.format_exc());self.completed.emit(dict(ok=False))
         finally:sys.stdout=stdout;sys.stderr=stderr;os.chdir(cwd)
+
+
+class SpatialErrorJob(C.QThread):
+    completed=C.Signal(dict)
+
+    def __init__(self,npz_path,coeff_path,pool,parent=None):
+        super().__init__(parent);self.npz_path=npz_path;self.coeff_path=coeff_path;self.pool=pool
+
+    def run(self):
+        try:
+            import process_cache
+            from session_pool import PoolView
+            result=process_cache.hydrate_stage4(self.npz_path,self.coeff_path,
+                                               process_pool=PoolView(SharedPool(self.pool)))
+            self.completed.emit(dict(ok=True,result=result))
+        except Exception as exc:
+            self.completed.emit(dict(ok=False,error=str(exc)))

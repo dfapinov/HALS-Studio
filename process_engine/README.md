@@ -6,7 +6,7 @@ calculation modules used by the Process, Analysis, and Export workspaces.
 export implementation; the workspaces import those same functions.
 
 `fdw_smoothing_core.py` is the maintained implementation used by Stage 1,
-including the sliding high-frequency smoothing kernel. `session_pool.py` is
+including FDW through the high end and fixed octave complex smoothing. `session_pool.py` is
 the Studio worker-pool adapter. Do not add a second engine directory for
 shared processing helpers.
 

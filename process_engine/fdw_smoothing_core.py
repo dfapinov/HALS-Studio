@@ -13,12 +13,11 @@ def calculate_cycles_from_oct_res(oct_res):
     return 1.0 / (2**(1.0/oct_res) - 1)
 
 def calculate_fdw_durations(freqs, oct_res, rft_ms, max_cap_ms):
-    t_rft_sec = rft_ms / 1000.0
+    # RFT remains a reference boundary, not a minimum HF window length.
     t_max_sec = max_cap_ms / 1000.0 if max_cap_ms else None
     target_cycles = calculate_cycles_from_oct_res(oct_res)
     
     durations = target_cycles / freqs
-    durations = np.maximum(durations, t_rft_sec) 
     
     if t_max_sec: 
         durations = np.minimum(durations, t_max_sec) 
@@ -121,6 +120,12 @@ def process_single_ir(ir_data, Fs, n_fft_common, freqs_common, T_peak_sec,
     if not F_CENTERS_LIST or F_CENTERS_LIST[-1] > f_floor_dynamic:
         F_CENTERS_LIST.append(f_floor_dynamic)
         
+    # Omit centres with less than half an octave-grid step of data above them.
+    # Keep at least one window for captures too short to support a full grid.
+    half_step = 2**(0.5 / fdw_windows_per_oct)
+    data_limit = min(f_limit, freqs_common[-1])
+    while len(F_CENTERS_LIST) > 1 and F_CENTERS_LIST[0] * half_step > data_limit:
+        F_CENTERS_LIST.pop(0)
     F_CENTERS = np.array(F_CENTERS_LIST)
     
     T_FDW_WINDOWS = calculate_fdw_durations(F_CENTERS, fdw_oct_res, fdw_rft_ms, fdw_max_cap_ms)
@@ -144,6 +149,11 @@ def process_single_ir(ir_data, Fs, n_fft_common, freqs_common, T_peak_sec,
             W_n[ramp_idx] = (f_max_band - freqs_common[ramp_idx]) / (f_max_band - fc)
         else:
             W_n = create_triangular_weight(freqs_common, fc, Band_Width)
+
+        # Hold the shortest retained window through the remaining HF tail.
+        # This also covers the whole spectrum when only one window is available.
+        if i == 0:
+            W_n[freqs_common >= fc] = 1.0
         
         H_Accum += W_n * fft_res
         W_Accum += W_n
@@ -159,7 +169,7 @@ def process_single_ir(ir_data, Fs, n_fft_common, freqs_common, T_peak_sec,
         H_Final[taper_indices] *= 0.5 * (1 + np.cos(np.pi * norm_f))
     
     meta = {
-        't_peak': T_peak_sec, 'f_trans': f_transition, 'f_centers': F_CENTERS, 
+        't_peak': T_peak_sec, 'f_trans': f_transition, 'rft_ms': fdw_rft_ms, 'f_centers': F_CENTERS,
         't_windows': T_FDW_WINDOWS, 'alpha_sched': ALPHA_SCHEDULE, 'f_lf_anchor': F_CENTERS[-1]
     }
     return H_Final, meta

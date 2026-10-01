@@ -34,7 +34,7 @@ try:
 except ImportError:
     SPEED_OF_SOUND = 343.0
 
-def compute_spatial_error_data(she_dict, p_measured_all, coords_sph, c_sound=343.0):
+def compute_spatial_error_data(she_dict, p_measured_all, coords_sph, c_sound=343.0, *, process_pool=None, show_progress=True):
     """
     Core computation engine for the Spatial Error Viewer. Subsamples frequencies to 1/96 octave
     and calculates 3D reconstruction field errors. Shared by standalone and embedded views.
@@ -79,7 +79,9 @@ def compute_spatial_error_data(she_dict, p_measured_all, coords_sph, c_sound=343
         obs_mode="Full",
         c_sound=c_sound,
         use_optimized_origins=True,
-        corr_ir_pad_phase=False
+        corr_ir_pad_phase=False,
+        process_pool=process_pool,
+        show_progress=show_progress
     )
     
     sub_p_reconstructed = reconstruction_result["complex"]

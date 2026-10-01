@@ -11,7 +11,7 @@ from pyvistaqt import QtInteractor
 import pyvista as pv
 
 SCHEMA=json.loads((bootstrap.HERE/'process_schema.json').read_text(encoding='utf-8'))
-VIEWS={1:['FDW results'],2:['Validation','3D coordinate cloud','3D grid scan'],3:['Order recommendations'],4:['Fit error','Condition number']}
+VIEWS={1:['FDW results'],2:['Validation','3D coordinate cloud','3D grid scan'],3:['Order recommendations'],4:['Fit error','Condition number','Spatial error']}
 MAIN={1:['fdw_rft_ms','fdw_oct_res','fdw_max_cap_ms','enable_auto_gain','target_peak_db','enable_smoothing','smoothing_oct_res'],2:['octave_resolution','tweeter_x','tweeter_y','tweeter_z'],3:['freq_end_hz'],4:['target_n_max']}
 
 class ProcessWorkspace(W.QWidget):
@@ -128,6 +128,9 @@ class ProcessWorkspace(W.QWidget):
             self.metadata_editor.reload();self.metadata_editor.show();self.show_splash();self.summary.setText('Double-click coordinates to edit. Save Project writes your changes.');return
         if hasattr(self,'metadata_editor'):self.metadata_editor.hide()
         self.stage=stage;self.pages.setCurrentIndex(stage-1)
+        if stage==4 and self.results.get(4) is None and coeff_path is not None and coeff_path.is_file():
+            try:self.results[4]=process_cache.load_stage4_summary(coeff_path)
+            except (OSError,KeyError):pass
         for i,b in enumerate(self.stage_buttons,1):b.setChecked(i==stage)
         self.run_button.setText(f'Run Stage {stage}');self.view.blockSignals(True);self.view.clear();self.view.addItems(VIEWS[stage]);self.view.blockSignals(False);self.update_selectors();self.draw()
     def show_splash(self):
@@ -299,7 +302,9 @@ class ProcessWorkspace(W.QWidget):
             if restart:self.owner.pool=WarmPool(int(self.owner.settings.value('worker_count',0)) or None);self.owner.pool.start()
         self.job=False;self.run_button.setEnabled(True);self.cancel_button.setEnabled(False)
         self.refresh_order_action()
-    def shutdown(self):self.cancel(restart=False)
+    def shutdown(self):
+        self.cancel(restart=False)
+        for job in getattr(self,'_spatial_jobs',[]):job.wait()
     def load_existing(self):
         if not self.owner.project_path:return
         root=Path(self.owner.project_path).parent;name=self.project_name.text()
@@ -314,14 +319,21 @@ class ProcessWorkspace(W.QWidget):
                 if path:self.origin_cache_path=path;self.run('load_origins')
                 return
             elif self.stage==4:
-                import h5py
-                with h5py.File(root/'outputs'/'coefficients'/f'{name}_coefficients.h5') as f:self.results[4]={k:f[k][()] for k in ('freqs','N_used','cond','pct_error')}
+                self.results[4]=process_cache.load_stage4_summary(self.coefficient_path())
             else:raise ValueError('Run this stage to obtain its full diagnostics.')
             self.update_selectors();self.draw()
         except Exception as e:W.QMessageBox.warning(self,'Results',str(e))
     def update_selectors(self):
         self.rescan_frequency.blockSignals(True);self.rescan_frequency.clear()
         self.sample.blockSignals(True);self.sample.clear();r=self.results.get(self.stage)
+        if self.stage==4:
+            index=self.view.findText('Spatial error')
+            if index>=0:
+                coeff=self.coefficient_path();npz=self.measurement_path()
+                available=coeff is not None and coeff.is_file() and npz is not None and npz.is_file()
+                self.view.model().item(index).setEnabled(available)
+                self.view.setItemData(index,'' if available else 'Spatial error needs the measurement NPZ and coefficient file.',C.Qt.ToolTipRole)
+                if not available and self.view.currentIndex()==index:self.view.setCurrentIndex(0)
         if r is not None:
             if self.stage==1:
                 for name in sorted(r[1]):self.sample.addItem(name,name)
@@ -361,6 +373,9 @@ class ProcessWorkspace(W.QWidget):
         self.error_units.setVisible(view=='Fit error');self.threshold.hide()
         r=self.results.get(self.stage);self.chart.fig.clear();ax=self.chart.fig.add_subplot();self.stack.setCurrentWidget(self.chart)
         if r is None:ax.set_axis_off();ax.text(.5,.5,'Run this stage or load its saved results.',ha='center',va='center');self.chart.done();return
+        if self.stage==4 and view=='Spatial error' and 'spatial_data' not in r:
+            if not r.get('spatial_pending') and not r.get('spatial_error'):self.start_spatial_compute(r)
+            ax.set_axis_off();ax.text(.5,.5,r.get('spatial_error','Calculating spatial error at 1/96-octave spacing...'),ha='center',va='center',wrap=True);self.chart.done();return
         try:
             view=self.view.currentText()
             self.original_results.draw(self);self.stack.setCurrentWidget(self.original_results);return
@@ -496,6 +511,30 @@ class ProcessWorkspace(W.QWidget):
     def coefficient_path(self):
         if not self.owner.project_path:return None
         return Path(self.owner.project_path).parent/'outputs'/'coefficients'/(self.project_name.text().strip()+'_coefficients.h5')
+
+    def measurement_path(self):
+        if not self.owner.project_path:return None
+        return Path(self.owner.project_path).parent/'outputs'/(self.project_name.text().strip()+'_complex_data.npz')
+
+    def spatial_results(self):
+        return self.results[4]['spatial_data']
+
+    def start_spatial_compute(self,result):
+        from process_job import SpatialErrorJob
+        result['spatial_pending']=True
+        job=SpatialErrorJob(self.measurement_path(),self.coefficient_path(),self.owner.pool,self)
+        if not hasattr(self,'_spatial_jobs'):self._spatial_jobs=[]
+        self._spatial_jobs.append(job)
+        def completed(event):
+            result.pop('spatial_pending',None)
+            if self.results.get(4) is not result:return
+            if event['ok']:result['spatial_data']=event['result']
+            else:
+                result['spatial_error']=event['error'];self.log.appendPlainText('Spatial error: '+event['error'])
+            if self.stage==4 and self.view.currentText()=='Spatial error':self.draw()
+        def cleanup():
+            self._spatial_jobs.remove(job);job.deleteLater()
+        job.completed.connect(completed);job.finished.connect(cleanup);job.start()
 
     def reload_coefficients(self, force=False):
         path=self.coefficient_path()
