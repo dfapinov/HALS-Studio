@@ -653,7 +653,7 @@ class Workspace(Atlas):
 
     def session_dict(self):
         if self.export_workspace: self.export_workspace.sync_plot_setup()
-        return dict(version=2, theme=self.theme_name, source=self.source_path, reconstruction=self.source_options, view=self.view_dict(),
+        return dict(version=2, source=self.source_path, reconstruction=self.source_options, view=self.view_dict(),
                     overlays=self.overlays, axis=list(self.axis), axis_source=self.axis_source,
                     export_setup=self.export_workspace.config if self.export_workspace else self.export_setup,
                     export_layout=dict(outer=self.export_workspace.frames.sizes(), rows=[r.sizes() for r in self.export_workspace.rows]) if self.export_workspace else None,
@@ -693,7 +693,6 @@ class Workspace(Atlas):
         if self.export_workspace and state.get('export_layout'):
             saved = state['export_layout']; self.export_workspace.frames.setSizes(saved['outer'])
             for row, sizes in zip(self.export_workspace.rows, saved['rows']): row.setSizes(sizes)
-        self.set_theme(state.get('theme', self.theme_name))
 
     def export_cea(self):
         if self.sphere is None: return

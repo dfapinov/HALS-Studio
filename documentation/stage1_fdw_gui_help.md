@@ -5,7 +5,7 @@ Stage 1 turns your captured impulse response WAV files into a single complex fre
 This help file is split into two parts:
 
 - **Usage Guide:** what to put where in the app, what each setting does, and what to check after running.
-- **Understand the Processing:** the original explanation of FDW, RFT, and complex smoothing.
+- **Understand the Processing:** the explanation of full-band FDW and complex smoothing.
 
 ---
 
@@ -52,38 +52,22 @@ When you click **Run Stage 1**, the app creates:
 - output folder: `project_folder/outputs`
 - main output file: `project_name_complex_data.npz`
 
+The NPZ records the Stage 1 processing settings used for that run, so they stay attached to the data, even if the project file is lost or project settings later cahnged.
+
 ## Quick Start
 
 For a normal first run:
 
 1. Select an existing project folder created by the HALS Capture app.
-2. Set **Reflection Free Time (ms)** from your measurement geometry.
-3. Set **Octave Resolution (1/x)** for the frequency resolution you want.
-4. Leave **Max Window Cap (ms)** at `200-400` for most datasets.
-5. Leave **Enable Auto Gain** disabled if you use calibrated SPL from the HALS Capture app.
-6. Leave **Enable Smoothing** enabled, with **Smoothing Octave Res (1/x)** set to `Auto`.
-7. Click **Run Stage 1**.
+2. Set **Octave Resolution (1/x)** for the frequency resolution you want.
+3. Leave **Max Window Cap (ms)** at `200-400` for most datasets.
+4. Leave **Enable Auto Gain** disabled if you use calibrated SPL from the HALS Capture app.
+5. Leave **Enable Smoothing** enabled, with **Smoothing Octave Res (1/x)** set to `Auto`.
+6. Click **Run Stage 1**.
 
 The progress of Stage 1 processing is displayed in the console pane. The viewer always opens once processing completes. Note: these results are only to inspect that the data looks reasonable. Unlike standard acoustic measurements, this is only one step of the HALS speaker measurement process.
 
 ## Main Settings
-
-### Reflection Free Time (ms)
-
-The clean time window before the first significant reflection reaches the microphone. It should be determined and calculated based on the nearest reflecting boundary to the HALS measurement system. Use the built-in calculator to help.
-
-FDW continues shortening its windows through the high end. RFT defines the highlighted reflection-free range and the saved Stage 3 trial boundary.
-
-Note that the Reflection Free Time and the Octave Resolution settings interact to set the reflection free frequency range.
-
-
-
-Typical starting value:
-
-- `5 ms` when the closest boundary is about 1m away.
-- The closest boundary is usually the floor, so consider optimizing the height of the speaker to maximise distance from the floor and ceiling.
-
-Achieving a longer valid reflection-free time puts less pressure on the sound field separation DSP, which is most effective at removing room influence at low and mid frequencies.
 
 ### Octave Resolution (1/x)
 
@@ -96,7 +80,7 @@ Examples:
 - `12` = 1/12 octave
 - `24` = 1/24 octave
 
-Higher octave-resolution values need more cycles per frequency, so for the same RFT they push the frequency floor higher.
+Higher octave-resolution values need more cycles per frequency, so they require longer FDW windows at the same frequency. This can affect the reflection free test range avilible to stage 3 later in the processing chain. see [Reflection-Free Time and the Test Range](stage3_help.md#reflection-free-time-and-the-test-range).
 
 ### Max Window Cap (ms)
 
@@ -120,6 +104,10 @@ The target peak level used when **Enable Auto Gain** is on.
 
 The value is in dBFS. For example, `-3.0` means the loudest peak in the batch is scaled to -3 dBFS.
 
+## Advanced Settings
+
+Click **Show Advanced Settings** to reveal these controls.
+
 ### Enable Smoothing
 
 Turns complex frequency-domain smoothing on or off. Enabled by default.
@@ -138,13 +126,9 @@ Stage 1 has two smoothing effects. FDW naturally smooths the response through ti
 
 The same fractional-octave kernel is used through the high end. Auto uses twice the FDW denominator: FDW 1/12 uses smoothing at 1/24 octave. Manual positive denominators are also supported.
 
-## Advanced Settings
-
-Click **Show Advanced Settings** to reveal these controls.
-
 ### Alpha HF / LF
 
-Alpha controls how abruptly the time window closes. A lower value gives a more rectangular window, which keeps more of the available reflection-free time but can increase spectral leakage and ringing. A higher value gives a smoother taper, which reduces leakage but also softens the effective time cutoff.
+Alpha controls how abruptly the time window closes. A lower value gives a more rectangular window, which retains more of the signal within the window but can increase spectral leakage and ringing. A higher value gives a smoother taper, which reduces leakage but also softens the effective time cutoff.
 
 The Alpha value can be defined for HF and LF with the value graduated between.
 - `0.0` = rectangular
@@ -239,37 +223,6 @@ To solve this, the practical approach uses a series of overlapping windows rathe
 
 ---
 
-## THE RFT CONSTRAINT AND THE FREQUENCY FLOOR
-
-The **Reflection-Free Time (RFT)** is the window of "clean" data available in your specific physical setup. It is the time gap between the direct sound arriving at the microphone and the very first reflection (usually from the floor or a nearby wall) hitting the capsule.
-
-This period defines a reflection-free reference boundary rather than a minimum window length. Because this window is fixed in time, the number of wave cycles it contains changes with frequency. To maintain a target octave resolution, there is a **"Frequency Floor"**â€”the point below which a fixed RFT window simply doesn't have enough cycles to give you the detail you want.
-
-To determine the Reflection-Free Time (RFT), you need to calculate the difference between the direct sound path and the shortest reflected path (usually the floor). If your speaker and microphone are at the same height ($h$) and separated by a distance ($d$), the reflected sound travels a longer, triangular path. By calculating this distance difference and dividing it by the speed of sound ($c \approx 343\text{ m/s}$), you find the "time window" available before the first reflection corrupts your measurement.
-
-### The RFT Formula
-
-To calculate the **Reflection-Free Time (RFT)** in milliseconds:
-
-$$\text{RFT (ms)} = \left( \frac{\sqrt{D^2 + 4D_r^2} - D}{343} \right) \times 1000$$
-
-**Where:**
-* **$D$** = Distance in meters between the speaker (DUT) and the microphone.
-* **$D_r$** = Distance in meters from the speaker/mic to the reflecting boundary.
-* **$343$** = Speed of sound in m/s (approximate for room temperature).
-
-![RFT calc](./docu_images/RFT%20calc.png)
-
-(Image of calculator in VituixCAD)
-
-### Examples:
-1) 5ms RFT, 1/3 target Oct Res = 4 cycles needed = 760Hz frequency floor.
-2) 5ms RFT, 1/12 target Oct res = 17 cycles needed = 3300Hz frequency floor.
-3) 10ms RFT, 1/12 target Oct res = 17 cycles needed = 1650Hz frequency floor.
-
-Above this frequency floor, FDW continues shortening the window to maintain the target octave resolution. The RFT highlight identifies windows that fit within the reflection-free time. Below the boundary, longer windows may include reflections. The existing maximum window cap and available IR length still limit low-frequency resolution. The RFT boundary remains saved for Stage 3 trials.
-
-At the upper data limit, a window centre is omitted if less than half the normal frequency step remains above it (measured in octaves). The shortest retained window then covers the remaining high-frequency range. For 48 kHz data with three windows per octave, the last centre is about 19.05 kHz and its window continues to 24 kHz. The existing Nyquist taper is retained.
 
 ---
 
@@ -287,11 +240,6 @@ Think of the Complex Domain as a way to describe the full signal where phase and
 
 By applying smoothing to the Real and Imaginary parts simultaneously, we smooth the overall response while maintaining the physical relationship between magnitude and phase. 
 
----
-
-## How Windowing and Complex Smoothing Share the Work
-
-FDW maintains the requested octave resolution through the high end. Optional complex smoothing uses a fixed fractional-octave kernel throughout. **Auto** selects twice the FDW denominator: FDW 1/12 uses complex smoothing at 1/24 octave. The combined smoothing is slightly stronger than FDW alone. The existing low-frequency cap and available IR length still limit resolution where longer windows would be needed.
 
 ## The Bonus Effect: Reflection Rejection
 Beyond just making the data easier to process, Complex Smoothing provides a secondary, powerful benefit: it further cleans the measurement of room reflections.

@@ -727,6 +727,8 @@ def run_open_branch_optimizer(
     spl_radius_m: float = 1.0,
     spl_floor_db: float = -40.0,
     process_pool=None,
+    rft_ms: float = 5.0,
+    project_oct_res: float = 12.0,
 ):
     start_time = time.time()
     # Legacy keyword arguments remain accepted for callers loading old settings,
@@ -758,8 +760,11 @@ def run_open_branch_optimizer(
     use_opt = use_optimized_origins
     origins_mm = parsed_data['origins_mm'] if (use_opt and parsed_data['origins_mm'] is not None) else np.zeros((len(f_all), 3))
 
+    from rft_range import transition_frequency_hz
+    project_oct_res = parsed_data.get('stage1_settings', {}).get('fdw_oct_res', project_oct_res)
+    rft_hz = transition_frequency_hz(rft_ms, project_oct_res)
     freq_start_hz, freq_end_hz, tail_only = stage3_test_band(
-        freq_start_hz, freq_end_hz, parsed_data.get('stage3_rft_lower_hz'))
+        freq_start_hz, freq_end_hz, rft_hz)
     below_rft = tail_only
     mode_note = ''
     if tail_only:

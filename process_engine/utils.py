@@ -91,7 +91,9 @@ def load_and_parse_npz(filepath: Union[str, Path]) -> Dict:
         except Exception:
             pass
             
+    from stage1_settings import settings_from_npz
     return {
+        'stage1_settings': settings_from_npz(loaded),
         'freqs': f_all,
         'complex_data': data_dict,
         'filenames': filenames,

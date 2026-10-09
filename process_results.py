@@ -50,6 +50,10 @@ def theme(fig):
         ax.set_facecolor(bg);ax.tick_params(colors=fg)
         for spine in ax.spines.values():spine.set_edgecolor('#405364' if dark else '#bdcde2')
         for line in ax.get_xgridlines()+ax.get_ygridlines():line.set_color('#405364' if dark else '#dbe2ed')
+        if not dark:
+            for axis in (ax.xaxis,ax.yaxis):
+                axis.set_tick_params(which='major',grid_color='#bdcde2',grid_alpha=.5)
+                axis.set_tick_params(which='minor',grid_color='#dbe2ed',grid_alpha=.3)
         if hasattr(ax,'zaxis'):ax.tick_params(axis='z',colors=fg)
     for item in fig.findobj():
         if isinstance(item,(Text,Line2D)):
@@ -100,8 +104,8 @@ class Results(W.QWidget):
                 # The NPZ is sufficient for the frequency response and smoothing curves.
                 # A WAV is only needed for the optional time-domain IR panel.
                 pass
-            show_both=p.values[1]['keep_raw_and_smoothed'];primary=smooth[name] if smooth and p.values[1]['enable_smoothing'] and not show_both else raw[name]
-            view=VIEWS['FDWView'](figsize=(12,8));view.update_view(name,p.sample.currentIndex(),f,primary,smooth.get(name) if smooth and show_both else None,meta[name],data,fs,float(p.values[1]['fdw_rft_ms']))
+            show_both=p.stage1_plot_settings()['keep_raw_and_smoothed'];primary=smooth[name] if smooth and p.stage1_plot_settings()['enable_smoothing'] and not show_both else raw[name]
+            view=VIEWS['FDWView'](figsize=(12,8));view.update_view(name,p.sample.currentIndex(),f,primary,smooth.get(name) if smooth and show_both else None,meta[name],data,fs,float(meta[name].get('rft_ms',p.values[3]['fdw_rft_ms'])))
             if data is None:
                 for label in view.ax2.texts:
                     if label.get_text()=='Error loading wav':
@@ -140,10 +144,15 @@ class Results(W.QWidget):
                 view.ax3.lines[0].set_color(probe)
             for patch in list(view.ax1.patches): patch.remove()
             rft_lower = float(meta[name]['f_trans'])
+            if NAME=='Light':
+                lower = view.ax1.get_xlim()[0]
+                upper = min(rft_lower, fs / 2)
+                if upper > lower:
+                    view.ax1.axvspan(lower, upper, color='#fff2c7', alpha=1, zorder=0)
             if rft_lower < fs / 2:
                 view.ax1.axvspan(rft_lower, fs / 2, color='#47d7ec', alpha=0.12)
             curves = [line for line in view.ax1.lines if len(line.get_xdata()) > 2]
-            if smooth and p.values[1]['enable_smoothing']:
+            if smooth and p.stage1_plot_settings()['enable_smoothing']:
                 smoothing_label = 'FDW + Smoothing' if meta[name].get('sliding_hf') else 'FDW + fixed smoothing'
                 if show_both and len(curves)>1: curves[1].set_label(smoothing_label)
                 elif curves: curves[0].set_label(smoothing_label)

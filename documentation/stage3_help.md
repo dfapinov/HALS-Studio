@@ -1,8 +1,7 @@
 # Stage 3 Help - Recommended Maximum Order N
 
 Stage 3 helps choose the maximum spherical-harmonic degree, usually called  
-**order N**, used by the Stage 4 solve. In the app, this is the **Stage 3: Find**  
-**Order N** tab.
+**order N**, used by the Stage 4 solve. In the app, this is the **Stage 3 - Order** tab.
 
 This help file is split into two parts:
 
@@ -27,7 +26,8 @@ external room field;
 order;
 - checks how much the reconstructed directivity changes when another order is  
 added;
-- recommends a maximum order for Stage 4; and
+- recommends a maximum order for Stage 4;
+- optimises the order table to control how quickly N rises with frequency; and
 - saves one combined image of the results.
 
 When processing finishes, the results window opens and lets you choose which  
@@ -61,13 +61,14 @@ three complementary diagnostics and recommends an order based on each metric.
 For a normal first run:
 
 1. Set **Upper Test Range** to the highest useful frequency of the driver before
-  significant roll-off begins.
+   significant roll-off begins.
 2. Leave the advanced settings at their defaults.
 3. Click **Run Stage 3**.
-4. Inspect the three graphs and the proposed orders, then click **Use in Stage
-  4**.
+4. Inspect the three graphs and select the maximum order you want to use.
+5. Click **Optimise growth rate** to calculate the condition-guided order table.
+6. When it finishes, click **Use in Stage 4** to open the solve settings.
 
-The console shows the progress of the order sweep and field reconstruction.
+The console shows the progress of the order sweep and results.
 
 ## Main Settings
 
@@ -89,70 +90,27 @@ greatest demand on the spherical-harmonic order.
 
 ![Example Upper Range for Int / Ext Ratio](docu_images/upper_range_examples.png)
 
-## Advanced Settings
-
-Click **Show Advanced Settings** to reveal these controls.
-
 ### Lower Test Range
 
-This is normally populated from the start of the reflection-free range derived  
-from the Stage 1 time window. Frequencies in this range can be assessed using  
-internal-to-external field separation because reflections have been removed by  
-the time window.
+This sets the start of the test frequency band. The default is the lower
+boundary of the reflection-free range, where the internal-to-external field
+ratio can help assess solve stability. See **Reflection Free Time (ms)** below
+for an explanation of how this boundary is determined.
 
-![RFT_Range](./images/RFT_Range.png)
+![RFT_Range](./images/RFT_Range-2.png)
 
-Some sources, especially woofers, do not extend into the reflection-free range.  
-**If the upper test limit is below the reflection-free-time boundary, Stage 3**  
-**automatically sets the lower limit to one quarter of the upper limit.** This gives  
-a two-octave test band. For example, an upper limit of 2 kHz gives a lower limit  
+Some sources, especially woofers or subwoofers, may not extend into the reflection-free range.
+**If the upper test limit is below the RFT boundary, Stage 3**
+**automatically sets the lower test range to one quarter of the upper limit.** This gives
+a two-octave test band. For example, an upper limit of 2 kHz gives a lower limit
 of 500 Hz.
 
-This setting is normally left at its automatically populated value.
+When the upper limit is below the RFT boundary, the field ratio is shown for
+inspection but is not used to select an order. **Directivity Change** becomes
+the selection method.
 
-### Test Order Range
-
-This sets the lowest and highest maximum orders to evaluate, for example  
-`2, 15`.
-
-The upper value should be high enough to show where useful improvement stops.  
-Testing unnecessarily high orders increases processing time and cannot overcome  
-the spatial limit of the measurement grid. Stage 3 also applies the grid and  
-frequency-dependent order limits, so a requested order may be capped where the  
-data cannot support it.
-
-### Octave Resolution
-
-This controls how densely Stage 3 samples frequency:
-
-- `12` means 1/12-octave spacing;
-- `24` means 1/24-octave spacing; and
-- `0` tests every available frequency in the selected range.
-
-All three diagnostics use the same frequencies. Finer sampling can  
-reveal narrower frequency-dependent behaviour, but takes longer. The default  
-1/12-octave spacing is a useful compromise for order selection.
-
-### Directivity-change Sphere Points
-
-Stage 3 reconstructs the modeled internal field over a sphere. This setting  
-controls the number of points on that sphere.
-
-More points make narrow directivity features less likely to be missed, at the  
-cost of additional processing time. The default of 1,000 points is  
-intended as a practical diagnostic resolution.
-
-![sphere_points](./images/sphere_points.png)
-
-### Directivity-change Sphere Radius
-
-This is the radius of the evaluation sphere used for the directivity-change  
-comparison. The sphere is centred on the measurement coordinate origin and  
-should enclose the source. The default is 1 metre.
-
-The points are distributed by direction, so changing the radius does not change  
-the angular sampling density. The pressure  
-pattern can still evolve with distance, especially transisitoning from the near to far field.
+The lower test range can also be set manually or restored to the calculated  
+default using **Set from RFT**.
 
 ## Reading The Results
 
@@ -196,9 +154,6 @@ For this second pass, the slope increase must be at least 5% rather than 15%.
 The minimum additional decline is 0.02 dB per order or 0.15% of the full ratio  
 span, whichever is larger. Both following segments must exceed the earlier  
 median decline by at least a quarter of that minimum additional decline.
-
-*Image placeholder: internal and external fields at increasing orders, showing*  
-*the growth of unsupported external-field energy.*
 
 ### Sound Power Discarded
 
@@ -273,22 +228,114 @@ separation in this mode.
 
 ![stage3_resrults_woofer](./images/stage3_resrults_woofer.png)
 
+## Optimising How Order N Grows with Frequency
+
+Choosing the maximum order sets the ceiling for Stage 4. However, there is still the question of how quickly order N grows with increasing frequency. A common starting rule is KR+offset, such as KR+2. This links the chosen order to the wavelength and measurement grid radius. It is a good starting point but it can rise too quickly with frequency. Allowing higher orders too early can make the solve ill-conditioned, even when  
+the selected maximum order is appropriate.
+
+After reviewing the maximum-order recommendations and selecting an order, click **Optimise growth rate**. Stage 3 starts with the  
+KR+offset schedule and checks the matrix condition at the frequency where each order increase step takes place. If the matrix condition number falls outside the target band at that entry, the  
+optimiser tests later frequencies. For example, it may keep N=5 active for  
+longer than the initial KR rule indicated and delay N=6 until the data better supports it.
+
+The first N=4 entry supplies the reference condition number used to set the target band. If no suitable entry is found for a higher order, that  
+order and all higher orders remain inactive.
+
+After a successful optimisation, the table is automatically copied to Stage 4  
+and the selected N becomes **Target N Max**.
+
+Changing the selected maximum order requires a new order-growth optimisation.
+
+The checks are made at order-entry frequencies; they do not guarantee the same  
+condition limit at every frequency. Review the Stage 4 condition plot after solving.
+
+Below: Matrix condition number for Target N Max = 12 using the KR rule.
+
+![orderngrowthkr](./images/order_n_growth_kr.png)
+
+Below: Matrix condition number after optimising the order N growth rate.
+
+![orderngrowthoptimized](./images/order_n_growth_optimized.png)
+
+## Advanced Settings
+
+Click **Show Advanced Settings** to reveal these controls.
+
+### Reflection Free Time (ms)
+
+**Reflection-Free Time (RFT)** is the interval between the direct sound arriving  
+at the microphone and the first reflection reaching it, often from the floor,  
+ceiling, or a nearby wall. It describes how much of the impulse response is  
+available before that reflection arrives.
+
+The value is defined in HALS Control from the scanner and environment geometry  
+and imported from `project.json`. It remains editable here if an override is  
+needed.
+
+Stage 1 applies frequency-dependent windowing, with shorter windows at higher  
+frequencies. Above a certain frequency, the windows are short enough to exclude  
+the earliest boundary reflection, making that range effectively anechoic.  
+Stage 3 calculates this boundary using RFT and the FDW octave resolution  
+recorded in the Stage 1 NPZ file.
+
+Within this reflection-free range, the internal field should represent the  
+DUT's direct sound and the external field should be close to the noise floor.  
+Significant external energy may indicate an unstable solve, making the  
+internal-to-external ratio useful for assessing stability as order N increases.  
+At lower frequencies, reflections can remain inside the longer FDW windows.  
+The external field then contains real room energy, so a lower separation ratio  
+alone does not indicate an unstable solve.
+
+### Test Order Range
+
+This sets the lowest and highest maximum orders to evaluate, for example  
+`2, 15`.
+
+The upper value should be high enough to show where useful improvement stops.  
+Testing unnecessarily high orders increases processing time and cannot overcome  
+the spatial limit of the measurement grid. Stage 3 also applies the grid and  
+frequency-dependent order limits, so a requested order may be capped where the  
+data cannot support it.
+
+### Octave Resolution
+
+This controls how densely Stage 3 samples frequency:
+
+- `12` means 1/12-octave spacing;
+- `24` means 1/24-octave spacing; and
+- `0` tests every available frequency in the selected range.
+
+All three diagnostics use the same frequencies. Finer sampling can  
+reveal narrower frequency-dependent behaviour, but takes longer. The default  
+1/12-octave spacing is a useful compromise for order selection.
+
+### Directivity-change Sphere Points
+
+Stage 3 reconstructs the modeled internal field over a sphere. This setting  
+controls the number of points on that sphere.
+
+More points make narrow directivity features less likely to be missed, at the  
+cost of additional processing time. The default of 1,000 points is  
+intended as a practical diagnostic resolution.
+
+![spherepoints](./images/sphere_points.png)
+
+### Directivity-change Sphere Radius
+
+This is the radius of the evaluation sphere used for the directivity-change  
+comparison. The sphere is centred on the measurement coordinate origin and  
+should enclose the source. The default is 1 metre.
+
+The points are distributed by direction, so changing the radius does not change  
+the angular sampling density. The pressure  
+pattern can still evolve with distance, especially transitioning from the near to far field.
+
 ---
 
 # Understanding the Optimization Process
 
 This section gives the precise rules and implementation details for users who  
 want to understand how Stage 3 reaches its choices.
-
-## Frequency Sampling And Order Caps
-
-Octave-spaced targets are mapped to the nearest available frequency bins. Results are averaged with equal weight per sampled frequency.
-
-The requested maximum order is limited by both the number of measurement-grid  
-points and the frequency-dependent `kr` rule. The `kr` limit grows with  
-frequency and grid radius, so it mostly affects the lower part of the frequency range.
-
-![KR_300mm](./images/KR_300mm.png)
 
 ## Source to Room Field Ratio Rule
 
@@ -365,47 +412,9 @@ the directivity rule selects the order directly.
 ## What Stage 3 Saves
 
 Stage 3 saves one combined results image containing the three graphs and the  
-recommendations. The results window reports the output directory.
+recommendations.
 
-The selected recommendation is not applied until **Use in Stage 4** is pressed.
+With growth optimisation enabled, the selected order and successful order table  
+are transferred to Stage 4 when optimisation completes. **Use in Stage 4** opens the Stage 4 settings.
 
 ---
-## Experimental condition preflight
-
-Enable **Preflight condition optimisation** in Stage 3 to propose delayed order
-activations after Stage 3 has selected its recommended maximum order. The preflight
-uses that selected N as the hard cap, then starts with Stage 4's KR+offset schedule
-and grid limit. It uses Stage 4's input data, origin setting and saved sound speed.
-Existing manual tables are replaced when you transfer a successful preflight.
-The selected recommended order still supplies the final maximum-order cap.
-
-The preflight checks the raw, unscaled dual-basis matrix at each degree's first
-eligible frequency bin, without fitting pressure coefficients or regularizing.
-The first actual N=4 bin supplies the target. Orders through N=4 stay unchanged;
-higher degrees are accepted only when a checked entry lies between one-fifth and ten times
-the target. It samples five progressively higher frequency offsets and refines a
-descending crossing twice. This is a bounded search with at most nine condition
-evaluations per degree and no iterative pressure solves.
-An unsuccessful degree and higher degrees remain inactive. If no finite N=4
-reference exists, the original workflow is retained and the result explains why.
-
-Review original and adjusted entry frequencies and conditions in the results panel.
-**Use in Stage 4** transfers the resulting upper-frequency cutoff table and enables
-the manual-table setting. The KR offset and origin setting used by the preflight
-are also transferred. Rerun Stage 3 after changing input data or these settings.
-Stage 4 still applies its KR, grid and selected maximum-order limits.
-
-This is a sparse entry-condition heuristic: conditions can be non-monotonic and
-intermediate frequencies are not verified. A raw matrix condition is different
-from Stage 4's post-regularization condition when regularization is enabled.
-With the checkbox unchecked, Stage 3 runs its existing workflow.
-
-
-Stage 3 order growth is a separate second step. First review and select the
-recommended maximum order N. Click **Optimise growth rate** to run the
-condition preflight for that selection. The button displays **Optimizing..** while it runs, then **Use in Stage 4**.
-The table is transferred automatically; details remain in the CLI. The selected N becomes Stage
-4's Target N Max, which remains a hard cap even if the order table contains higher
-orders. In Stage 4's Advanced Settings, **Ignore order table - use pure KR** is unchecked by default, so the transferred table controls growth. Check
-it to ignore the table and use the KR+offset rule alone. **Edit manual order table**
-remains available.

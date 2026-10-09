@@ -49,35 +49,16 @@ To solve this, the practical approach uses a series of overlapping windows rathe
 
 ---
 
-## THE RFT CONSTRAINT AND THE FREQUENCY FLOOR
+## Full-Band FDW Coverage
 
-The **Reflection-Free Time (RFT)** is the window of "clean" data available in your specific physical setup. It is the time gap between the direct sound arriving at the microphone and the very first reflection (usually from the floor or a nearby wall) hitting the capsule.
+FDW runs across the full available frequency band. Its window duration follows
+$T(f) = m/f$: shorter windows at high frequencies and longer windows at low
+frequencies. The maximum window cap and available impulse-response length limit
+how much low-frequency resolution can be retained.
 
-This period defines a reflection-free reference boundary rather than a minimum window length. Because this window is fixed in time, the number of wave cycles it contains changes with frequency. To maintain a target octave resolution, there is a **"Frequency Floor"**—the point below which a fixed RFT window simply doesn't have enough cycles to give you the detail you want.
-
-To determine the Reflection-Free Time (RFT), you need to calculate the difference between the direct sound path and the shortest reflected path (usually the floor). If your speaker and microphone are at the same height ($h$) and separated by a distance ($d$), the reflected sound travels a longer, triangular path. By calculating this distance difference and dividing it by the speed of sound ($c \approx 343\text{ m/s}$), you find the "time window" available before the first reflection corrupts your measurement.
-
-### The RFT Formula
-
-To calculate the **Reflection-Free Time (RFT)** in milliseconds:
-
-$$\text{RFT (ms)} = \left( \frac{\sqrt{D^2 + 4D_r^2} - D}{343} \right) \times 1000$$
-
-**Where:**
-* **$D$** = Distance in meters between the speaker (DUT) and the microphone.
-* **$D_r$** = Distance in meters from the speaker/mic to the reflecting boundary.
-* **$343$** = Speed of sound in m/s (approximate for room temperature).
-
-![RFT calc](./docu_images/RFT%20calc.png)
-
-(Image of calculator in VituixCAD)
-
-### Examples:
-1) 5ms RFT, 1/3 target Oct Res = 4 cycles needed = 760Hz frequency floor.
-2) 5ms RFT, 1/12 target Oct res = 17 cycles needed = 3300Hz frequency floor.
-3) 10ms RFT, 1/12 target Oct res = 17 cycles needed = 1650Hz frequency floor.
-
-Above this frequency floor, FDW continues shortening the window to maintain the target octave resolution. The RFT highlight identifies windows that fit within the reflection-free time. Below the boundary, longer windows may include reflections. The existing maximum window cap and available IR length still limit low-frequency resolution. The RFT boundary remains saved for Stage 3 trials.
+The reflection-free boundary does not set a frequency cutoff or a minimum
+high-frequency window duration for Stage 1. It is a reference for choosing the
+Stage 3 test range; see [Reflection-Free Time and the Test Range](stage3_help.md#reflection-free-time-and-the-test-range).
 
 At the upper data limit, a window centre is omitted if less than half the normal frequency step remains above it (measured in octaves). The shortest retained window then covers the remaining high-frequency range. For 48 kHz data with three windows per octave, the last centre is about 19.05 kHz and its window continues to 24 kHz. The existing Nyquist taper is retained.
 

@@ -94,6 +94,9 @@ def chart_theme(chart):
         if hasattr(ax, '_response_axis_colour'):
             ax.spines['right' if ax.yaxis.get_label_position() == 'right' else 'left'].set_edgecolor(ax._response_axis_colour)
         for line in ax.get_xgridlines()+ax.get_ygridlines(): line.set_color(blue_tone('#dbe2ed' if light else '#2b3c4b'))
+        if light:
+            for axis in (ax.xaxis, ax.yaxis):
+                axis.set_tick_params(which='minor', grid_color=blue_tone('#dbe2ed'))
     for item in chart.fig.findobj():
         if isinstance(item, (Text, Line2D)):
             try: item.set_color(colour(item.get_color()))

@@ -12,11 +12,11 @@ import pyvista as pv
 
 SCHEMA=json.loads((bootstrap.HERE/'process_schema.json').read_text(encoding='utf-8'))
 VIEWS={1:['FDW results'],2:['Validation','3D coordinate cloud','3D grid scan'],3:['Order recommendations'],4:['Fit error','Condition number','Spatial error']}
-MAIN={1:['fdw_rft_ms','fdw_oct_res','fdw_max_cap_ms','enable_auto_gain','target_peak_db','enable_smoothing','smoothing_oct_res'],2:['octave_resolution','tweeter_x','tweeter_y','tweeter_z'],3:['freq_end_hz'],4:['target_n_max']}
+MAIN={1:['fdw_oct_res','fdw_max_cap_ms','enable_auto_gain','target_peak_db'],2:['octave_resolution','tweeter_x','tweeter_y','tweeter_z'],3:['freq_end_hz','freq_start_hz'],4:['target_n_max']}
 
 class ProcessWorkspace(W.QWidget):
     def __init__(self,owner):
-        super().__init__();self.owner=owner;self.stage=1;self.job=False;self.results={};self.loaded=None;self.host=None;self.buffer='';self.plotter=None
+        super().__init__();self.owner=owner;self.stage=1;self.job=False;self.results={};self.loaded=None;self.host=None;self.buffer='';self.plotter=None;self.stage1_settings={}
         self.values={int(i):{k:deepcopy(s['default']) for k,s in fields.items()} for i,fields in SCHEMA.items()}
         self.manual_table={350.:3,500.:4,625.:5,750.:6,875.:7,1500.:8,2100.:9,2800.:10,3500.:11,4100.:12,4600.:13,5000.:14,6000.:15}
         self.toolbar=W.QWidget();row=W.QHBoxLayout(self.toolbar);row.setContentsMargins(0,0,0,0);self.stage_buttons=[]
@@ -47,8 +47,11 @@ class ProcessWorkspace(W.QWidget):
                 else:control=W.QLineEdit(str(value));control.textChanged.connect(lambda v,s=stage,k=key:self.values[s].update({k:v}))
                 control.setToolTip(spec['help']);caption=W.QLabel(spec['label']);caption.setWordWrap(False)
                 if isinstance(control,W.QLineEdit):control.setFixedWidth(145 if key.endswith('bounds') or key=='test_order_range' else 105)
-                (mainform if key in MAIN[stage] else advancedform).addRow(caption,control);self.controls[stage,key]=control
-            if stage==1:self.form_button(form,'Reflection-free time calculator',self.rft_calculator)
+                field=control
+                if stage==3 and key=='freq_start_hz':
+                    field=W.QWidget();row=W.QHBoxLayout(field);row.setContentsMargins(0,0,0,0);row.addWidget(control)
+                    self.rft_reset_button=W.QPushButton('Set from RFT');self.rft_reset_button.clicked.connect(self.set_range_from_rft);row.addWidget(self.rft_reset_button);row.addStretch()
+                (mainform if key in MAIN[stage] else advancedform).addRow(caption,field);self.controls[stage,key]=control
             if stage==3:
                 self.controls[3,'condition_preflight'].toggled.connect(self.refresh_order_action)
                 self.order_choice=W.QComboBox();self.order_choice.setSizeAdjustPolicy(W.QComboBox.AdjustToContents);self.order_choice.currentIndexChanged.connect(self.refresh_order_action)
@@ -96,6 +99,10 @@ class ProcessWorkspace(W.QWidget):
         cli_fraction=max(.05,min(.95,cli_fraction))
         self.sidebar_split.setSizes([round(1000*(1-cli_fraction)),round(1000*cli_fraction)])
         self.sidebar_split.splitterMoved.connect(self.save_cli_split)
+        self._rft_default=None
+        self.refresh_rft_range()
+        self.controls[3,'fdw_rft_ms'].textChanged.connect(self.refresh_rft_range)
+        self.controls[1,'fdw_oct_res'].textChanged.connect(self.refresh_rft_range)
         self.select_stage(1)
         C.QTimer.singleShot(0,self.restore_sidebar_width)
         self.controls[1,'enable_auto_gain'].toggled.connect(self.controls[1,'target_peak_db'].setEnabled);self.controls[1,'target_peak_db'].setEnabled(self.controls[1,'enable_auto_gain'].isChecked())
@@ -153,10 +160,16 @@ class ProcessWorkspace(W.QWidget):
     def adopt_project(self,force=False):
         path=self.owner.project_path
         if not path or (self.loaded==path and not force):return
-        data=json.loads(Path(path).read_text(encoding='utf-8-sig'));self.loaded=path;self.results={}
+        data=json.loads(Path(path).read_text(encoding='utf-8-sig'));self.loaded=path;self.results={};self.stage1_settings={}
         self.project_name.setText(data.get('project_name',Path(path).stem.replace('_project','')));self.owner.dataset_label.setText(self.project_name.text())
+        self._loading_rft=True
         for stage in range(1,5):
             for key,spec in SCHEMA[str(stage)].items():self.set_value(stage,key,data.get(f'stage{stage}_vars',{}).get(key,spec['default']))
+        from process_engine.rft_range import project_rft_ms
+        self.set_value(3,'fdw_rft_ms',project_rft_ms(data))
+        self._loading_rft=False
+        self.refresh_rft_range()
+        if 'freq_start_hz' not in data.get('stage3_vars',{}):self.set_range_from_rft()
         self.manual_table=data.get('stage4_manual_table',self.manual_table)
         glob=data.get('global_vars',{});self.manual_speed.setChecked(bool(glob.get('enable_manual_speed_of_sound',False)));self.speed.setValue(float(glob.get('speed_of_sound',343)))
         folder=Path(path).parent;choices=[folder/n for n in ('recordings','Recordings','measurement_set','input_irs','input_irs_synth')]+[folder]
@@ -168,7 +181,10 @@ class ProcessWorkspace(W.QWidget):
         self.cache(1).unlink(missing_ok=True)
         npz=folder/'outputs'/f'{self.project_name.text()}_complex_data.npz'
         if npz.is_file():
-            try:self.results[1]=process_cache.load_stage1(npz,self.values[1])
+            self.stage1_settings=process_cache.load_stage1_settings(npz)
+            self.reconcile_stage1_settings()
+            self.refresh_rft_range()
+            try:self.results[1]=process_cache.load_stage1(npz,self.stage1_plot_settings())
             except FileNotFoundError:pass
         for stage in range(2,5):
             if self.cache(stage).exists():
@@ -192,7 +208,7 @@ class ProcessWorkspace(W.QWidget):
         from export_engine import DEFAULT_EXPORT
         ensure_export(self.owner).apply_config(deepcopy(DEFAULT_EXPORT))
         self.owner.source_path=None;self.owner.source_options=None
-        self.owner.project_path=path;self.owner.project_path_field.setText(str(Path(path).parent));self.loaded=path;self.results={};self.project_name.setText(Path(path).stem.replace('_project',''));self.ir_folder.setText(str(Path(path).parent));self.owner.save_project();self.start_host();self.select_stage(1)
+        self.owner.project_path=path;self.owner.project_path_field.setText(str(Path(path).parent));self.loaded=path;self.results={};self.stage1_settings={};self.project_name.setText(Path(path).stem.replace('_project',''));self.ir_folder.setText(str(Path(path).parent));self.owner.save_project();self.start_host();self.select_stage(1)
     def browse_ir(self):
         path=W.QFileDialog.getExistingDirectory(self,'Input IR recordings',self.ir_folder.text())
         if path:self.ir_folder.setText(path)
@@ -211,6 +227,8 @@ class ProcessWorkspace(W.QWidget):
             except ValueError:W.QMessageBox.warning(self,'Harmonic order','The solver requires a maximum order of at least 2 without a manual order table.');return
         if not name or Path(name).name!=name or any(c in name for c in '<>:"/\\|?*'):W.QMessageBox.warning(self,'Project name','Use a valid filename without path separators.');return
         request=dict(stage=self.stage,settings=deepcopy(self.values[self.stage]),folder=str(Path(self.owner.project_path).parent),name=name,ir_folder=self.ir_folder.text(),cache=str(self.cache(self.stage)),manual_table=self.manual_table,speed=self.speed.value(),manual_speed=self.manual_speed.isChecked(),action=action)
+        request['rft_ms']=self.values[3]['fdw_rft_ms']
+        request['project_oct_res']=self.stage1_resolution()
         if self.stage==3 and action=='growth':
             request['selected_order_N']=int(self.order_choice.currentData())
             request['preflight_settings']=deepcopy(self.values[4])
@@ -266,10 +284,11 @@ class ProcessWorkspace(W.QWidget):
         self.refresh_order_action()
         if not event['ok']:self.summary.setText('Processing failed - see CLI output');return
         stage=int(event['stage'])
-        self.results[stage]=process_cache.load_stage1(event['cache'],self.values[1]) if stage==1 else process_cache.load(event['cache'],stage)
         if stage==1:
-            meta=self.results[1][3];transition=max((float(v.get('f_trans',0)) for v in meta.values()),default=0)
-            if transition:self.set_value(3,'freq_start_hz',np.ceil(transition/1000)*1000)
+            self.stage1_settings=process_cache.load_stage1_settings(event['cache'])
+            self.results[1]=process_cache.load_stage1(event['cache'],self.stage1_plot_settings())
+            self.refresh_rft_range()
+        else:self.results[stage]=process_cache.load(event['cache'],stage)
         if stage==3 and self.results[3].get('below_rft'):self.set_value(3,'freq_start_hz',self.results[3]['test_band_hz'][0])
         if stage==3 and getattr(self,'active_request',{}).get('action')=='growth':
             result=self.results[3];n=result.get('selected_order_N')
@@ -420,9 +439,9 @@ class ProcessWorkspace(W.QWidget):
         if self.stack.currentWidget() is self.original_results:
             self.original_results.canvas.draw()
             if self.stage==3:self.original_results.canvas.grab().save(str(path))
-            else:self.original_results.fig.savefig(path,dpi=180)
+            else:self.original_results.fig.savefig(path,dpi=180,facecolor=self.original_results.fig.get_facecolor(),edgecolor=self.original_results.fig.get_edgecolor())
         elif self.plotter and self.stack.currentWidget() is self.plotter.interactor:self.plotter.screenshot(str(path))
-        else:self.chart.fig.savefig(path,dpi=180)
+        else:self.chart.fig.savefig(path,dpi=180,facecolor=self.chart.fig.get_facecolor(),edgecolor=self.chart.fig.get_edgecolor())
     def save_image(self):
         path,_=W.QFileDialog.getSaveFileName(self,'Save result image',str(self.image_path()),'PNG (*.png)')
         if path:
@@ -504,10 +523,48 @@ class ProcessWorkspace(W.QWidget):
             for i in range(table.rowCount()):table.item(i,0).setFlags(table.item(i,0).flags() & ~C.Qt.ItemIsEditable)
         buttons=W.QDialogButtonBox(W.QDialogButtonBox.Save|W.QDialogButtonBox.Cancel);buttons.accepted.connect(d.accept);buttons.rejected.connect(d.reject);box.addWidget(buttons);d.resize(520,420)
         if d.exec()==W.QDialog.Accepted:return [[table.item(i,j).text() if table.item(i,j) else '' for j in range(len(headers))] for i in range(table.rowCount())]
-    def rft_calculator(self):
-        from rft_dialog import RFTDialog
-        dialog=RFTDialog(self,self.speed.value())
-        if dialog.exec()==W.QDialog.Accepted:self.set_value(1,'fdw_rft_ms',round(dialog.result['rft_ms'],4))
+    def stage1_resolution(self):
+        return self.stage1_settings.get('fdw_oct_res',self.values[1]['fdw_oct_res'])
+    def stage1_plot_settings(self):
+        return dict(self.values[1],**self.stage1_settings)
+    def reconcile_stage1_settings(self):
+        from process_engine.stage1_settings import settings_differences
+        visible=dict(self.values[1],fdw_rft_ms=self.values[3]['fdw_rft_ms'])
+        differences=settings_differences(self.stage1_settings,visible)
+        if not differences:return
+        if self.choose_stage1_settings(differences):
+            self._loading_rft=True
+            for key,value in self.stage1_settings.items():
+                stage=3 if key=='fdw_rft_ms' else 1
+                if (stage,key) in self.controls:self.set_value(stage,key,value)
+            self._loading_rft=False
+    def choose_stage1_settings(self,differences):
+        dialog=W.QMessageBox(self);dialog.setWindowTitle('Stage 1 settings differ')
+        dialog.setText('The Stage 1 NPZ was processed with different settings from this project. Which settings should populate the visible fields?')
+        dialog.setInformativeText('Stage 3 will use the octave resolution recorded in the NPZ whichever fields you choose. Rerun Stage 1 to apply a different resolution to the data.')
+        details=[]
+        for key,(project,recorded) in differences.items():
+            stage=3 if key=='fdw_rft_ms' else 1
+            details.append(f"{SCHEMA[str(stage)][key]['label']}: project {project}; NPZ {recorded}")
+        dialog.setDetailedText('\n'.join(details))
+        use_npz=dialog.addButton('Use NPZ settings',W.QMessageBox.AcceptRole)
+        keep=dialog.addButton('Keep project settings',W.QMessageBox.RejectRole)
+        dialog.setDefaultButton(use_npz);dialog.setEscapeButton(keep);dialog.exec()
+        return dialog.clickedButton()==use_npz
+    def refresh_rft_range(self,*_):
+        from process_engine.rft_range import default_lower_hz
+        previous=self._rft_default
+        try:
+            lower=default_lower_hz(self.values[3]['fdw_rft_ms'],self.stage1_resolution())
+        except (ValueError,TypeError,OverflowError):
+            self.rft_reset_button.setEnabled(False);return
+        self.rft_reset_button.setEnabled(True)
+        self._rft_default=lower
+        if not getattr(self,'_loading_rft',False) and (previous is None or self.values[3]['freq_start_hz']==str(previous)):
+            self.set_value(3,'freq_start_hz',lower)
+    def set_range_from_rft(self):
+        from process_engine.rft_range import default_lower_hz
+        self.set_value(3,'freq_start_hz',default_lower_hz(self.values[3]['fdw_rft_ms'],self.stage1_resolution()))
     def coefficient_path(self):
         if not self.owner.project_path:return None
         return Path(self.owner.project_path).parent/'outputs'/'coefficients'/(self.project_name.text().strip()+'_coefficients.h5')

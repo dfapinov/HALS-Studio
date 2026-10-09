@@ -16,3 +16,5 @@ META = "meta"
 FS = "fs"
 SPEED_OF_SOUND_MPS = "speed_of_sound_mps"
 STAGE3_RFT_LOWER_HZ = "stage3_rft_lower_hz"
+
+STAGE1_SETTINGS = "stage1_settings"

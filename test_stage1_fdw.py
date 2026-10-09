@@ -39,7 +39,13 @@ def test_fixed_stage1_pipeline():
     np.testing.assert_allclose(windows[high]*centers[high],cycles)
     with np.load(outputs/'comparison.npz',allow_pickle=True) as saved:
         import schema
-        assert float(saved[schema.STAGE3_RFT_LOWER_HZ]) == cycles/.005
+        assert schema.STAGE3_RFT_LOWER_HZ not in saved
+        settings=saved[schema.STAGE1_SETTINGS].item()
+        assert settings['fdw_oct_res'] == 12
+        assert settings['fdw_rft_ms'] == 5
+        assert settings['effective_smoothing_oct_res'] == 24
+        assert settings['enable_auto_gain'] is False
+        assert settings['fdw_max_cap_ms'] == 50
         assert saved[schema.META].item()[name]['rft_ms'] == 5
     for auto in (None, 'Auto', 0):
         with patch('session_pool.borrow_pool',return_value=BorrowedPool()), redirect_stdout(log):

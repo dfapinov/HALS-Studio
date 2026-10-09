@@ -1,10 +1,5 @@
 {
   "1": {
-    "fdw_rft_ms": {
-      "label": "Reflection Free Time (ms)",
-      "default": "5.0",
-      "help": "Reflection Free Time (ms): Defines the fixed window length at high frequencies."
-    },
     "fdw_oct_res": {
       "label": "Octave Resolution (1/x)",
       "default": "12",
@@ -134,6 +129,11 @@
     }
   },
   "3": {
+    "fdw_rft_ms": {
+      "label": "Reflection Free Time (ms)",
+      "default": "5.0",
+      "help": "Imported from project.json. Reflection-free time used with the FDW octave resolution recorded in the Stage 1 NPZ to calculate the Stage 3 boundary."
+    },
     "freq_end_hz": {
       "label": "Upper Test Range (Hz)",
       "default": "20000.0",
@@ -142,7 +142,7 @@
     "freq_start_hz": {
       "label": "Lower Test Range (Hz)",
       "default": "10000.0",
-      "help": ""
+      "help": "Editable lower test frequency. Set from RFT restores the calculated boundary, rounded up to 1,000 Hz."
     },
     "test_order_range": {
       "label": "Test Order Range (min, max)",

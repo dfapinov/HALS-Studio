@@ -14,6 +14,7 @@ def load_stage1(path, settings):
         spectra = data['data'].item()
         meta = data['meta'].item() if 'meta' in data else {}
         fs = float(data['fs'].item()) if 'fs' in data else (2.0 * float(freqs[-1]) if len(freqs) else 0.0)
+    settings = dict(settings, **load_stage1_settings(path))
     smooth = None
     if settings.get('enable_smoothing') and settings.get('keep_raw_and_smoothed'):
         smooth_path = path.with_name(path.stem + '_smoothed.npz')
@@ -117,3 +118,9 @@ def hydrate_stage4(npz_path, coeff_path, *, process_pool=None):
 
 def spatial_reconstruction(result, index):
     return result['P_reconstructed'][index]
+
+
+def load_stage1_settings(path):
+    from process_engine.stage1_settings import settings_from_npz
+    with np.load(path, allow_pickle=True) as data:
+        return settings_from_npz(data)

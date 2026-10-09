@@ -281,26 +281,22 @@ def fdwsmooth(
     if save_to_disk:
         print("Saving data to disk...")
         os.makedirs(out_dir, exist_ok=True)
-        stage3_rft_lower_hz = None
-        rft_transition_values = []
-        for row in meta.values():
-            try:
-                rft_transition_values.append(float(row.get('f_trans')))
-            except (TypeError, ValueError):
-                pass
-        if rft_transition_values:
-            stage3_rft_lower_hz = float(max(rft_transition_values))
-            print(f"Stage 3 suggested lower frequency from RFT: {stage3_rft_lower_hz:g} Hz")
-
+        runtime_settings = dict(fdw_rft_ms=fdw_rft_ms, fdw_oct_res=fdw_oct_res,
+            fdw_max_cap_ms=fdw_max_cap_ms, enable_smoothing=enable_smoothing,
+            smoothing_oct_res=smoothing_oct_res if smoothing_oct_res not in (None, 0) else 'Auto',
+            effective_smoothing_oct_res=eff_smooth_res, fdw_alpha_hf=fdw_alpha_hf,
+            fdw_alpha_lf=fdw_alpha_lf, fdw_f_min=fdw_f_min,
+            fdw_windows_per_oct=fdw_windows_per_oct, peak_detect_threshold_db=peak_detect_threshold_db,
+            enable_auto_gain=enable_auto_gain, target_peak_db=target_peak_db,
+            keep_raw_and_smoothed=keep_raw_and_smoothed)
         def build_save_payload(data_dict):
             payload = {
                 schema.FREQS: freqs,
                 schema.COMPLEX_DATA: data_dict,
                 schema.META: meta,
+                schema.STAGE1_SETTINGS: np.array(runtime_settings, dtype=object),
                 schema.FS: fs_common
             }
-            if stage3_rft_lower_hz is not None:
-                payload[schema.STAGE3_RFT_LOWER_HZ] = np.array(stage3_rft_lower_hz, dtype=np.float64)
             return payload
 
         if not enable_smoothing:

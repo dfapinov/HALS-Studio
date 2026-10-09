@@ -94,7 +94,8 @@ def save_project(owner):
     try:
         path = Path(target); payload = json.loads(path.read_text(encoding='utf-8-sig')) if path.exists() else {}
         payload.setdefault('project_name', path.parent.name)
-        if getattr(owner,'process_workspace',None) and owner.process_workspace.loaded==str(path):
+        save_process = process is not None and (process.loaded is None or Path(process.loaded).resolve() == path.resolve())
+        if save_process:
             for key,value in owner.process_workspace.project_payload().items():
                 if isinstance(value,dict):payload.setdefault(key,{}).update(value)
                 else:payload[key]=value
@@ -113,6 +114,7 @@ def save_project(owner):
             os.replace(temporary, path); temporary = None
         finally:
             if temporary and Path(temporary).exists(): Path(temporary).unlink()
+        if save_process: process.loaded = str(path)
         owner.project_path_field.setText(str(path.parent)); pane.metadata_editor.reload()
         owner.statusBar().showMessage('Project saved: '+str(path))
     except (OSError, ValueError, TypeError) as exc: owner.error('Could not save project: '+str(exc))

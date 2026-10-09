@@ -104,7 +104,7 @@ class FDWView:
         f_anchor = m.get('f_lf_anchor', 200.0)
         
         self.ax1.axvspan(f_trans, fs/2, color='#E0F7FA', alpha=0.5)
-        self.ax1.text(np.sqrt(f_trans*(fs/2)), 0.9, f"RFT range\n({fdw_rft_ms} ms)",
+        self.ax1.text(np.sqrt(f_trans*(fs/2)), 0.9, "Reflection free range",
                      color='#006064', fontsize=9, fontweight='bold', va='center', ha='center',
                      transform=self.ax1.get_xaxis_transform(),
                      bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'), zorder=20)

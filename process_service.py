@@ -18,9 +18,9 @@ def run(request):
     if stage>1 and not (out/input_name).is_file(): raise ValueError('Run Stage 1 first: '+str(out/input_name))
     if stage==1:
         from stage1_fdwsmooth import fdwsmooth
-        smooth=v['smoothing_oct_res'];smooth=float(v['fdw_oct_res'])*2 if str(smooth).lower()=='auto' else float(smooth)
+        smooth=v['smoothing_oct_res']
         result=fdwsmooth(input_dir=request['ir_folder'],out_dir=str(out),output_filename=filename,
-            fdw_rft_ms=float(v['fdw_rft_ms']),fdw_oct_res=float(v['fdw_oct_res']),fdw_max_cap_ms=float(v['fdw_max_cap_ms']),
+            fdw_rft_ms=float(request.get('rft_ms',v.get('fdw_rft_ms',5.))),fdw_oct_res=float(v['fdw_oct_res']),fdw_max_cap_ms=float(v['fdw_max_cap_ms']),
             enable_smoothing=v['enable_smoothing'],smoothing_oct_res=smooth,show_plot=False,save_to_disk=True,
             fdw_alpha_hf=float(v['fdw_alpha_hf']),fdw_alpha_lf=float(v['fdw_alpha_lf']),fdw_windows_per_oct=int(v['fdw_windows_per_oct']),
             peak_detect_threshold_db=float(v['peak_detect_threshold_db']),enable_auto_gain=v['enable_auto_gain'],target_peak_db=float(v['target_peak_db']),
@@ -100,7 +100,8 @@ def run(request):
         else:
             result=run_open_branch_optimizer(input_dir_opti=str(out),input_filename_opti=input_name,test_order_range=orders,
                 octave_resolution=int(v['octave_resolution']),spl_change_enabled=True,spl_sphere_points=int(v['spl_sphere_points']),spl_radius_m=float(v['spl_radius_m']),spl_floor_db=-40.,
-                freq_start_hz=float(v['freq_start_hz']),freq_end_hz=float(v['freq_end_hz']),use_optimized_origins=True,speed_of_sound=343.,kr_offset=2.,use_process_pool=True,process_pool=borrow_pool(6))
+                freq_start_hz=float(v['freq_start_hz']),freq_end_hz=float(v['freq_end_hz']),use_optimized_origins=True,speed_of_sound=343.,kr_offset=2.,use_process_pool=True,process_pool=borrow_pool(6),
+                rft_ms=float(v.get('fdw_rft_ms',request.get('rft_ms',5.))),project_oct_res=float(request.get('project_oct_res',12.)))
     else:
         from stage4_run_she_solve import run_she_solve
         result=run_she_solve(input_filename_she=filename,output_filename_she=name+'_coefficients.h5',input_dir_she=str(out),output_dir_she=str(out/'coefficients'),
