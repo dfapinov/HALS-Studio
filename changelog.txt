@@ -1,0 +1,21 @@
+09/10/26 - Latest fix (uncommitted)
+
+Fix: Stage 2 now applies optimized origins only within its selected test range. Origins outside that range are saved as zero shift, clearing any values from an earlier, wider run.
+
+Fix: The order N growth optimiser could cap the order when the next KR transition naturally reduced the matrix condition number below its target band. It now keeps KR transitions that are already below the ceiling (10 times the N=4 reference). Transitions above that ceiling are delayed and refined to avoid unnecessary delay, even when a search sample falls below the lower target.
+
+09/10/26 - c8b6f8b
+
+Moved Reflection-Free Time (RFT) to Stage 3 and added a control to set the test range from RFT. Stage 3 now uses the octave resolution recorded in the Stage 1 data. Added handling for differences between project and recorded Stage 1 settings, and updated the processing documentation.
+
+01/10/26 - eccc30f
+
+Updated Stage 1 FDW to maintain the requested octave resolution across the full frequency band, with fixed fractional-octave complex smoothing. Fixed the missing Stage 4 spatial-error viewer after reloading results.
+
+25/09/26 - e55fe95
+
+Corrected self-test expectations for the v0.2.0 build: order-growth checks now account for the bounded search, and WAV export comparisons check audio and format rather than incidental metadata.
+
+25/09/26 - 804eb30
+
+Added the Stage 3 order-growth optimiser to delay higher orders when matrix conditioning requires it, and transfer the resulting manual order table to Stage 4. Also improved processing-result caching, plot interaction and export handling.

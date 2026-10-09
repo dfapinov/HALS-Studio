@@ -575,7 +575,7 @@ class DynamicBranchSweeper:
 
         return results
 
-def export_interpolated_origins(history_freq, history_search_x, history_search_y, history_search_z, f_all, data, input_dir, output_filename, save_to_disk, speed_of_sound=None):
+def export_interpolated_origins(history_freq, history_search_x, history_search_y, history_search_z, f_all, data, input_dir, output_filename, save_to_disk, speed_of_sound=None, test_range_hz=None):
     print("\nInterpolating optimized origins across the full frequency resolution...")
     if len(history_freq) > 0:
         xp = np.array(history_freq)
@@ -585,6 +585,11 @@ def export_interpolated_origins(history_freq, history_search_x, history_search_y
         interp_z = np.interp(f_all, xp, np.array(history_search_z))
         
         origins_full = np.column_stack((interp_x, interp_y, interp_z))
+        # Endpoint values may fill the small gap between the requested bounds
+        # and sampled FFT bins, but never apply a shift outside the test range.
+        lower, upper = test_range_hz if test_range_hz is not None else (xp.min(), xp.max())
+        outside = (np.asarray(f_all) < lower) | (np.asarray(f_all) > upper)
+        origins_full[outside] = 0.0
         
         if save_to_disk:
             save_dict = {k: data[k] for k in data.files if k not in (schema.ORIGINS_MM, schema.SPEED_OF_SOUND_MPS)}
@@ -654,6 +659,7 @@ def run_origin_search(
     if isinstance(z_bounds, (int, float)): z_bounds = (-float(z_bounds), float(z_bounds))
     
     cfg = {
+        'origin_test_range_hz': (float(freq_start_hz), float(freq_end_hz)),
         'noise_floor_start_db': NOISE_FLOOR_START_DB,
         'noise_floor_max_db': NOISE_FLOOR_MAX_DB,
         'max_lambda': MAX_LAMBDA,
@@ -843,7 +849,8 @@ def run_origin_search(
 
         return export_interpolated_origins(
             history_freq, history_search_x, history_search_y, history_search_z, 
-            f_all, data, input_dir_origins, output_filename_origins, save_to_disk, speed_of_sound=speed_of_sound
+            f_all, data, input_dir_origins, output_filename_origins, save_to_disk, speed_of_sound=speed_of_sound,
+            test_range_hz=cfg['origin_test_range_hz']
         )
 
     # Save immediately upon completion

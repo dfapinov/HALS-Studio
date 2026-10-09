@@ -69,7 +69,7 @@ def run(request):
         if hasattr(source,'close'):source.close()
         usable=[(f,r['final_c']) for f,r in sorted(rows.items()) if r['final_c'] is not None]
         if not usable:raise ValueError('No valid acoustic origins')
-        xyz=np.array([p for f,p in usable]);export_interpolated_origins([f for f,p in usable],*xyz.T,freqs,data,str(out),filename,True,speed_of_sound=cfg.get('speed_of_sound',343))
+        xyz=np.array([p for f,p in usable]);export_interpolated_origins([f for f,p in usable],*xyz.T,freqs,data,str(out),filename,True,speed_of_sound=cfg.get('speed_of_sound',343),test_range_hz=cfg.get('origin_test_range_hz'))
         result=(rows,freqs,keys,d,geom,cfg,dict(data))
     elif stage==3:
         from stage3_optimize_she_settings import run_open_branch_optimizer

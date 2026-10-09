@@ -6,13 +6,14 @@ import numpy as np
 from PySide6 import QtCore as C,QtGui as G,QtWidgets as W
 import bootstrap
 import process_cache
+from project_paths import project_path_value
 from plots import Chart,style
 from pyvistaqt import QtInteractor
 import pyvista as pv
 
 SCHEMA=json.loads((bootstrap.HERE/'process_schema.json').read_text(encoding='utf-8'))
 VIEWS={1:['FDW results'],2:['Validation','3D coordinate cloud','3D grid scan'],3:['Order recommendations'],4:['Fit error','Condition number','Spatial error']}
-MAIN={1:['fdw_oct_res','fdw_max_cap_ms','enable_auto_gain','target_peak_db'],2:['octave_resolution','tweeter_x','tweeter_y','tweeter_z'],3:['freq_end_hz','freq_start_hz'],4:['target_n_max']}
+MAIN={1:['fdw_oct_res','fdw_max_cap_ms','enable_auto_gain','target_peak_db'],2:['octave_resolution','freq_start_hz'],3:['freq_end_hz','freq_start_hz'],4:['target_n_max']}
 
 class ProcessWorkspace(W.QWidget):
     def __init__(self,owner):
@@ -190,7 +191,8 @@ class ProcessWorkspace(W.QWidget):
             if self.cache(stage).exists():
                 self.results[stage]=process_cache.load(self.cache(stage),stage)
         state=data.get('hals_studio', data.get('hals_viewer',{})).get('session',{}).get('process_layout') or {}
-        if state.get('input_ir_folder'):self.ir_folder.setText(state['input_ir_folder'])
+        saved_ir_folder=project_path_value(state.get('input_ir_folder'),folder)
+        if saved_ir_folder:self.ir_folder.setText(saved_ir_folder)
         self.select_stage(state.get('stage',1));self.start_host()
     def layout_state(self):
         return dict(stage=self.stage,input_ir_folder=self.ir_folder.text())

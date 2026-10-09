@@ -238,7 +238,7 @@ KR+offset schedule and checks the matrix condition at the frequency where each o
 optimiser tests later frequencies. For example, it may keep N=5 active for  
 longer than the initial KR rule indicated and delay N=6 until the data better supports it.
 
-The first N=4 entry supplies the reference condition number used to set the target band. If no suitable entry is found for a higher order, that  
+The first N=4 entry supplies the reference condition number. The ceiling is ten times that reference. Entries already below the ceiling keep their KR timing, even if they are below the lower target (one fifth of the reference). For entries above the ceiling, the optimiser searches later frequencies and refines the crossing to avoid delaying the transition unnecessarily, including when a sample falls below the lower target. If no checked entry meets the ceiling for a higher order, that  
 order and all higher orders remain inactive.
 
 After a successful optimisation, the table is automatically copied to Stage 4  

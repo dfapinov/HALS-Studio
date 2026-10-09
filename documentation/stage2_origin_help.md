@@ -1,12 +1,64 @@
+# Stage 2 Help - Acoustic Origins
+
+Stage 2 finds a suitable acoustic origin at each tested frequency, preparing the data for the spherical-harmonic solve. In the app, this is the **Stage 2 - Origins** tab. The origin can move with frequency as different drivers, ports and other radiating surfaces contribute to the sound.
+
+This help file is split into two parts:
+
+- **Usage Guide:** what Stage 2 does, how to get started and how to choose the test range.
+- **Understanding Acoustic Origins:** why the origin matters and how the search works.
+
+---
+
+# Usage Guide
+
+## What Stage 2 Does
+
+Stage 2 searches for the origin coordinates that give a low fitting error at each tested frequency. It compares searches running from high to low and low to high frequencies, then keeps the better result at each frequency. The selected origins are interpolated within the test range and saved in the project's complex-data NPZ for later stages.
+
+## Why We Do This
+
+A suitable origin lets the spherical-harmonic model describe the measured sound field with fewer terms. A fixed origin may work well for one driver or limited frequency range but less well elsewhere, particularly around a crossover or where a port becomes the main radiator. Tracking the origin helps the later solve use its available harmonic degree (order N) to describe the sound field's directivity more efficiently.
+
+The result is a best-fit mathematical origin, which need not sit exactly on a physical driver but does typically follow the acoustic origin closely.
+
+## Quick Start
+
+1. Run Stage 2. The default settings are suitable for most complete speakers; check the start frequency for drivers with a restricted range.
+2. Review the origin paths and fitting errors. For example, where the tweeter dominates the output, the high-frequency origins should usually lie near its physical location.
+
+## Main Settings
+
+### Octave Resolution
+
+Stage 2 tests frequencies spaced by a fraction of an octave rather than searching every FFT bin. **Octave Resolution (1/x)** sets that spacing: `6` tests at 1/6-octave intervals, while `12` tests at 1/12-octave intervals. Finer spacing means more searches and a longer run.
+
+The resulting X, Y and Z coordinates are interpolated between tested frequencies to provide an origin for every FFT bin within the selected range. This assumes the effective origin changes smoothly enough between samples.
+
+### Start Frequency
+
+Set the lower test boundary with the device's measured response in mind, around the point where its low-frequency output reaches the measurement noise floor. Below that point, the search may start fitting environmental noise rather than the device. The resulting origins can move far from the device and fluctuate between frequencies.
+
+This matters particularly at low frequencies because Stage 4's KR-based order N cap uses microphone distances measured from the selected origin. Large or rapidly changing shifts alter those distances and can make the KR order move up and down rapidly with frequency.
+
+This is usually a small concern for complete speakers, which often work well with the default **20 Hz to 20 kHz** test. A driver with a restricted range may benefit from a narrower search. For example, a tweeter whose response reaches the noise floor below roughly **500 Hz** could use 500 Hz as the starting frequency. Choose the boundary from the measured response.
+
+The **End Frequency** is generally less critical for this issue because the KR cap mainly controls order at low frequencies, this setting is therefore under 'Advanced'. A woofer's origins may jump around where its high-frequency output becomes very weak, but those shifts are usually less consequential for the final solve and reconstruction. You can still lower **End Frequency (Hz)** to exclude that region and reduce the number of search frequencies, making Stage 2 faster.
+
+Reducing the Stage 2 range limits where optimized origins are applied; it does not remove frequency data or shorten the Stage 4 solve range.
+
+Outside the test range, the saved origin shift is zero.
+
+---
+
 # Understanding Acoustic Origins: Aligning Math with Physical Reality
 
-In **Spherical Harmonic Expansion (SHE)**, modelling a sound field in 3D space relies on a fundamental assumption: the mathematical centre of the coordinate system needs to match the actual source of the sound.
+In **Spherical Harmonic Expansion (SHE)**, the choice of coordinate origin affects how efficiently a sound field can be represented at a limited order N. An origin near the dominant source can reduce the order needed for a useful fit; it does not have to match an exact physical source point.
 
 However, a loudspeaker's acoustic origin is not static; it shifts depending on the frequency being played. 
 * At **10 kHz**, the sound originates from the tweeter. 
 * At **100 Hz**, it originates from the woofer or a bass reflex port.
 
-If we don't dynamically track and align our math with this moving acoustic origin, our calculations become unnecessarily complex, mathematically unstable, and highly susceptible to noise. This is called **“ill-conditioning”**.
+An unsuitable origin can require more terms to describe the same field. Increasing the order can also make a poorly conditioned solve more sensitive to noise and measurement errors. Tracking the origin helps reduce unnecessary complexity, although it does not by itself guarantee good conditioning.
 
 ---
 
@@ -31,7 +83,7 @@ In this respect, **Order N represents our spatial resolution.** Higher orders al
 
 ## The Origin Problem: The "Explosion" of Complexity
 
-Imagine a perfectly spherical, pulsating balloon (an N=0 monopole). If we place the center of this balloon exactly at the center of our mathematical universe (0,0,0), the math is incredibly simple. The SHE solver only needs a single coefficient (a single radius) at N=0 to perfectly describe its surface.
+Imagine a perfectly spherical, pulsating balloon (an N=0 monopole). If we place the center of this balloon exactly at the center of our mathematical universe (0,0,0), the math is incredibly simple. The SHE solver only needs the monopole term at N=0 to describe this ideal source's angular pattern.
 
 Now, imagine we move that same balloon 1 meter to the left, but we keep our mathematical origin at (0,0,0). 
 
@@ -49,10 +101,10 @@ When the acoustic origin is far from the mathematical origin, the required Order
 
 To further understand why a dynamic 3D origin search is necessary, it helps to look at how different sound sources on a loudspeaker interact. The acoustic origin isn't always a physical component you can touch; it is often a "phantom" point in space created by the summation of multiple sources or the physics of air motion where velocity and pressure are not in phase.
 
-* **The Crossover Handover (The Mid-way Point):** When a loudspeaker transitions from the tweeter down to the woofer, the acoustic center doesn't simply jump from one to the other. Through the crossover region, where both drivers are producing the exact same frequencies at similar amplitudes, the mathematical "center" of the combined sound field will resolve to a phantom mid-way point suspended between the two drivers.
+* **The Crossover Handover (The Mid-way Point):** When a loudspeaker transitions from the tweeter down to the woofer, the acoustic center doesn't simply jump from one to the other. Through the crossover region, where both drivers are producing the exact same frequencies at similar amplitudes, the mathematical "center" of the combined sound field may lie between the drivers, depending on their relative levels, phases and radiation patterns.
 * **Rapid Shifting and Diffraction:** At the specific frequency where a bass reflex port is tuned, the port takes over as the dominant radiator, causing the origin to shift rapidly toward the opening. Furthermore, when sound waves hit the cabinet edges, those edges act as secondary radiators (diffraction). Cabinet panels may vibrate as sympathetic resonators creating further sound sources. These interfere with the direct sound, pulling the calculated acoustic origin in unexpected directions.
 
-Because of these complex interactions, it is impossible to manually pick a single coordinate that works for the whole speaker, or even one per driver.
+Because of these interactions, a single manually chosen coordinate may not be equally suitable across the full frequency range.
 
 ---
 
@@ -69,7 +121,7 @@ The primary search tool is the **Nelder-Mead Simplex** algorithm.
 ### 2. The Volumetric Grid Scan (The "Brute Force" Map)
 For cases where the sound field is particularly chaotic, or simply to visualize the acoustic landscape, the script can perform a full volumetric grid scan.
 * **How it works:** It divides the 3D search area into a grid and calculates the SHE residual error at every single point (to a limited order_N, e.g., N=6).
-* **Strengths:** It provides a "true" map of the error landscape, ensuring the region of the global minimum is found regardless of where you start.
+* **Strengths:** It provides a "true" map of the error landscape, helping locate promising minima within the chosen bounds and grid resolution.
 * **The "Cost":** This method is computationally massive. While a Simplex search might require 50 solves per frequency, a full 3D landscape rendering for a single frequency might require 200,000. A single frequency full scan can take 5+ minutes. Running this across the entire spectrum could easily exceed hours of CPU time.
 
 ---
@@ -90,17 +142,16 @@ Because the brute force method is too slow for everyday use, the script is desig
 * **The History Seed:** Similar to the HF search, each successful solve seeds the next step upward.
 * **Path Tracking:** As the frequency increases, the simplex tracks the shifting origin upward toward the crossover region and tweeter.
 
-While each individual search branch is inherently sequential, they are independent of each other. It is therefore possible to process both in parallel on their own CPU cores, adding no extra time penalty compared to a single search. 
+While each individual search branch is inherently sequential, they are independent of each other. It is therefore possible to process both in parallel on their own CPU cores, potentially reducing elapsed time compared with running both searches sequentially. 
 
 Since each branch approaches the acoustic centre from a different starting position, they provide a "second opinion" on the origin's location. One search can occasionally find a lower error origin than the other.
 
-Once both branches complete, the script compares the results and selects the most accurate origin point from either path.
+Once both branches complete, the script compares the results and selects the origin with the lower fitting error from either path.
 
-These best-fit results are then interpolated across the full frequency resolution of your input data set for a seamless final output.
-
+These best-fit results are interpolated across the full frequency resolution within the selected test range. Frequencies below or above that range use zero origin shift. Rerunning Stage 2 replaces the saved origin array, including clearing shifts outside the new range.
 
 ### When to use the Grid Scan?
 The brute force grid scan is best reserved as a last resort for erroneous results or as a diagnostic tool. If the High-Frequency and Low-Frequency search branches fail to "meet in the middle" or provide results that do not seem to match the reality of the DUT, running a grid scan on the problematic frequencies can help determine if the simplex is getting stuck in a local valley.
 
 ### A Note on Reported Results
-Because the origin search is performed using a limited spatial resolution (typically Order N=6) to maintain high solve speeds, the error percentages reported during this stage may appear higher than those of the final, high-order SHE reconstruction. You should expect to see a reasonably consistent error curve that rises slightly during complex spatial transitions—such as the crossover region—and generally trends upward toward the high frequencies.
+Because the origin search is performed using a limited spatial resolution (Order N=4 by default) to maintain high solve speeds, the error percentages reported during this stage may appear higher than those of the final, high-order SHE reconstruction. You should expect to see a reasonably consistent error curve that rises slightly during complex spatial transitions—such as the crossover region—and generally trends upward toward the high frequencies.

@@ -1,29 +1,38 @@
 """Portable file paths embedded in HALS Studio project JSON files."""
 from copy import deepcopy
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 
 def project_path_value(value, project_dir, *, save=False, require_exists=True):
     """Convert project-owned paths between folder-relative JSON and runtime paths.
 
-    Paths outside the project are intentionally not persisted in a project JSON;
-    that prevents a backup copy from accidentally loading files from its source.
+    Legacy absolute paths can be recovered from an existing suffix inside the
+    current project. Never follow paths belonging to another project copy.
     """
     if not value:
         return ''
     root = Path(project_dir).resolve()
     candidate = Path(value)
-    if save:
-        candidate = (root / candidate).resolve() if not candidate.is_absolute() else candidate.resolve()
-        try:
-            return candidate.relative_to(root).as_posix()
-        except ValueError:
-            return ''
+    legacy = PureWindowsPath(value) if PureWindowsPath(value).is_absolute() else candidate
+    absolute = legacy.is_absolute()
     candidate = (root / candidate).resolve() if not candidate.is_absolute() else candidate.resolve()
     try:
+        if absolute and not Path(value).is_absolute():
+            raise ValueError()
         candidate.relative_to(root)
     except ValueError:
-        return ''
+        if not absolute:
+            return ''
+        parts = legacy.parts[1:]
+        for start in range(len(parts)):
+            recovered = root.joinpath(*parts[start:]).resolve()
+            if recovered.is_relative_to(root) and recovered.exists():
+                candidate = recovered
+                break
+        else:
+            return ''
+    if save:
+        return candidate.relative_to(root).as_posix()
     return str(candidate) if not require_exists or candidate.exists() else ''
 
 
@@ -32,6 +41,10 @@ def normalize_session_paths(state, project_dir, *, save=False):
     if not state:
         return state
     state = deepcopy(state)
+    layout = state.get('process_layout')
+    if layout and layout.get('input_ir_folder'):
+        layout['input_ir_folder'] = project_path_value(
+            layout['input_ir_folder'], project_dir, save=save)
     state['source'] = project_path_value(state.get('source'), project_dir, save=save) or None
     setup = state.get('export_setup')
     if setup:
@@ -53,7 +66,7 @@ def normalize_session_paths(state, project_dir, *, save=False):
 
 _PROJECT_FILE_KEYS = {'coeff_path', 'source', 'mic_cal_file', 'mic_cal_fallback',
                       'output_dir', 'input_dir', 'ir_folder', 'axis_source', 'cache',
-                      'origin_cache', 'project_path'}
+                      'origin_cache', 'project_path', 'input_ir_folder'}
 
 
 def normalize_project_paths(value, project_dir):

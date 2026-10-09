@@ -6,11 +6,12 @@ from stage4_run_she_solve import proposed_order
 
 
 def optimise_transitions(freqs, proposed, condition):
-    """Search a bounded set of entry bins for a two-sided condition target.
+    """Search a bounded set of entry bins for a condition ceiling.
 
     For each higher degree, sample five log-spaced frequency offsets. If a
-    sample is inside the target band after a sample above it, bisect twice to
-    refine the first crossing. A degree is activated only on a checked bin;
+    sample is below the ceiling after a sample above it, bisect twice to
+    refine the first crossing, including samples below the lower target
+    that may have overshot it. A degree is activated only on a checked bin;
     an unqualified degree and higher degrees remain inactive.
 
     Test contract: test_condition_preflight.py::test_bounded_search_and_upper_cutoff_round_trip
@@ -60,10 +61,10 @@ def optimise_transitions(freqs, proposed, condition):
             for i in sample_indices:
                 value = check(n, i)
                 checked.append((i, value))
-                if lower <= value <= upper:
+                if np.isfinite(value) and value <= upper:
                     chosen = i
                     # Refine a descending crossing from above the band. Each
-                    # checked midpoint must still satisfy the full band.
+                    # checked midpoint must still satisfy the ceiling.
                     prior = [(j, c) for j, c in checked[:-1] if c > upper]
                     if prior:
                         lo = prior[-1][0]
@@ -74,15 +75,11 @@ def optimise_transitions(freqs, proposed, condition):
                             if mid <= lo or mid >= hi:
                                 break
                             cmid = check(n, mid)
-                            if lower <= cmid <= upper:
+                            if np.isfinite(cmid) and cmid <= upper:
                                 best = mid
                                 hi = mid
-                            elif cmid > upper:
-                                lo = mid
                             else:
-                                # The condition skipped below the band; retain
-                                # the already verified in-band sample.
-                                hi = mid
+                                lo = mid
                         chosen = best
                     break
 

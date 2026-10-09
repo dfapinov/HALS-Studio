@@ -1,6 +1,35 @@
 from project_paths import normalize_project_paths, normalize_session_paths, project_path_value
 
 
+def test_process_input_folder_moves_with_project(tmp_path):
+    original = tmp_path / 'original'
+    backup = tmp_path / 'backup'
+    for root in (original, backup):
+        (root / 'measurement_set').mkdir(parents=True)
+    state = {'process_layout': {'stage': 2, 'input_ir_folder': str(original / 'measurement_set')}}
+
+    saved = normalize_session_paths(state, original, save=True)
+    assert saved['process_layout']['input_ir_folder'] == 'measurement_set'
+    assert state['process_layout']['input_ir_folder'] == str(original / 'measurement_set')
+    restored = normalize_session_paths(saved, backup)
+    assert restored['process_layout']['input_ir_folder'] == str(backup / 'measurement_set')
+    assert restored['process_layout']['stage'] == 2
+    assert normalize_session_paths(state, backup)['process_layout']['input_ir_folder'] == str(backup / 'measurement_set')
+    assert normalize_project_paths(state, original)['process_layout']['input_ir_folder'] == 'measurement_set'
+
+
+def test_legacy_windows_paths_recover_existing_project_suffix(tmp_path):
+    root = tmp_path / 'moved'
+    asset = root / 'outputs' / 'coefficients' / 'speaker.h5'
+    asset.parent.mkdir(parents=True)
+    asset.touch()
+    old = r'D:\Jans Measurments\ELAC-Debut2.0\outputs\coefficients\speaker.h5'
+    assert project_path_value(old, root) == str(asset)
+    assert project_path_value(old, root, save=True) == 'outputs/coefficients/speaker.h5'
+    assert project_path_value(r'D:\old\missing.h5', root, save=True) == ''
+    assert project_path_value('../outside.h5', root, save=True) == ''
+
+
 def test_project_paths_are_relative_and_bound_to_project_copy(tmp_path):
     original = tmp_path / 'original'
     backup = tmp_path / 'backup'

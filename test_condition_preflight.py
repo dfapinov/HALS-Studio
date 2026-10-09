@@ -38,7 +38,7 @@ def test_bounded_search_and_upper_cutoff_round_trip(bin_count):
     assert any(r['activation_hz'] != r['original_hz'] for r in result['transitions'])
     for row in result['transitions']:
         if row['activation_hz'] is not None and row['order'] > 4:
-            assert row['target_lower'] <= row['condition'] <= row['target_upper']
+            assert np.isfinite(row['condition']) and row['condition'] <= row['target_upper']
     np.testing.assert_array_equal([_get_table_limit(f, True, result['manual_table']) for f in freqs],
                                   result['adjusted_orders'])
 
@@ -55,3 +55,21 @@ def test_non_improving_or_singular_degree_is_not_activated():
                                   lambda n, i: 1e4 if n <= 4 else np.inf)
     assert max(result['adjusted_orders']) == 4
     assert all(r['activation_hz'] is None for r in result['transitions'] if r['order'] > 4)
+
+
+def test_low_condition_keeps_kr_entries():
+    freqs = np.arange(1, 21)*100.
+    proposed = np.minimum(8, np.arange(20)+2)
+    result = optimise_transitions(freqs, proposed, lambda n, i: 1e9 if n <= 4 else 1e4)
+    np.testing.assert_array_equal(result['adjusted_orders'], proposed)
+    assert all(r['activation_hz'] == r['original_hz'] for r in result['transitions'])
+
+
+def test_search_refines_crossing_that_overshoots_lower_target():
+    freqs = np.arange(100., 2001., 10.)
+    proposed = np.where(freqs < 200, 3, np.where(freqs < 400, 4, 5))
+    result = optimise_transitions(freqs, proposed,
+                                  lambda n, i: 1e4 if n <= 4 else (1e7 if freqs[i] < 430 else 10.))
+    row = result['transitions'][-1]
+    assert row['activation_hz'] == 430.
+    assert row['condition'] < row['target_lower']

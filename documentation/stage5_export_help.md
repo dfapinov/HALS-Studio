@@ -70,6 +70,11 @@ Standard calibration files only provide magnitude adjustments. However, this scr
 
 * **Fade-Out:** Microphone calibration files rarely cover the entire frequency spectrum. To prevent a sudden "step" or shelf in the measurement data where the calibration file ends, the script automatically applies a fade-out to the correction above and below the limits of the provided file. The bandwidth of this fade can be user-set, but by default is 1-octave.
 
+## FRD Offset
+
+**FRD Offset (dB)** adds a constant level adjustment to the exported FRD magnitude, bringing it onto the calibrated SPL scale. This value is normally supplied by the project file from the calibration performed in the HALS Control measurement app.
+
+It does not scale the exported IR WAV files, and it is not applied to directivity-index curves, which represent level differences.
 
 ---
 
