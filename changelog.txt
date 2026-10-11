@@ -1,5 +1,8 @@
 11/10/26 - Latest changes
 
+- Stage 1 now highlights and initially displays the IR filename nearest the
+  project metadata tweeter height (Z), then azimuth (PH), at the top of the list.
+
 - Stage 4 added Sound Power vs Harmonic Degree, with total and per-degree
   traces versus frequency, Internal/External field selection.
 

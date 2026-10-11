@@ -5,6 +5,29 @@ from pathlib import Path
 import numpy as np
 
 
+def closest_tweeter_ir(filenames, grid):
+    """Choose the nearest height, then wrapped azimuth; ignore measurement radius."""
+    from process_engine.utils import parse_coords_from_filename
+    try:
+        target_z = float(grid['wp_tw_z'])
+        target_phi = float(grid['wp_tw_phi'])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not np.isfinite([target_z, target_phi]).all():
+        return None
+    candidates = []
+    for name in filenames:
+        try:
+            radius, theta, phi = parse_coords_from_filename(name)
+            z = round(radius * np.cos(theta) * 1000, 6)
+            angle = abs((np.rad2deg(phi) - target_phi + 180) % 360 - 180)
+            if np.isfinite([z, angle]).all():
+                candidates.append((round(abs(z - target_z), 6), round(angle, 6), name))
+        except (ValueError, TypeError, OverflowError):
+            continue
+    return min(candidates)[2] if candidates else None
+
+
 def load_stage1(path, settings):
     path = Path(path)
     if not path.is_file():

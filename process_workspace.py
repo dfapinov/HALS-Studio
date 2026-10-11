@@ -386,7 +386,18 @@ class ProcessWorkspace(W.QWidget):
                 if not available and self.view.currentIndex()==index:self.view.setCurrentIndex(0)
         if r is not None:
             if self.stage==1:
-                for name in sorted(r[1]):self.sample.addItem(name,name)
+                pane=self.owner.export_workspace
+                grid=pane.config.get('project_geometry',{}) if pane is not None else {}
+                names=sorted(r[1]);preferred=process_cache.closest_tweeter_ir(names,grid)
+                if preferred is not None:names.remove(preferred);names.insert(0,preferred)
+                for name in names:
+                    self.sample.addItem(name+' — Closest to tweeter' if name==preferred else name,name)
+                    index=self.sample.count()-1
+                    self.sample.setItemData(index,name,C.Qt.ToolTipRole)
+                    if name==preferred:
+                        font=G.QFont(self.sample.font());font.setBold(True);self.sample.setItemData(index,font,C.Qt.FontRole)
+                        self.sample.setItemData(index,f'{name}\nClosest to tweeter: nearest Z height, then nearest phi angle (ignoring radius).',C.Qt.ToolTipRole)
+                self.sample.setCurrentIndex(0)
             elif self.stage==2:
                 for f in sorted(r[0]):self.sample.addItem(f'{f:,.1f} Hz',float(f))
             elif self.stage==3:

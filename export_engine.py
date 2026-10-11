@@ -105,7 +105,7 @@ def validate(config, writing=False):
 
 class PoolAdapter:
     def __init__(self, pool, cancelled, progress): self.pool, self.cancelled, self.progress = pool, cancelled, progress
-    def imap(self, func, iterable):
+    def imap(self, func, iterable, chunksize=1):
         from worker_pool import evaluate_task
         tasks = list(iterable)
         results = self.pool.map(tasks, self.cancelled) if self.pool else map(evaluate_task, tasks)
@@ -113,6 +113,9 @@ class PoolAdapter:
             if self.cancelled(): raise Cancelled()
             self.progress(round(80*(i+1)/len(tasks)), f'Evaluating native frequency bins · {i+1}/{len(tasks)} batches')
             yield result
+
+    # Viewer workers already yield batches in completion order.
+    imap_unordered = imap
 
 
 def run_export(config, pool=None, writing=False, progress=lambda *_: None, cancelled=lambda: False, log=lambda *_: None):
