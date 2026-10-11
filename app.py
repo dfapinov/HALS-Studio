@@ -480,6 +480,8 @@ class Atlas(W.QMainWindow):
         self.statusBar().addPermanentWidget(self.cancel_button)
         self.worker_label = label("Workers warming…", "muted")
         self.statusBar().addPermanentWidget(self.worker_label)
+        from cpu_usage import add_cpu_meter
+        add_cpu_meter(self)
         self.statusBar().showMessage("Ready")
 
     def _menus(self):

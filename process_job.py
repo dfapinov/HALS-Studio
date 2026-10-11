@@ -13,7 +13,7 @@ class SharedPool:
     def fail(self,exc):self.pool.state='failed';self.pool.error=str(exc)
 
 class Output:
-    def __init__(self,original,emit):self.original=original;self.emit=emit;self.thread=threading.get_ident()
+    def __init__(self,original,emit,progress=None):self.original=original;self.emit=emit;self.progress=progress;self.thread=threading.get_ident()
     def write(self,text):
         # Engine origin-search threads also report progress here.
         self.emit(text);return len(text)
@@ -22,6 +22,7 @@ class Output:
 
 class ProcessJob(C.QThread):
     message=C.Signal(str)
+    progress=C.Signal(dict)
     completed=C.Signal(dict)
     def __init__(self,request,pool,parent=None):super().__init__(parent);self.request=request;self.pool=pool
     def run(self):
@@ -29,7 +30,7 @@ class ProcessJob(C.QThread):
         try:
             from session_pool import install_session_pool
             install_session_pool(SharedPool(self.pool))
-            sys.stdout=Output(stdout,self.message.emit);sys.stderr=Output(stderr,self.message.emit)
+            sys.stdout=Output(stdout,self.message.emit,self.progress.emit);sys.stderr=Output(stderr,self.message.emit)
             self.message.emit(f'Using shared viewer pool: {self.pool.workers} workers ({self.pool.state})\n')
             self.request['workers']=self.pool.workers
             cache=process_service.run(self.request);self.completed.emit(dict(ok=True,stage=self.request['stage'],cache=cache))
@@ -39,6 +40,7 @@ class ProcessJob(C.QThread):
 
 
 class SpatialErrorJob(C.QThread):
+    progress=C.Signal(dict)
     completed=C.Signal(dict)
 
     def __init__(self,npz_path,coeff_path,pool,parent=None):
@@ -49,7 +51,7 @@ class SpatialErrorJob(C.QThread):
             import process_cache
             from session_pool import PoolView
             result=process_cache.hydrate_stage4(self.npz_path,self.coeff_path,
-                                               process_pool=PoolView(SharedPool(self.pool)))
+                                               process_pool=PoolView(SharedPool(self.pool)), progress=self.progress.emit)
             self.completed.emit(dict(ok=True,result=result))
         except Exception as exc:
             self.completed.emit(dict(ok=False,error=str(exc)))

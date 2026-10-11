@@ -12,6 +12,7 @@ from acoustics import Cancelled
 from export_engine import (DEFAULT_EXPORT, geometry, baffle_geometry, import_project, run_export,
                            project_files, coefficient_files, acoustic_origin)
 from plot_interaction import PlotInteraction
+from cli_log import CliLog
 from complex_to_ir_core import complex_to_ir
 from export_preview import PreviewCache
 
@@ -195,7 +196,7 @@ class ExportWorkspace(W.QWidget):
         self.points.itemSelectionChanged.connect(self.table_select); 
         from project_metadata import MetadataEditor
         self.metadata_editor = MetadataEditor(self)
-        self.log = W.QPlainTextEdit(); self.log.setReadOnly(True); self.log.setMaximumBlockCount(2000)
+        self.log = CliLog(); self.log.setMaximumBlockCount(2000)
         cli = W.QWidget(); cli_layout = W.QVBoxLayout(cli); cli_layout.addWidget(self.log)
         cli_buttons = W.QHBoxLayout(); cli_layout.addLayout(cli_buttons)
         self.cli_run = W.QPushButton('Run Export'); self.cli_run.clicked.connect(lambda: self.start(True)); cli_buttons.addWidget(self.cli_run)

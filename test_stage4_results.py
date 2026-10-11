@@ -69,6 +69,30 @@ def test_reopened_stage4_spatial_view_without_solving(cached):
              patch('process_engine.spatial_error_viewer.evaluate_she_field', wraps=evaluate_she_field) as bulk:
             pane.select_stage(4)
             pane.load_existing()
+            pane.view.setCurrentText('Sound Power vs Harmonic Degree')
+            assert pane.last_plot_error is None
+            assert pane.original_results.fig.axes[0].lines[0].get_label() == 'Total sound power'
+            assert [pane.power_field.itemText(i) for i in range(pane.power_field.count())] == ['Internal field','External field']
+            internal = pane.original_results.fig.axes[0].lines[0].get_ydata().copy()
+            pane.power_field.setCurrentText('External field')
+            assert pane.last_plot_error is None
+            assert not np.allclose(pane.original_results.fig.axes[0].lines[0].get_ydata(), internal)
+            assert 'external_field' in pane.image_path().name
+            canvas = pane.original_results.canvas;canvas.draw()
+            interaction = pane.original_results.interaction;ax = interaction.main_ax
+            full_x, full_y = ax.get_xlim(), ax.get_ylim()
+            from matplotlib.backend_bases import MouseEvent
+            x, y = ax.transAxes.transform((.5,.5))
+            canvas.callbacks.process('scroll_event', MouseEvent('scroll_event',canvas,x,y,button='up',step=2))
+            assert ax.get_xlim()[1]/ax.get_xlim()[0] < full_x[1]/full_x[0]
+            zoom_y = ax.get_ylim()
+            canvas.callbacks.process('button_press_event', MouseEvent('button_press_event',canvas,x,y,button=2))
+            canvas.callbacks.process('motion_notify_event', MouseEvent('motion_notify_event',canvas,x+20,y+20,button=2))
+            canvas.callbacks.process('button_release_event', MouseEvent('button_release_event',canvas,x+20,y+20,button=2))
+            assert not np.allclose(ax.get_ylim(),zoom_y)
+            pane.stack.setCurrentWidget(pane.original_results);pane.reset()
+            np.testing.assert_allclose(ax.get_xlim(),full_x)
+            np.testing.assert_allclose(ax.get_ylim(),full_y)
             assert pane.view.model().item(pane.view.findText('Spatial error')).isEnabled()
             hydrate.assert_not_called()
             pane.view.setCurrentText('Spatial error')
@@ -148,3 +172,37 @@ def test_saved_files_keep_original_96th_octave_bin_selection():
     np.testing.assert_array_equal(result['freqs'], freqs[indices])
     np.testing.assert_array_equal(result['P_measured'][:, 0], measured[indices])
     np.testing.assert_array_equal(result['P_reconstructed'][:, 0], freqs[indices])
+
+
+def test_spatial_drag_locks_roll_without_changing_other_views():
+    import matplotlib as mpl
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from process_results import VIEWS
+    view = VIEWS['SpatialErrorView']()
+    canvas = FigureCanvasAgg(view.fig)
+    canvas.draw()
+    ax = view.ax
+    ax.button_pressed = 1
+    ax._sx, ax._sy = 0., 0.
+    before = ax.elev, ax.azim
+    with mpl.rc_context({'axes3d.mouserotationstyle': 'arcball'}):
+        for x, y in ((.02, .01), (.04, -.03), (-.01, .02)):
+            ax._on_move(SimpleNamespace(xdata=x, ydata=y, inaxes=ax))
+            assert ax.roll == 0
+            assert mpl.rcParams['axes3d.mouserotationstyle'] == 'arcball'
+    assert (ax.elev, ax.azim) != before
+
+
+def test_spatial_reconstruction_emits_frequency_progress():
+    from concurrent.futures import ThreadPoolExecutor
+    from session_pool import PoolView
+    _, npz, coeff, expected = saved_solve()
+    events = []
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        pool = PoolView(SimpleNamespace(workers=2, executor=lambda: executor))
+        result = process_cache.hydrate_stage4(npz, coeff, process_pool=pool, progress=events.append)
+    assert events[0]['completed'] == 0
+    assert events[-1]['completed'] == events[-1]['total'] == 2
+    assert events[-1]['eta'] == 0
+    assert all(e['label'] == 'Spatial error reconstruction' for e in events)
+    np.testing.assert_allclose(result['P_reconstructed'], expected)

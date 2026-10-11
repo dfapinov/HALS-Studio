@@ -6,13 +6,14 @@ import numpy as np
 from PySide6 import QtCore as C,QtGui as G,QtWidgets as W
 import bootstrap
 import process_cache
+from cli_log import CliLog
 from project_paths import project_path_value
 from plots import Chart,style
 from pyvistaqt import QtInteractor
 import pyvista as pv
 
 SCHEMA=json.loads((bootstrap.HERE/'process_schema.json').read_text(encoding='utf-8'))
-VIEWS={1:['FDW results'],2:['Validation','3D coordinate cloud','3D grid scan'],3:['Order recommendations'],4:['Fit error','Condition number','Spatial error']}
+VIEWS={1:['FDW results'],2:['Validation','3D coordinate cloud','3D grid scan'],3:['Order recommendations'],4:['Fit error','Condition number','Spatial error','Sound Power vs Harmonic Degree']}
 MAIN={1:['fdw_oct_res','fdw_max_cap_ms','enable_auto_gain','target_peak_db'],2:['octave_resolution','freq_start_hz'],3:['freq_end_hz','freq_start_hz'],4:['target_n_max']}
 
 class ProcessWorkspace(W.QWidget):
@@ -42,9 +43,8 @@ class ProcessWorkspace(W.QWidget):
                 value=self.values[stage][key]
                 if isinstance(value,bool):
                     control=W.QCheckBox()
-                    invert=(stage==4 and key=='use_manual_table')
-                    control.setChecked(not value if invert else value)
-                    control.toggled.connect(lambda v,s=stage,k=key,inv=invert:self.values[s].update({k:not v if inv else v}))
+                    control.setChecked(value)
+                    control.toggled.connect(lambda v,s=stage,k=key:self.values[s].update({k:v}))
                 else:control=W.QLineEdit(str(value));control.textChanged.connect(lambda v,s=stage,k=key:self.values[s].update({k:v}))
                 control.setToolTip(spec['help']);caption=W.QLabel(spec['label']);caption.setWordWrap(False)
                 if isinstance(control,W.QLineEdit):control.setFixedWidth(145 if key.endswith('bounds') or key=='test_order_range' else 105)
@@ -52,14 +52,24 @@ class ProcessWorkspace(W.QWidget):
                 if stage==3 and key=='freq_start_hz':
                     field=W.QWidget();row=W.QHBoxLayout(field);row.setContentsMargins(0,0,0,0);row.addWidget(control)
                     self.rft_reset_button=W.QPushButton('Set from RFT');self.rft_reset_button.clicked.connect(self.set_range_from_rft);row.addWidget(self.rft_reset_button);row.addStretch()
-                (mainform if key in MAIN[stage] else advancedform).addRow(caption,field);self.controls[stage,key]=control
+                if not (stage==2 and key in ('hold_origin_lf','hold_origin_hf')):(mainform if key in MAIN[stage] else advancedform).addRow(caption,field)
+                self.controls[stage,key]=control
+            if stage==2:
+                holds=W.QWidget();holdrow=W.QHBoxLayout(holds);holdrow.setContentsMargins(0,0,0,0)
+                for key in ('hold_origin_lf','hold_origin_hf'):
+                    control=self.controls[2,key];control.setText(SCHEMA['2'][key]['label']);holdrow.addWidget(control)
+                holdrow.addStretch();advancedform.addRow('Hold coordinate outside test range',holds)
             if stage==3:
-                self.controls[3,'condition_preflight'].toggled.connect(self.refresh_order_action)
                 self.order_choice=W.QComboBox();self.order_choice.setSizeAdjustPolicy(W.QComboBox.AdjustToContents);self.order_choice.currentIndexChanged.connect(self.refresh_order_action)
                 self.reference_order=W.QComboBox();self.reference_order.setSizeAdjustPolicy(W.QComboBox.AdjustToContents);self.reference_order.currentIndexChanged.connect(self.change_reference)
             if stage==4:
                 control=self.controls[4,'use_manual_table'];caption=advancedform.labelForField(control);advancedform.removeWidget(control);advancedform.removeWidget(caption);caption.deleteLater();control.setText(SCHEMA['4']['use_manual_table']['label']);advancedform.addRow(control)
                 edit=W.QPushButton('Edit manual order table');edit.setSizePolicy(W.QSizePolicy.Fixed,W.QSizePolicy.Fixed);edit.clicked.connect(self.edit_orders);advancedform.addRow(edit)
+                optimizer=self.controls[4,'condition_preflight'];optimizer_label=advancedform.labelForField(optimizer)
+                def growth_controls(manual,optimizer=optimizer,label=optimizer_label,button=edit):
+                    optimizer.setEnabled(not manual);label.setEnabled(not manual);button.setEnabled(manual)
+                control.toggled.connect(growth_controls)
+                growth_controls(control.isChecked())
         actions=W.QHBoxLayout();box.addLayout(actions);self.run_button=W.QPushButton('Run Stage 1');self.run_button.setObjectName('primary');self.run_button.clicked.connect(lambda:self.run());actions.addWidget(self.run_button)
         self.cancel_button=W.QPushButton('Cancel');self.cancel_button.setEnabled(False);self.cancel_button.clicked.connect(lambda:self.cancel());actions.addWidget(self.cancel_button)
         self.left_panel=left;left.setMinimumWidth(0);left.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Expanding)
@@ -73,10 +83,14 @@ class ProcessWorkspace(W.QWidget):
         self.plane=W.QComboBox();self.plane.addItems(['XY','XZ','YZ']);self.plane.currentTextChanged.connect(self.draw);bar.addWidget(self.plane)
         self.slice_position=W.QSlider(C.Qt.Horizontal);self.slice_position.setFixedWidth(130);self.slice_position.valueChanged.connect(self.draw);bar.addWidget(self.slice_position);self.slice_label=W.QLabel();self.slice_label.setMinimumWidth(85);bar.addWidget(self.slice_label)
         self.error_units=W.QComboBox();self.error_units.addItems(['Error / dB','Error / percent']);self.error_units.currentTextChanged.connect(self.draw);bar.addWidget(self.error_units)
+        self.power_tools=W.QWidget();powerbar=W.QHBoxLayout(self.power_tools);powerbar.setContentsMargins(0,0,0,0)
+        self.power_field=W.QComboBox();self.power_field.addItems(['Internal field','External field']);self.power_field.setAccessibleName('Sound power field');self.power_field.currentTextChanged.connect(self.draw);powerbar.addWidget(self.power_field)
+        bar.addWidget(self.power_tools)
         self.threshold=W.QDoubleSpinBox();self.threshold.setRange(-120,0);self.threshold.setValue(-30);self.threshold.setPrefix('Floor ');self.threshold.setSuffix(' dB');self.threshold.setToolTip('Exclude measurement points below this level relative to the strongest point at this frequency.');self.threshold.valueChanged.connect(self.draw);bar.addWidget(self.threshold)
         self.previous=W.QPushButton('< Previous');self.previous.clicked.connect(lambda:self.sample.setCurrentIndex((self.sample.currentIndex()-1)%max(1,self.sample.count())));bar.addWidget(self.previous)
         self.next=W.QPushButton('Next >');self.next.clicked.connect(lambda:self.sample.setCurrentIndex((self.sample.currentIndex()+1)%max(1,self.sample.count())));bar.addWidget(self.next)
 
+        self.power_reset=W.QPushButton('Reset axes');self.power_reset.setFixedHeight(32);self.power_reset.clicked.connect(self.reset);bar.addWidget(self.power_reset)
         bar.addStretch();self.save_image_button=W.QPushButton('Save image');self.save_image_button.clicked.connect(self.save_image);bar.addWidget(self.save_image_button)
         self.stage2_tools=W.QWidget();s2=W.QHBoxLayout(self.stage2_tools);s2.setContentsMargins(0,0,0,0);rescan=W.QPushButton('Full grid rescan of selected frequency');rescan.clicked.connect(lambda:self.run('rescan'));s2.addWidget(rescan);s2.addWidget(W.QLabel('Frequency'));self.rescan_frequency=W.QComboBox();self.rescan_frequency.setFixedWidth(145);self.rescan_frequency.currentIndexChanged.connect(self.sample.setCurrentIndex);self.sample.currentIndexChanged.connect(self.rescan_frequency.setCurrentIndex);s2.addWidget(self.rescan_frequency);edit=W.QPushButton('Edit coordinate table');edit.clicked.connect(self.edit_origins);s2.addWidget(edit);s2.addStretch();bar.insertWidget(2,self.stage2_tools)
         self.stage3_tools=W.QWidget();s3=W.QHBoxLayout(self.stage3_tools);s3.setContentsMargins(0,0,0,0);s3.addWidget(W.QLabel('Sound power reference'));self.reference_order.setMaximumWidth(200);s3.addWidget(self.reference_order);s3.addStretch();bar.insertWidget(0,self.stage3_tools)
@@ -93,7 +107,7 @@ class ProcessWorkspace(W.QWidget):
         self.summary=W.QLabel('Open a HALS project or create one to begin.');self.summary.setWordWrap(True);resultbox.addWidget(self.summary)
         result.setMinimumWidth(0);result.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Expanding);self.split.addWidget(result)
         cli=W.QFrame();cli.setFrameShape(W.QFrame.StyledPanel);cl=W.QVBoxLayout(cli);cl.setContentsMargins(5,5,5,5);cr=W.QHBoxLayout();cr.addWidget(W.QLabel('CLI OUTPUT'));cr.addStretch();b=W.QPushButton('Clear');b.clicked.connect(lambda:self.log.clear());cr.addWidget(b);b=W.QPushButton('Save log');b.clicked.connect(self.save_log);cr.addWidget(b);cl.addLayout(cr)
-        self.log=W.QPlainTextEdit();self.log.setReadOnly(True);self.log.setMaximumBlockCount(30000);cl.addWidget(self.log);self.sidebar_split.addWidget(cli)
+        self.log=CliLog();self.log.setMaximumBlockCount(30000);cl.addWidget(self.log);self.sidebar_split.addWidget(cli)
         self._sidebar_width=int(owner.settings.value('process_sidebar_width',420))
         self.split.setSizes([self._sidebar_width,980]);self.split.splitterMoved.connect(lambda *_: owner.settings.setValue('process_sidebar_width',self.split.sizes()[0]))
         cli_fraction=float(owner.settings.value('process_cli_height_fraction',.3))
@@ -156,7 +170,7 @@ class ProcessWorkspace(W.QWidget):
         except (KeyError,ValueError,TypeError):pass
     def set_value(self,stage,key,value):
         control=self.controls[stage,key]
-        if isinstance(control,W.QCheckBox):control.setChecked(not bool(value) if stage==4 and key=='use_manual_table' else bool(value))
+        if isinstance(control,W.QCheckBox):control.setChecked(bool(value))
         else:control.setText(str(value))
     def adopt_project(self,force=False):
         path=self.owner.project_path
@@ -166,6 +180,8 @@ class ProcessWorkspace(W.QWidget):
         self._loading_rft=True
         for stage in range(1,5):
             for key,spec in SCHEMA[str(stage)].items():self.set_value(stage,key,data.get(f'stage{stage}_vars',{}).get(key,spec['default']))
+        if 'condition_preflight' not in data.get('stage4_vars',{}):
+            self.set_value(4,'condition_preflight',data.get('stage3_vars',{}).get('condition_preflight',True))
         from process_engine.rft_range import project_rft_ms
         self.set_value(3,'fdw_rft_ms',project_rft_ms(data))
         self._loading_rft=False
@@ -223,6 +239,8 @@ class ProcessWorkspace(W.QWidget):
         if self.owner.worker and self.owner.worker.isRunning():W.QMessageBox.information(self,'Busy','Wait for Analysis reconstruction to finish.');return
         if self.owner.export_workspace and self.owner.export_workspace.job:W.QMessageBox.information(self,'Busy','Wait for Export evaluation to finish.');return
         name=self.project_name.text().strip()
+        if self.stage==4 and self.values[4]['use_manual_table'] and not self.manual_table:
+            W.QMessageBox.warning(self,'Order table','Enter a manual order table or uncheck Use manual order table.');return
         if self.stage==4 and not self.values[4]['use_manual_table']:
             try:
                 if int(self.values[4]['target_n_max'])<2:raise ValueError()
@@ -231,9 +249,6 @@ class ProcessWorkspace(W.QWidget):
         request=dict(stage=self.stage,settings=deepcopy(self.values[self.stage]),folder=str(Path(self.owner.project_path).parent),name=name,ir_folder=self.ir_folder.text(),cache=str(self.cache(self.stage)),manual_table=self.manual_table,speed=self.speed.value(),manual_speed=self.manual_speed.isChecked(),action=action)
         request['rft_ms']=self.values[3]['fdw_rft_ms']
         request['project_oct_res']=self.stage1_resolution()
-        if self.stage==3 and action=='growth':
-            request['selected_order_N']=int(self.order_choice.currentData())
-            request['preflight_settings']=deepcopy(self.values[4])
         if edits:request['edits']=edits
         if action=='reference':request['reference']=self.reference_order.currentData()['n']
         if action=='load_origins':request['origin_cache']=self.origin_cache_path
@@ -244,18 +259,35 @@ class ProcessWorkspace(W.QWidget):
         self.refresh_order_action()
         self.log.appendPlainText(f'\nStage {self.stage} - {action} - {name}\n')
         from process_job import ProcessJob
-        self.host=ProcessJob(request,self.owner.pool,self);self.host.message.connect(self.append_output);self.host.completed.connect(self.finished);self.host.start();self.summary.setText(f'Stage {self.stage} running - inspect CLI output below')
+        self.host=ProcessJob(request,self.owner.pool,self);self.host.message.connect(self.append_output);self.host.progress.connect(self.processing_progress);self.host.completed.connect(self.finished)
+        if hasattr(self.owner,'progress'):
+            self.owner.progress.setRange(0,0);self.owner.progress.show();self.owner.statusBar().showMessage(f'Stage {self.stage}: preparing… | ETA estimating…')
+        self.host.start();self.summary.setText(f'Stage {self.stage} running - inspect CLI output below')
+    def processing_progress(self,event):
+        if not self.job or not hasattr(self.owner,'progress'):return
+        self.display_processing_progress(event)
+    def display_processing_progress(self,event):
+        if not hasattr(self.owner,'progress'):return
+        from process_progress import duration
+        total=event['total'];done=event['completed']
+        self.owner.progress.setRange(0,total);self.owner.progress.setValue(done)
+        self.owner.progress.show()
+        message=(f"{event['label']}: {done}/{total} complete · {event['remaining']} remaining · ETA {duration(event['eta'])}" if total else f"{event['label']} · ETA estimating…")
+        self.owner.statusBar().showMessage(message)
+    def end_processing_progress(self,message):
+        if hasattr(self.owner,'progress'):
+            self.owner.progress.setRange(0,100);self.owner.progress.hide();self.owner.statusBar().showMessage(message)
     def append_output(self,text):
         import re
         text=re.sub(r'\x1b\[[0-9;]*[A-Za-z]','',text)
-        cursor=self.log.textCursor();cursor.movePosition(G.QTextCursor.End)
-        for token in re.split(r'([\r\n])',text):
-            if token=='\r':self._cli_line=''
-            elif token=='\n':cursor.insertBlock();self._cli_line=''
-            elif token:
-                self._cli_line=getattr(self,'_cli_line','')+token
-                cursor.movePosition(G.QTextCursor.StartOfBlock,G.QTextCursor.KeepAnchor);cursor.insertText(self._cli_line)
-        self.log.setTextCursor(cursor);self.log.ensureCursorVisible()
+        with self.log.output_update():
+            cursor=G.QTextCursor(self.log.document());cursor.movePosition(G.QTextCursor.End)
+            for token in re.split(r'([\r\n])',text):
+                if token=='\r':self._cli_line=''
+                elif token=='\n':cursor.insertBlock();self._cli_line=''
+                elif token:
+                    self._cli_line=getattr(self,'_cli_line','')+token
+                    cursor.movePosition(G.QTextCursor.StartOfBlock,G.QTextCursor.KeepAnchor);cursor.insertText(self._cli_line)
     def prepare_slice(self):
         r=self.results.get(2)
         if r is None:return
@@ -283,6 +315,7 @@ class ProcessWorkspace(W.QWidget):
     def finished(self,event):
         if self.host:self.host.wait()
         self.job=False;self.run_button.setEnabled(True);self.cancel_button.setEnabled(False)
+        self.end_processing_progress('Processing complete' if event['ok'] else 'Processing failed — see CLI output')
         self.refresh_order_action()
         if not event['ok']:self.summary.setText('Processing failed - see CLI output');return
         stage=int(event['stage'])
@@ -292,18 +325,6 @@ class ProcessWorkspace(W.QWidget):
             self.refresh_rft_range()
         else:self.results[stage]=process_cache.load(event['cache'],stage)
         if stage==3 and self.results[3].get('below_rft'):self.set_value(3,'freq_start_hz',self.results[3]['test_band_hz'][0])
-        if stage==3 and getattr(self,'active_request',{}).get('action')=='growth':
-            result=self.results[3];n=result.get('selected_order_N')
-            if n is not None:
-                self.set_value(4,'target_n_max',n)
-                preflight=result.get('condition_preflight',{})
-                if preflight.get('status')=='ok':
-                    self.manual_table=dict(preflight['manual_table'])
-                    self.set_value(4,'use_manual_table',True)
-                    for key in ('kr_offset','use_optimized_origins'):
-                        self.set_value(4,key,preflight['settings'][key])
-                else:
-                    self.set_value(4,'use_manual_table',False)
         self.select_stage(stage)
         if getattr(self,'active_request',{}).get('action')=='rescan':
             index=self.sample.findData(self.active_request['rescan'][0]);self.sample.setCurrentIndex(index);self.view.setCurrentText('3D grid scan')
@@ -315,13 +336,15 @@ class ProcessWorkspace(W.QWidget):
         self._cli_line='';self.log.appendPlainText(f'Stage {stage} complete. Results saved.');self.summary.setText(f'Stage {stage} completed - {Path(self.owner.project_path).parent / "outputs"}')
         if stage==4:self.reload_coefficients(force=True)
     def host_finished(self,*_):
-        if self.job:self.job=False;self.run_button.setEnabled(True);self.cancel_button.setEnabled(False);self.summary.setText('Processing stopped. See CLI output.');self.refresh_order_action()
+        if self.job:self.job=False;self.run_button.setEnabled(True);self.cancel_button.setEnabled(False);self.summary.setText('Processing stopped. See CLI output.');self.refresh_order_action();self.end_processing_progress('Processing stopped')
     def cancel(self,restart=True):
+        was_running=self.job
         if self.host and self.host.isRunning():
             self.owner.pool.close();self.host.wait()
             from worker_pool import WarmPool
             if restart:self.owner.pool=WarmPool(int(self.owner.settings.value('worker_count',0)) or None);self.owner.pool.start()
         self.job=False;self.run_button.setEnabled(True);self.cancel_button.setEnabled(False)
+        if was_running:self.end_processing_progress('Processing cancelled')
         self.refresh_order_action()
     def shutdown(self):
         self.cancel(restart=False)
@@ -348,6 +371,12 @@ class ProcessWorkspace(W.QWidget):
         self.rescan_frequency.blockSignals(True);self.rescan_frequency.clear()
         self.sample.blockSignals(True);self.sample.clear();r=self.results.get(self.stage)
         if self.stage==4:
+            power_index=self.view.findText('Sound Power vs Harmonic Degree')
+            if power_index>=0:
+                coeff=self.coefficient_path();available=coeff is not None and coeff.is_file()
+                self.view.model().item(power_index).setEnabled(available)
+                self.view.setItemData(power_index,'' if available else 'Sound power needs the saved coefficient file.',C.Qt.ToolTipRole)
+                if not available and self.view.currentIndex()==power_index:self.view.setCurrentIndex(0)
             index=self.view.findText('Spatial error')
             if index>=0:
                 coeff=self.coefficient_path();npz=self.measurement_path()
@@ -381,6 +410,8 @@ class ProcessWorkspace(W.QWidget):
         if self.stage==0:return
         self.last_plot_error=None
         view=self.view.currentText()
+        self.power_tools.setVisible(self.stage==4 and view=='Sound Power vs Harmonic Degree')
+        self.power_reset.setVisible(self.stage==4 and view=='Sound Power vs Harmonic Degree')
         if view!=getattr(self,'_last_view_kind',None):
             self._last_view_kind=view
             if view in ('Fit error','Spatial error'):
@@ -417,7 +448,8 @@ class ProcessWorkspace(W.QWidget):
         unit='mm' if self.stage==2 or self.view.currentText()=='Origins / 3D' else 'm'
         self.plotter.show_bounds(bounds=bounds,grid='back',location='outer',all_edges=False,color=colour('#b8d6e8'),font_size=10,xtitle='X / '+unit,ytitle='Y / '+unit,ztitle='Z / '+unit)
     def reset(self):
-        if self.plotter and self.stack.currentWidget() is self.plotter.interactor:self.plotter.reset_camera();self.plotter.render()
+        if self.stack.currentWidget() is self.original_results and getattr(self.original_results,'interaction',None) is not None:self.original_results.interaction.reset()
+        elif self.plotter and self.stack.currentWidget() is self.plotter.interactor:self.plotter.reset_camera();self.plotter.render()
         else:self.draw()
     def image_path(self):
         import re
@@ -431,6 +463,7 @@ class ProcessWorkspace(W.QWidget):
         }.get(kind)
         if suffix is None:
             suffix=f'stage{self.stage}_'+re.sub(r'[^a-z0-9]+','_',kind.lower()).strip('_')
+            if kind=='Sound Power vs Harmonic Degree':suffix+='_'+self.power_field.currentText().lower().replace(' ','_')
             if self.stage==1:suffix+='_'+Path(str(self.sample.currentData() or 'response')).stem
             elif self.stage==2:suffix+=f'_{float(self.sample.currentData() or 0):.1f}Hz'
             elif kind=='Spatial error':suffix+=f'_{self.frequency.value():.1f}Hz'
@@ -471,34 +504,15 @@ class ProcessWorkspace(W.QWidget):
     def refresh_order_action(self,*_):
         results=getattr(self,'original_results',None)
         if results is None:return
-        button=results.findChild(W.QPushButton,'stage3_growth_action')
+        button=results.findChild(W.QPushButton,'stage3_use_order')
         if button is None:return
-        n=self.order_choice.currentData();result=self.results.get(3,{})
-        running=self.job and getattr(self,'active_request',{}).get('action')=='growth'
-        ready=(bool(result.get('condition_preflight')) and result.get('selected_order_N')==n) or not self.values[3].get('condition_preflight')
-
-        text='Optimizing..' if running else 'Use in Stage 4' if ready else 'Optimise growth rate'
-        button.setText(text);button.setFixedSize(184,38);button.setEnabled(not self.job and n is not None)
-        button.setStyleSheet('QPushButton { background:#24824b; border:1px solid #59d98b; color:white; font-weight:bold; border-radius:5px; } QPushButton:hover { background:#2b9959; }' if ready and not running else '')
+        n=self.order_choice.currentData()
+        button.setText('Use in Stage 4');button.setFixedSize(184,38);button.setEnabled(not self.job and n is not None)
+        button.setStyleSheet('QPushButton { background:#24824b; border:1px solid #59d98b; color:white; font-weight:bold; border-radius:5px; } QPushButton:hover { background:#2b9959; }')
         for radio in results.findChildren(W.QRadioButton):radio.setEnabled(not self.job)
     def order_action(self):
         if self.job or self.order_choice.currentData() is None:return
-        result=self.results.get(3,{})
-        ready=bool(result.get('condition_preflight')) and result.get('selected_order_N')==self.order_choice.currentData()
-        if ready:self.use_order()
-        elif self.values[3].get('condition_preflight'):self.optimize_order_growth()
-        else:self.use_kr_order()
-    def optimize_order_growth(self):
-        if self.stage!=3 or self.job:return
-        if self.order_choice.currentData() is None:return
-        self.run('growth')
-    def use_kr_order(self):
-        n=self.order_choice.currentData()
-        if n is None:return
-        self.set_value(4,'target_n_max',n)
-        self.set_value(4,'use_manual_table',False)
-        self.select_stage(4)
-    def use_order(self):
+        self.set_value(4,'target_n_max',self.order_choice.currentData())
         self.select_stage(4)
     def change_reference(self):
         if self.stage!=3 or self.reference_order.currentData() is None:return
@@ -584,7 +598,15 @@ class ProcessWorkspace(W.QWidget):
         job=SpatialErrorJob(self.measurement_path(),self.coefficient_path(),self.owner.pool,self)
         if not hasattr(self,'_spatial_jobs'):self._spatial_jobs=[]
         self._spatial_jobs.append(job)
+        def owns_progress():
+            worker=getattr(self.owner,'worker',None)
+            return not self.job and not (worker and worker.isRunning()) and self.results.get(4) is result
+        def progress(event):
+            if owns_progress():self.display_processing_progress(event)
+        job.progress.connect(progress)
+        progress(dict(label='Spatial error: loading data',completed=0,total=0,remaining=0,eta=None))
         def completed(event):
+            if owns_progress():self.end_processing_progress('Spatial error ready' if event['ok'] else 'Spatial error failed ? see CLI output')
             result.pop('spatial_pending',None)
             if self.results.get(4) is not result:return
             if event['ok']:result['spatial_data']=event['result']

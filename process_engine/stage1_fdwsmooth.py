@@ -171,6 +171,8 @@ def fdwsmooth(
     global_max_req_samples = 0
     peaks_cache = {}
 
+    from process_progress import Progress, completed_map
+    scanning = Progress("Stage 1 peak scan", len(wav_files))
     # ---- Pre-scan pass: determine peaks and the global maximum required sample length ----
     for f in wav_files:
         file_path = os.path.join(ir_dir, f)
@@ -192,6 +194,7 @@ def fdwsmooth(
         
         # Keep track of global maximum amplitude for gain normalization
         max_peak = max(max_peak, np.max(np.abs(data)))
+        scanning.advance()
     
     n_fft = next_fast_len(global_max_req_samples)
     crop_samples = n_fft 
@@ -252,10 +255,10 @@ def fdwsmooth(
     else:
         executor_context = ThreadPoolExecutor(max_workers=num_workers)
 
+    processing = Progress("Stage 1 FDW / smoothing", len(file_infos))
     with executor_context as executor:
-        for i, (fname, H_raw, H_smooth, m) in enumerate(executor.map(worker_task, file_infos)):
-            sys.stdout.write(f"\rCompleted {i+1}/{len(wav_files)}: {fname}\033[K")
-            sys.stdout.flush()
+        for fname, H_raw, H_smooth, m in completed_map(executor, worker_task, file_infos):
+            processing.advance()
             
             results_raw[fname] = H_raw
             meta[fname] = m
@@ -279,6 +282,7 @@ def fdwsmooth(
 
     # ---- Write to disk based on smoothing preferences ----
     if save_to_disk:
+        Progress('Stage 1 saving data', 0, console=False)
         print("Saving data to disk...")
         os.makedirs(out_dir, exist_ok=True)
         runtime_settings = dict(fdw_rft_ms=fdw_rft_ms, fdw_oct_res=fdw_oct_res,

@@ -121,7 +121,7 @@ def _worker_wrapper(args: Tuple) \
     if final_N < N_target:
         stop_reason = core_stop 
     elif cfg['use_manual_table'] and final_N == N_table and N_table < N_kr and N_table < N_grid:
-        stop_reason = "Manual Table"
+        stop_reason = "Optimized Growth" if cfg.get('optimized_growth') else "Manual Table"
     elif final_N == N_kr and N_kr < cfg['target_n_max']:
         stop_reason = "KR-Limit"
     elif final_N == N_grid and N_grid < cfg['target_n_max']:
@@ -163,12 +163,15 @@ def run_she_solve(
     kr_offset: float = 2.0,
     jobs: int = None,
     show_plot: bool = True,
-    use_process_pool: bool = True
+    use_process_pool: bool = True,
+    condition_preflight: bool = False
 ) -> Dict:
     start_time = time.time()
 
     if manual_order_table is None:
         manual_order_table = {}
+    if use_manual_table and not manual_order_table:
+        raise ValueError('Use manual order table is enabled, but the table is empty.')
     if jobs is None:
         jobs = max(1, cpu_count() // 2)
 
@@ -223,6 +226,25 @@ def run_she_solve(
         'kr_offset': kr_offset
     }
 
+    preflight = None
+    if condition_preflight and not use_manual_table:
+        from condition_preflight import run_condition_preflight
+        logging.info('Optimising order growth for Stage 4 target N=%s (maximum frequency delay: 3x).', target_n_max)
+        # The optimized schedule is private to this solve; never overwrite the
+        # user's manual table or use it as the starting point for optimization.
+        cfg = dict(worker_cfg, use_optimized_origins=use_optimized_origins,
+                   use_manual_table=False, manual_order_table={})
+        preflight = run_condition_preflight(parsed_data, cfg)
+        worker_cfg.update(use_manual_table=False, manual_order_table={})
+        if preflight['status'] == 'ok':
+            worker_cfg.update(use_manual_table=True, manual_order_table=preflight['manual_table'], optimized_growth=True)
+            forced = [row['order'] for row in preflight['transitions'] if row['forced']]
+            if forced:logging.warning('Condition target exceeded at the delay limit for orders: %s', forced)
+        else:
+            logging.warning('Order growth optimisation unavailable: %s Using the current KR schedule.', preflight.get('reason',''))
+    elif use_manual_table:
+        logging.info('Using the manual order table; order growth optimisation bypassed.')
+
     f_all = parsed_data['freqs']
     data_dict = parsed_data['complex_data']
     keys = parsed_data['filenames']
@@ -270,12 +292,15 @@ def run_she_solve(
         tasks.append((k, f_sel[k], P[k], r_k, th_k, ph_k, N_grid, worker_cfg))
     
     # 6. Execution
+    from process_progress import Progress, completed_map
+    solving = Progress("Stage 4 solve", K, console=False)
     def consume_results(results_iter):
         for k, cfs, resid, cond, n_val, r_vec, log_msg in results_iter:
             res_coeffs[k, :len(cfs)] = cfs
             res_resid[k], res_cond[k], res_N[k] = resid, cond, n_val
             res_resid_vec[k, :] = r_vec
             logging.info(log_msg)
+            solving.advance()
 
     if use_process_pool:
         ctx = get_context('spawn')
@@ -287,13 +312,14 @@ def run_she_solve(
             consume_results(pool.imap_unordered(_worker_wrapper, tasks))
     else:
         with ThreadPoolExecutor(max_workers=jobs) as executor:
-            consume_results(executor.map(_worker_wrapper, tasks))
+            consume_results(completed_map(executor, _worker_wrapper, tasks))
 
     bn = np.linalg.norm(P, axis=1)
     pct_error = res_resid / np.maximum(bn, 1e-20) * 100.0
 
     # 7. H5 Save (Appending origins for inverse translation later)
     if save_to_disk:
+        Progress('Stage 4 saving coefficients', 0, console=False)
         output_h5 = os.path.join(output_dir_she, output_filename_she)
         with h5py.File(output_h5, "w") as h:
             h[schema.FREQS] = f_sel
@@ -327,6 +353,7 @@ def run_she_solve(
 
     return {
         "coeffs": res_coeffs,
+        "condition_preflight": preflight,
         "freqs": f_sel,
         "pct_error": pct_error,
         "cond": res_cond,

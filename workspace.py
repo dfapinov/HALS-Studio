@@ -218,6 +218,8 @@ class Workspace(Atlas):
         self.worker_label = label('', 'muted')
         self.statusBar().addPermanentWidget(self.progress); self.statusBar().addPermanentWidget(self.cancel_button)
         self.statusBar().addPermanentWidget(self.worker_label); self.rebuild_view_buttons()
+        from cpu_usage import add_cpu_meter
+        add_cpu_meter(self)
 
     def get_levels(self, smoothing):
         if smoothing not in self.level_cache:

@@ -67,6 +67,12 @@ For a normal first run:
 
 The progress of Stage 1 processing is displayed in the console pane. The viewer always opens once processing completes. Note: these results are only to inspect that the data looks reasonable. Unlike standard acoustic measurements, this is only one step of the HALS speaker measurement process.
 
+# Results
+
+![fdw_results](./images/fdw_results.png)
+
+![fdw_impulse_response](./images/fdw_impulse_response.png)
+
 ## Main Settings
 
 ### Octave Resolution (1/x)
@@ -134,7 +140,6 @@ The Alpha value can be defined for HF and LF with the value graduated between.
 - `0.0` = rectangular
 - `1.0` = Hann
 
-
 ### Windows per Octave
 
 Controls how many FDW analysis windows are generated per octave.
@@ -182,11 +187,7 @@ Because low frequencies have long wavelengths, a fixed window captures fewer cyc
 
 To achieve a specific octave resolution, the window must capture a minimum number of cycles for any given frequency ($f$):
 
-
-
 $$T(f) = \frac{m}{f}$$
-
-
 
 For example, at 1KHz to achieve 1/3rd octave resolution requires 4 cycles. To achieve 1/12 octave resolution required 17 cycles.
 
@@ -223,7 +224,6 @@ To solve this, the practical approach uses a series of overlapping windows rathe
 
 ---
 
-
 ---
 
 ## Understanding Complex Smoothing: Magnitude vs. Phase
@@ -240,7 +240,6 @@ Think of the Complex Domain as a way to describe the full signal where phase and
 
 By applying smoothing to the Real and Imaginary parts simultaneously, we smooth the overall response while maintaining the physical relationship between magnitude and phase. 
 
-
 ## The Bonus Effect: Reflection Rejection
 Beyond just making the data easier to process, Complex Smoothing provides a secondary, powerful benefit: it further cleans the measurement of room reflections.
 
@@ -256,4 +255,3 @@ When we apply smoothing to the complex data (Real and Imaginary parts), we are e
 * **The chaotic phase** of the reflections varies so significantly by frequency that the peaks and valleys of those shifts average out to a small value.
 
 **In short:** Complex smoothing acts as a filter that preserves the DUTs true signal while suppressing erratic interference.
-

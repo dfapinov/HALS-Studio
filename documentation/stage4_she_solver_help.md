@@ -48,6 +48,28 @@ The user can adjust the "Stability Offset" (the $+2$ in $kr+2$).
 * **Higher Offset (e.g., $+2$):** Pushes the Order $N$ growth higher earlier in the frequency range. This is the default and prioritises room field separation. The cost is possibly over-fitting of the simple internal sources leading to artifice in the response.
 * **Lower Offset (e.g., $+0$):** Damps the growth rate, protecting simple internal sources from being over-fitted by high-order harmonics too early. This may occur if the measurement grid is large or the source spatially simple. The cost may be reduced room field separation.
 
+### Optimise Order Growth Before Solve
+
+Choosing the maximum order sets the ceiling for Stage 4. However, there is still the question of how quickly order N grows with increasing frequency. A common starting rule is KR+offset, such as KR+2. This links the chosen order to the wavelength and measurement grid radius. It is a good starting point but it can rise too quickly with frequency. Allowing higher orders too early can make the solve ill-conditioned, even when the selected maximum order is appropriate.
+
+Enabled by default in Advanced Settings. Before the full solve, Stage 4 builds a fresh KR+offset schedule using the current **Target N Max**, measurement grid, speed of sound, and selected origin settings. This also works when the maximum N is entered manually rather than chosen in Stage 3.
+
+The first N=4 entry provides the condition reference. The target band is one fifth to ten times that reference. Higher orders are tested against a ceiling of 10 times that reference; values below the displayed target band are also accepted. Each transition can move no later than three times its original entry frequency, using the last available solve bin at or below that deadline. Delays are anchored to the original schedule and do not compound.
+
+For each order above N=4, the optimizer checks its earliest permitted entry and up to five later candidates (1.15?, 1.5?, 2?, 2.5? and 3? the original frequency), mapped to available bins and bounded by the deadline. It refines an observed crossing of the ceiling with up to two bisection checks. Orders never activate before the previous order.
+
+If none of the tested frequencies meets the ceiling, the order activates at its deadline anyway. The console reports **delay limit reached - condition target exceeded**, and higher orders continue to be considered. Deadlines beyond the solve range are clamped to its final bin, where several orders can activate together. The optimizer still respects the KR and measurement-grid limits, and checks transition points rather than guaranteeing conditioning throughout the frequency range.
+
+**Use manual order table** is off by default and takes priority when enabled. Check it to use your entered table and bypass optimisation; the optimisation control is disabled while manual mode is selected. Uncheck it to use automatic growth: the optimizer runs if **Optimise order growth before solve** is enabled, otherwise the solver uses pure KR growth. Optimized schedules stay behind the scenes and never replace or edit your manual table. If no valid N=4 reference exists, the optimizer reports this and uses the current KR schedule.
+
+Below: Matrix condition number for Target N Max = 12 using the KR rule.
+
+![Matrix condition number using the KR rule](./images/order_n_growth_kr.png)
+
+Below: Matrix condition number after optimising the order N growth rate.
+
+![Matrix condition number after growth optimisation](./images/order_n_growth_optimized.png)
+
 **The Manual Order Table**
 For advanced control, a manual frequency-to-order mapping can be used.
 

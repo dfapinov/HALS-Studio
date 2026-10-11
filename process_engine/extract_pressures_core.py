@@ -125,6 +125,7 @@ def evaluate_she_field(
     use_process_pool: bool = True,
     process_pool=None,
     show_progress: bool = True,
+    progress=None,
 ) -> Dict[str, np.ndarray]:
     
     data = load_she_h5(she_input)
@@ -169,11 +170,15 @@ def evaluate_she_field(
     if show_progress:
         print(f"Starting parallel solve with {num_cpus} {backend} ({num_pts} points)...")
 
+    from process_progress import Progress, completed_map
+    tracker = Progress("Spatial error reconstruction", num_freqs, console=False, callback=progress) if progress is not None else None
+
     def consume_results(results_iter):
         total_tasks = len(tasks)
         for i, result in enumerate(results_iter):
             idx_range, p_chunk = result
             pressures_all[idx_range, :] = p_chunk
+            if tracker is not None: tracker.advance(len(idx_range))
             if show_progress:
                 percent = ((i + 1) / total_tasks) * 100
                 sys.stdout.write(f"\rProgress: {percent:5.1f}% complete")
@@ -183,14 +188,14 @@ def evaluate_she_field(
         if process_pool is None:
             process_pool = borrow_pool(num_cpus)
         if process_pool is not None:
-            consume_results(process_pool.imap(func=_worker_calc_chunk, iterable=tasks))
+            consume_results(completed_map(process_pool, _worker_calc_chunk, tasks))
         else:
             ctx = multiprocessing.get_context('spawn')
             with ctx.Pool(processes=num_cpus) as pool:
-                consume_results(pool.imap(func=_worker_calc_chunk, iterable=tasks))
+                consume_results(completed_map(pool, _worker_calc_chunk, tasks))
     else:
         with ThreadPoolExecutor(max_workers=num_cpus) as executor:
-            consume_results(executor.map(_worker_calc_chunk, tasks))
+            consume_results(completed_map(executor, _worker_calc_chunk, tasks))
             
     if show_progress:
         print("\nCalculation complete.")

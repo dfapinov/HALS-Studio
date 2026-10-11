@@ -26,6 +26,24 @@ The result is a best-fit mathematical origin, which need not sit exactly on a ph
 1. Run Stage 2. The default settings are suitable for most complete speakers; check the start frequency for drivers with a restricted range.
 2. Review the origin paths and fitting errors. For example, where the tweeter dominates the output, the high-frequency origins should usually lie near its physical location.
 
+## Results - How to interpret
+
+One the process compeltes, the user will be presented with a graph of the 3 cartiesian axis and the coordiantes found to provide low fit error.  
+
+Interpretation of this data can be quite enlighting about the device under test as well as help to confirm resaonable results.
+
+![stage2_graph_info](./images/stage2_graph_info.png)
+
+The unknown Y axis offset is is intreaging but does not itself give cause for worry - the fit error remains low and in a similar range as the surrounding coordiantes.  
+
+A 3D coordiante view is also avilible from the **Plot Type** menu, as well as **Rescan of selected frequency** - a pure grid based volumetric scan that can take considerable time.
+
+![grid_scan_settings](./images/grid_scan_settings-2.png)
+
+![grid_scan_gif](./images/grid_scan_gif-2.gif)
+
+![grid_scan_result](./images/grid_scan_result-2.png)
+
 ## Main Settings
 
 ### Octave Resolution
@@ -99,7 +117,7 @@ When the acoustic origin is far from the mathematical origin, the required Order
 
 ## The "Phantom" Origin and Phase Shifts
 
-To further understand why a dynamic 3D origin search is necessary, it helps to look at how different sound sources on a loudspeaker interact. The acoustic origin isn't always a physical component you can touch; it is often a "phantom" point in space created by the summation of multiple sources or the physics of air motion where velocity and pressure are not in phase.
+To further understand why a dynamic 3D origin search is necessary, it helps to look at how different sound sources on a loudspeaker interact. The acoustic origin isn't always a physical component you can touch; it is often a "phantom" point in space created by the summation of multiple sources or the physics of the radiator.
 
 * **The Crossover Handover (The Mid-way Point):** When a loudspeaker transitions from the tweeter down to the woofer, the acoustic center doesn't simply jump from one to the other. Through the crossover region, where both drivers are producing the exact same frequencies at similar amplitudes, the mathematical "center" of the combined sound field may lie between the drivers, depending on their relative levels, phases and radiation patterns.
 * **Rapid Shifting and Diffraction:** At the specific frequency where a bass reflex port is tuned, the port takes over as the dominant radiator, causing the origin to shift rapidly toward the opening. Furthermore, when sound waves hit the cabinet edges, those edges act as secondary radiators (diffraction). Cabinet panels may vibrate as sympathetic resonators creating further sound sources. These interfere with the direct sound, pulling the calculated acoustic origin in unexpected directions.
@@ -148,7 +166,11 @@ Since each branch approaches the acoustic centre from a different starting posit
 
 Once both branches complete, the script compares the results and selects the origin with the lower fitting error from either path.
 
-These best-fit results are interpolated across the full frequency resolution within the selected test range. Frequencies below or above that range use zero origin shift. Rerunning Stage 2 replaces the saved origin array, including clearing shifts outside the new range.
+These best-fit results are interpolated across the full frequency resolution within the selected test range.
+
+**Hold coordinate outside test range** in Advanced Settings has separate **LF** and **HF** checkboxes on the same row. Both are on by default. LF holds the lowest tested coordinate down to the lowest data frequency; HF holds the highest tested coordinate up to the highest data frequency. For example, a last tested coordinate at 19.5 kHz is held through 24 kHz if the data extends that far.
+
+Turning either option off applies **zero coordinate shift outside the selected test range** on that side. Interpolation inside the range is unchanged. Rerunning Stage 2, saving edited coordinates, or exporting a grid rescan applies the selected hold settings and replaces the saved origin array.
 
 ### When to use the Grid Scan?
 The brute force grid scan is best reserved as a last resort for erroneous results or as a diagnostic tool. If the High-Frequency and Low-Frequency search branches fail to "meet in the middle" or provide results that do not seem to match the reality of the DUT, running a grid scan on the problematic frequencies can help determine if the simplex is getting stuck in a local valley.

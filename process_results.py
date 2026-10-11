@@ -75,6 +75,8 @@ class Results(W.QWidget):
     def __init__(self):
         super().__init__();self.box=W.QVBoxLayout(self);self.box.setContentsMargins(0,0,0,0);self.canvas=None;self.fig=None;self.scroll=None
     def show_figure(self,fig):
+        if getattr(self,'interaction',None) is not None:
+            self.interaction.deleteLater();self.interaction=None
         while self.box.count():
             widget=self.box.takeAt(0).widget();widget.setParent(None);widget.deleteLater()
         self.fig=fig;theme(fig);self.canvas=FigureCanvasQTAgg(fig);self.canvas.setMinimumHeight(720 if len(fig.axes)>=3 else 400)
@@ -222,14 +224,12 @@ class Results(W.QWidget):
                 radio.setChecked(opt['n']==p.order_choice.currentData())
                 radio.toggled.connect(lambda on,n=opt['n']:p.order_choice.setCurrentIndex(p.order_choice.findData(int(n))) if on else None)
             if not group.checkedButton() and self.recommendation_buttons:self.recommendation_buttons[0].setChecked(True)
-            info=W.QLabel('Choose the recommendation you want to use, then optimise growth rate:')
+            info=W.QLabel('Choose the recommendation to use in Stage 4. Growth optimisation runs there before the solve.')
             info.setWordWrap(True);attention_layout.addWidget(info)
-            action=W.QPushButton();action.setObjectName('stage3_growth_action');action.setFixedSize(184,38)
+            action=W.QPushButton();action.setObjectName('stage3_use_order');action.setFixedSize(184,38)
             action.clicked.connect(p.order_action);attention_layout.addWidget(action,alignment=C.Qt.AlignLeft)
             p.refresh_order_action()
-            preflight=r.get('condition_preflight')
-            attention_ready=(not preflight or r.get('selected_order_N') is None)
-            if attention_ready and getattr(p,'_stage3_pulse_pending',False) and not getattr(p,'_autosaving_plots',False):
+            if getattr(p,'_stage3_pulse_pending',False) and not getattr(p,'_autosaving_plots',False):
                 from PySide6 import QtGui as G
                 effect=W.QGraphicsDropShadowEffect(attention);effect.setOffset(0,0)
                 effect.setColor(G.QColor(45,155,255,220));effect.setBlurRadius(4);attention.setGraphicsEffect(effect)
@@ -268,6 +268,17 @@ class Results(W.QWidget):
                 view.ax.view_init(*angles);frequency_text.set_text(f'Frequency\n{f[index]:,.1f} Hz');floor_text.set_text(f'Floor\n{floor_slider.val:g} dB');theme(view.fig);self.canvas.draw_idle()
             for slider in self.spatial_sliders:slider.poly.set_facecolor('#599bda');slider.on_changed(update)
             theme(view.fig);self.canvas.draw_idle();return
+        elif kind=='Sound Power vs Harmonic Degree':
+            from sound_power import sound_power_figure, PowerLegend
+            from plot_interaction import PlotInteraction
+            self.show_figure(sound_power_figure(p.coefficient_path(),p.power_field.currentText()))
+            self.chart=self;self.config={'kind':'sound_power'}
+            self.interaction=PlotInteraction(self);self.interaction.begin('sound_power');self.interaction.finish(self.fig.axes)
+            path=str(p.coefficient_path())
+            if getattr(self,'power_legend_path',None)!=path:self.power_hidden=set();self.power_legend_path=path
+            self.power_legend=PowerLegend(self.fig,self.power_hidden)
+            self.canvas.setToolTip('Legend checkbox: show/hide trace · Shift-click legend: show only that trace\nWheel: zoom at cursor · Wheel over an axis: zoom that axis · Middle drag: pan · Reset axes: full view')
+            return
         elif kind=='Condition number':
             view=VIEWS['SHEResultsView']();f=r['freqs'];orders=r['N_used'];ticks=[0];labels=[str(orders[0])]
             ticks.extend(i for i in range(1,len(orders)) if orders[i]!=orders[i-1])

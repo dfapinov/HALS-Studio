@@ -322,17 +322,28 @@ def run_speed_of_sound_candidate_batch(
     print(f"\n{label}: {candidates[0]:g} to {candidates[-1]:g} m/s ({len(candidates)} candidates)")
     print(f"Parallel candidate workers: {workers}")
 
+    from process_progress import collect_tasks
+    # Each speed/probe fit is independent. Report them separately instead of
+    # waiting for all six probe fits belonging to a candidate to finish.
     worker_args = [
-        (float(candidate_speed), probe_data, tweeter_coords_mm, r_arr, th_arr, ph_arr, cfg)
-        for candidate_speed in candidates
+        (float(speed), [probe], tweeter_coords_mm, r_arr, th_arr, ph_arr, cfg)
+        for speed in candidates for probe in probe_data
     ]
+    def collect(pool):
+        rows = collect_tasks(pool, _worker_speed_of_sound_candidate, worker_args,
+                             'Stage 2 speed of sound - '+label)
+        result = []
+        for speed in candidates:
+            probes = [probe for value, _, data in rows if value == float(speed) for probe in data]
+            finite = [probe['error'] for probe in probes if np.isfinite(probe['error'])]
+            result.append((float(speed), float(np.mean(finite)) if finite else float('inf'), probes))
+        return result
     if use_process_pool:
         ctx = get_context('spawn')
         with shared_pool or ctx.Pool(processes=workers) as pool:
-            return list(pool.imap_unordered(_worker_speed_of_sound_candidate, worker_args))
-
+            return collect(pool)
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        return list(executor.map(_worker_speed_of_sound_candidate, worker_args))
+        return collect(executor)
 
 # =============================================================================
 # 1. 3D PHYSICS ENGINE
@@ -433,32 +444,16 @@ def generate_3d_landscape_volumetric(context):
     total_pixels = len(pixels)
     print(f"      -> Computations to process: {total_pixels:,}")
     
-    start_time = time.time()
-    
-    def consume_results(cursor):
-        for i, val in enumerate(cursor):
-            r_idx, c_idx, d_idx = np.unravel_index(i, X_mesh.shape)
-            grid[r_idx, c_idx, d_idx] = val
-            
-            if (i + 1) % 1000 == 0 or (i + 1) == total_pixels:
-                elapsed_time = time.time() - start_time
-                pts_per_sec = (i + 1) / elapsed_time if elapsed_time > 0 else 0
-                eta_sec = (total_pixels - (i + 1)) / pts_per_sec if pts_per_sec > 0 else 0
-                m, s = divmod(int(eta_sec), 60)
-                h, m = divmod(m, 60)
-                eta_str = f"{h}h {m}m {s}s" if h > 0 else f"{m}m {s}s"
-                pct = (i + 1) / total_pixels * 100
-                sys.stdout.write(f"\r      Rendering... {pct:.1f}% | Speed: {pts_per_sec:.0f} pts/s | ETA: {eta_str}      ")
-                sys.stdout.flush()
-
+    from process_progress import collect_tasks
+    def collect(pool):
+        values = collect_tasks(pool, _worker_landscape_3d, pixels, 'Stage 2 grid scan', chunksize=200)
+        grid[:] = np.asarray(values).reshape(grid.shape)
     if cfg.get('use_process_pool', True):
         with shared_pool or get_context('spawn').Pool(grid_workers) as pool:
-            consume_results(pool.imap(_worker_landscape_3d, pixels, chunksize=200))
+            collect(pool)
     else:
         with ThreadPoolExecutor(max_workers=grid_workers) as executor:
-            consume_results(executor.map(_worker_landscape_3d, pixels))
-                
-    sys.stdout.write("\r      Rendering Complete.                                                         \n")
+            collect(executor)
     return x_vals, y_vals, z_vals, grid
 
 # =============================================================================
@@ -482,6 +477,8 @@ class DynamicBranchSweeper:
         
         self.lock = threading.Lock()
         self.console_lock = threading.Lock()
+        from process_progress import Progress
+        self.progress = Progress("Stage 2 origin search", 2*self.num_freqs, console=False)
         
     def process_frequency(self, branch_name, f_hz, f_idx, current_seed, i_step, is_first):
         out_buf = []
@@ -572,10 +569,13 @@ class DynamicBranchSweeper:
             if res_dict['final_c'] is not None:
                 current_seed = res_dict['final_c']
             results[f_hz] = res_dict
+            self.progress.advance()
 
         return results
 
-def export_interpolated_origins(history_freq, history_search_x, history_search_y, history_search_z, f_all, data, input_dir, output_filename, save_to_disk, speed_of_sound=None, test_range_hz=None):
+def export_interpolated_origins(history_freq, history_search_x, history_search_y, history_search_z, f_all, data, input_dir, output_filename, save_to_disk, speed_of_sound=None, test_range_hz=None, hold_origin_lf=True, hold_origin_hf=True):
+    from process_progress import Progress
+    Progress('Stage 2 exporting origins', 0, console=False)
     print("\nInterpolating optimized origins across the full frequency resolution...")
     if len(history_freq) > 0:
         xp = np.array(history_freq)
@@ -585,11 +585,11 @@ def export_interpolated_origins(history_freq, history_search_x, history_search_y
         interp_z = np.interp(f_all, xp, np.array(history_search_z))
         
         origins_full = np.column_stack((interp_x, interp_y, interp_z))
-        # Endpoint values may fill the small gap between the requested bounds
-        # and sampled FFT bins, but never apply a shift outside the test range.
+        # np.interp holds endpoint coordinates by default. Clear either tail
+        # only when its hold option is off, preserving the requested test bounds.
         lower, upper = test_range_hz if test_range_hz is not None else (xp.min(), xp.max())
-        outside = (np.asarray(f_all) < lower) | (np.asarray(f_all) > upper)
-        origins_full[outside] = 0.0
+        if not hold_origin_lf: origins_full[np.asarray(f_all) < lower] = 0.0
+        if not hold_origin_hf: origins_full[np.asarray(f_all) > upper] = 0.0
         
         if save_to_disk:
             save_dict = {k: data[k] for k in data.files if k not in (schema.ORIGINS_MM, schema.SPEED_OF_SOUND_MPS)}
@@ -648,7 +648,9 @@ def run_origin_search(
     kr_offset: float = 2.0,
     optimize_speed_of_sound: bool = True,
     use_process_pool: bool = True,
-    return_state: bool = False
+    return_state: bool = False,
+    hold_origin_lf: bool = True,
+    hold_origin_hf: bool = True
 ):
     stage_start_time = time.time()
 
@@ -660,6 +662,7 @@ def run_origin_search(
     
     cfg = {
         'origin_test_range_hz': (float(freq_start_hz), float(freq_end_hz)),
+        'hold_origin_lf': hold_origin_lf, 'hold_origin_hf': hold_origin_hf,
         'noise_floor_start_db': NOISE_FLOOR_START_DB,
         'noise_floor_max_db': NOISE_FLOOR_MAX_DB,
         'max_lambda': MAX_LAMBDA,
@@ -850,7 +853,8 @@ def run_origin_search(
         return export_interpolated_origins(
             history_freq, history_search_x, history_search_y, history_search_z, 
             f_all, data, input_dir_origins, output_filename_origins, save_to_disk, speed_of_sound=speed_of_sound,
-            test_range_hz=cfg['origin_test_range_hz']
+            test_range_hz=cfg['origin_test_range_hz'],
+            hold_origin_lf=cfg['hold_origin_lf'], hold_origin_hf=cfg['hold_origin_hf']
         )
 
     # Save immediately upon completion

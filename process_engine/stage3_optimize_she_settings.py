@@ -17,6 +17,7 @@ os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
 os.environ['NUMEXPR_NUM_THREADS'] = '1'
 
 import numpy as np
+from process_progress import collect_tasks
 import multiprocessing
 import concurrent.futures
 import schema
@@ -660,23 +661,12 @@ def _stage3_thread_workers(task_count):
 
 
 def _collect_with_progress(results, total, label, item_name='tasks', weights=None):
-    """Collect an ordered map iterator with an in-place progress counter."""
+    from process_progress import Progress
+    progress = Progress(label, total)
     collected = []
-    completed = 0
-    report_step = max(1, int(np.ceil(total / 10)))
-    next_report = report_step
-    sys.stdout.write(f"\r{label}: 0 of {total} {item_name}")
-    sys.stdout.flush()
     for index, result in enumerate(results):
         collected.append(result)
-        completed += weights[index] if weights is not None else 1
-        if completed >= next_report or completed >= total:
-            sys.stdout.write(f"\r{label}: {completed} of {total} {item_name}")
-            sys.stdout.flush()
-            while next_report <= completed:
-                next_report += report_step
-    sys.stdout.write("\n")
-    sys.stdout.flush()
+        progress.advance(weights[index] if weights is not None else 1)
     return collected
 
 
@@ -802,17 +792,14 @@ def run_open_branch_optimizer(
         print(f"Stage 3 parallel backend: {backend} pool ({len(tasks)} tasks{worker_msg})")
 
         if use_process_pool and process_pool is not None:
-            raw_results = _collect_with_progress(
-                process_pool.map(_worker, tasks), len(tasks), 'Stage 3 solve progress')
+            raw_results = collect_tasks(process_pool, _worker, tasks, 'Stage 3 solves')
         elif use_process_pool:
             ctx = multiprocessing.get_context('spawn')
             with concurrent.futures.ProcessPoolExecutor(max_workers=6, mp_context=ctx) as ex:
-                raw_results = _collect_with_progress(
-                    ex.map(_worker, tasks), len(tasks), 'Stage 3 solve progress')
+                raw_results = collect_tasks(ex, _worker, tasks, 'Stage 3 solves')
         else:
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
-                raw_results = _collect_with_progress(
-                    ex.map(_worker, tasks), len(tasks), 'Stage 3 solve progress')
+                raw_results = collect_tasks(ex, _worker, tasks, 'Stage 3 solves')
             
         agg = {}
         for task, r in zip(tasks, raw_results):
@@ -933,18 +920,15 @@ def run_open_branch_optimizer(
         if use_process_pool:
             kwargs['mp_context'] = multiprocessing.get_context('spawn')
         if use_process_pool and process_pool is not None:
-            from stage3_spl_change import evaluate_frequency_chunk
-            chunks = [evaluation_tasks[i::kwargs['max_workers']] for i in range(kwargs['max_workers'])]
-            completed_chunks = _collect_with_progress(
-                process_pool.map(evaluate_frequency_chunk, chunks), len(evaluation_tasks),
-                'Stage 3 directivity progress', item_name='frequencies',
-                weights=[len(chunk) for chunk in chunks])
-            frequency_results = [result for chunk in completed_chunks for result in chunk]
+            from session_pool import PoolView
+            evaluation_pool = (PoolView(process_pool.owner, kwargs['max_workers'])
+                               if hasattr(process_pool, 'owner') else process_pool)
+            frequency_results = collect_tasks(evaluation_pool, evaluate_frequency_changes, evaluation_tasks,
+                                              'Stage 3 directivity')
         else:
             with executor(**kwargs) as ex:
-                frequency_results = _collect_with_progress(
-                    ex.map(evaluate_frequency_changes, evaluation_tasks), len(evaluation_tasks),
-                    'Stage 3 directivity progress', item_name='frequencies')
+                frequency_results = collect_tasks(ex, evaluate_frequency_changes, evaluation_tasks,
+                                                  'Stage 3 directivity')
         spl_change = summarize_changes(orders, frequency_results, spl_sphere_points, spl_radius_m, spl_floor_db, len(test_indices))
         spl_change['sample_frequencies_hz'] = f_all[test_indices].tolist()
         spl_change['test_band_hz'] = [freq_start_hz, freq_end_hz]

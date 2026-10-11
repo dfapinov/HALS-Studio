@@ -126,6 +126,16 @@
       "label": "Show Validation Plot",
       "default": true,
       "help": "Launch the interactive Validation UI after search completes."
+    },
+    "hold_origin_lf": {
+      "label": "LF",
+      "default": true,
+      "help": "Hold the lowest tested coordinate below the origin test range. When off, apply no coordinate shift below the range."
+    },
+    "hold_origin_hf": {
+      "label": "HF",
+      "default": true,
+      "help": "Hold the highest tested coordinate above the origin test range. When off, apply no coordinate shift above the range."
     }
   },
   "3": {
@@ -163,11 +173,6 @@
       "label": "Directivity-change sphere radius (m)",
       "default": "1.0",
       "help": "Fixed sphere centred on the measurement coordinate origin. It should enclose the source."
-    },
-    "condition_preflight": {
-      "label": "Optimise order growth after choosing N",
-      "default": true,
-      "help": "After Stage 3 recommendations appear, select the order N you want and run the bounded condition-guided growth optimisation."
     }
   },
   "4": {
@@ -176,15 +181,20 @@
       "default": "8",
       "help": "Hard upper cap on harmonic order N, applied after the KR limit and order-table limit."
     },
+    "condition_preflight": {
+      "label": "Optimise order growth before solve",
+      "default": true,
+      "help": "When Use manual order table is unchecked, optimise the current maximum N and KR growth before solving. Each order is delayed to at most three times its original entry frequency, then activated even if the condition target is exceeded. The optimized schedule is kept separate from your manual table. Disable for pure KR growth."
+    },
     "kr_offset": {
       "label": "KR Offset",
       "default": "2.0",
       "help": "Shifts the growth of Order N with frequency."
     },
     "use_manual_table": {
-      "label": "Ignore order table - use pure KR",
-      "default": true,
-      "help": "When unchecked, Stage 4 uses the order table transferred from Stage 3 or edited below. Check to use the pure KR+offset growth rule and ignore the table."
+      "label": "Use manual order table",
+      "default": false,
+      "help": "Use your manually entered order table and bypass growth optimisation. Uncheck to use automatic growth, with optimisation if enabled. The optimizer never changes your manual table."
     },
     "enable_regularization": {
       "label": "Enable regularization",

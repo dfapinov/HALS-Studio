@@ -8,11 +8,12 @@ from stage4_run_she_solve import proposed_order
 def optimise_transitions(freqs, proposed, condition):
     """Search a bounded set of entry bins for a condition ceiling.
 
-    For each higher degree, sample five log-spaced frequency offsets. If a
+    For each higher degree, sample five frequency offsets. If a
     sample is below the ceiling after a sample above it, bisect twice to
     refine the first crossing, including samples below the lower target
-    that may have overshot it. A degree is activated only on a checked bin;
-    an unqualified degree and higher degrees remain inactive.
+    that may have overshot it. Each degree must activate by three times its original
+    entry frequency (or the last solve bin). A failed condition target delays
+    an order to that deadline rather than blocking it or higher orders.
 
     Test contract: test_condition_preflight.py::test_bounded_search_and_upper_cutoff_round_trip
     covers the evaluation budget, condition band, monotonic order limits and
@@ -30,7 +31,12 @@ def optimise_transitions(freqs, proposed, condition):
             cache[n, i] = float(condition(n, i))
         return cache[n, i]
 
-    initial = {n: check(n, i) for n, i in entries.items()}
+    from process_progress import Progress
+    checking = Progress("Stage 4 growth: original entries", len(entries), console=False)
+    initial = {}
+    for n, i in entries.items():
+        initial[n] = check(n, i)
+        checking.advance()
     reference = np.flatnonzero(proposed == 4)
     target = check(4, int(reference[0])) if reference.size else float('inf')
     if not np.isfinite(target) or target < 1:
@@ -42,20 +48,22 @@ def optimise_transitions(freqs, proposed, condition):
     adjusted = np.minimum(proposed, 4)
     rows = []
     previous = entries[4]
-    blocked = False
     # Changing sample count or refinement depth below changes the test's
     # per-order evaluation bound; keep its documented budget in sync.
-    sample_factors = (1.15, 1.30, 1.50, 1.80, 2.20)
+    sample_factors = (1.15, 1.50, 2.0, 2.5, 3.0)
 
+    tuning = Progress("Stage 4 growth: transitions", len(entries), console=False)
     for n, entry in entries.items():
         chosen = entry if n <= 4 else None
-        if n > 4 and not blocked:
-            start = max(entry, previous + 1)
+        forced = False
+        deadline = min(len(freqs)-1, int(np.searchsorted(freqs, 3*freqs[entry], side='right'))-1)
+        if n > 4:
+            start = max(entry, previous)
             sample_indices = [start]
             sample_indices.extend(
-                int(np.searchsorted(freqs, freqs[start] * factor))
+                int(np.searchsorted(freqs, freqs[entry] * factor))
                 for factor in sample_factors)
-            sample_indices = sorted({min(len(freqs)-1, max(start, i)) for i in sample_indices})
+            sample_indices = sorted({min(deadline, max(start, i)) for i in sample_indices})
 
             checked = []
             for i in sample_indices:
@@ -84,15 +92,17 @@ def optimise_transitions(freqs, proposed, condition):
                     break
 
             if chosen is None:
-                blocked = True
-            else:
-                adjusted[chosen:] = np.maximum(adjusted[chosen:], np.minimum(proposed[chosen:], n))
-                previous = chosen
+                chosen = deadline
+                forced = True
+            adjusted[chosen:] = np.maximum(adjusted[chosen:], np.minimum(proposed[chosen:], n))
+            previous = chosen
         rows.append(dict(order=n, original_hz=float(freqs[entry]), original_condition=initial[n],
                          activation_hz=None if chosen is None else float(freqs[chosen]),
                          condition=None if chosen is None else check(n, chosen),
+                         forced=forced, deadline_hz=float(freqs[deadline]) if n > 4 else None,
                          target_lower=lower if n > 4 else None,
                          target_upper=upper if n > 4 else None))
+        tuning.advance()
 
     ends = np.r_[np.flatnonzero(np.diff(adjusted)), len(freqs)-1]
     table = {float(freqs[i]): int(adjusted[i]) for i in ends}
@@ -110,11 +120,11 @@ def run_condition_preflight(data, cfg):
     if not len(indices):
         return dict(status='unavailable', reason='No Stage 4 frequency bins.')
     if int(cfg['target_n_max']) < 4:
-        return dict(status='unavailable', reason='Selected Stage 3 maximum order is below N=4; condition preflight needs the N=4 reference.')
+        return dict(status='unavailable', reason='Stage 4 maximum order is below N=4; condition preflight needs the N=4 reference.')
     origins = data.get('origins_mm') if cfg['use_optimized_origins'] else None
     static = (data['r_arr'], data['th_arr'], data['ph_arr'])
     grid, _ = get_grid_limit(static[1], static[2])
-    speed = float(data.get('speed_of_sound_mps') or 343.)
+    speed = float(data.get('speed_of_sound_mps') or cfg.get('speed_of_sound',343.))
     cfg = dict(cfg, speed_of_sound=speed)
     def coords(i):
         origin = np.zeros(3) if origins is None else origins[indices[i]]/1000.
@@ -128,6 +138,8 @@ def run_condition_preflight(data, cfg):
     result = optimise_transitions(freqs, proposed, condition)
     result['settings'] = cfg
     print(f"Condition preflight: {result['status']}; {result.get('evaluations', 0)} matrix checks; target band={result.get('target_band')}", flush=True)
+    if result.get('reason'):print(result['reason'],flush=True)
     for row in result.get('transitions', []):
-        print(f"  N={row['order']}: {row['original_hz']:g} Hz -> {row['activation_hz']} Hz", flush=True)
+        note='; delay limit reached - condition target exceeded' if row['forced'] else ''
+        print(f"  N={row['order']}: {row['original_hz']:g} Hz -> {row['activation_hz']} Hz{note}", flush=True)
     return result

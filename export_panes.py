@@ -2,6 +2,7 @@
 from copy import deepcopy
 from PySide6 import QtCore as C, QtWidgets as W
 from panes import PlotPane, GROUPS, TITLES, default_config
+from cli_log import CliLog
 
 
 class ExportPane(W.QWidget):
@@ -17,7 +18,7 @@ class ExportPane(W.QWidget):
         self.analysis = PlotPane(workspace.owner, index+1, 'probe')
         self.analysis.extra_menu = self.add_export_choices
         self.empty = W.QLabel('Open coefficients to preview exported data'); self.empty.setAlignment(C.Qt.AlignCenter)
-        self.cli = W.QPlainTextEdit(); self.cli.setReadOnly(True)
+        self.cli = CliLog()
         self.cli.setDocument(workspace.log.document())
         layout = W.QVBoxLayout(self); layout.setContentsMargins(0, 0, 0, 0)
         self.selector = W.QPushButton(native_name + '  \u25be')

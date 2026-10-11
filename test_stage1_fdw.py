@@ -22,13 +22,15 @@ def test_fixed_stage1_pipeline():
         workers=12
         def __enter__(self):return self
         def __exit__(self,*_):pass
-        def map(self,fn,items):return map(fn,items)
+        def imap_unordered(self,fn,items,chunksize=1):return map(fn,items)
     log=io.StringIO()
     with patch('session_pool.borrow_pool',return_value=BorrowedPool()), redirect_stdout(log):
         f,raw,smoothed,meta=stage.fdwsmooth(str(inputs),str(outputs),'comparison.npz',5,12,50,True,24,
             compare_smoothing=True,workers=24,enable_auto_gain=False)
     assert 'Using 12 processes' in log.getvalue()
     assert 'Complex smoothing: fixed; 1/24 octave' in log.getvalue()
+    assert 'Stage 1 peak scan: 1/1 complete' in log.getvalue()
+    assert 'Stage 1 FDW / smoothing: 1/1 complete' in log.getvalue()
     name=next(iter(raw));peak=meta[name]['t_peak']
     fixed=apply_complex_smoothing(f,raw[name],24,peak)
     np.testing.assert_array_equal(smoothed[name],fixed)

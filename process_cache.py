@@ -37,6 +37,7 @@ def compact(stage, result):
         return rows, None, None, None, None, result[5], None
     if stage == 4:
         plot = {k: result[k] for k in ('freqs', 'N_used', 'cond', 'pct_error')}
+        if result.get('condition_preflight') is not None:plot['condition_preflight']=result['condition_preflight']
         if 'P_measured' in result and 'residual_vector' in result:
             measured = result['P_measured']
             mask = abs(measured) >= abs(measured).max(axis=1, keepdims=True)*10**(-90/20)
@@ -83,7 +84,7 @@ def load_stage4_summary(coeff_path):
         return {key: source[key][()] for key in ('freqs', 'N_used', 'cond', 'pct_error')}
 
 
-def hydrate_stage4(npz_path, coeff_path, *, process_pool=None):
+def hydrate_stage4(npz_path, coeff_path, *, process_pool=None, progress=None):
     """Load saved NPZ/H5 into the original 1/96-octave spatial computation."""
     from process_engine.utils import load_and_parse_npz, load_she_h5
     from process_engine.spatial_error_viewer import compute_spatial_error_data
@@ -108,7 +109,7 @@ def hydrate_stage4(npz_path, coeff_path, *, process_pool=None):
         if she['origins_mm'] is None:
             she['origins_mm'] = np.zeros((len(she['freqs']), 3))
         _, _, _, sub_freqs, sub_orders, measured, reconstructed = compute_spatial_error_data(
-            she, measured, coords, speed, process_pool=process_pool, show_progress=False)
+            she, measured, coords, speed, process_pool=process_pool, show_progress=False, progress=progress)
         return dict(freqs=sub_freqs, N_used=sub_orders, P_measured=measured,
                     coords_sph=coords, speed_of_sound_mps=speed,
                     P_reconstructed=reconstructed)

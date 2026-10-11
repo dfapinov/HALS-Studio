@@ -34,7 +34,7 @@ try:
 except ImportError:
     SPEED_OF_SOUND = 343.0
 
-def compute_spatial_error_data(she_dict, p_measured_all, coords_sph, c_sound=343.0, *, process_pool=None, show_progress=True):
+def compute_spatial_error_data(she_dict, p_measured_all, coords_sph, c_sound=343.0, *, process_pool=None, show_progress=True, progress=None):
     """
     Core computation engine for the Spatial Error Viewer. Subsamples frequencies to 1/96 octave
     and calculates 3D reconstruction field errors. Shared by standalone and embedded views.
@@ -81,7 +81,7 @@ def compute_spatial_error_data(she_dict, p_measured_all, coords_sph, c_sound=343
         use_optimized_origins=True,
         corr_ir_pad_phase=False,
         process_pool=process_pool,
-        show_progress=show_progress
+        show_progress=show_progress, progress=progress
     )
     
     sub_p_reconstructed = reconstruction_result["complex"]
@@ -99,7 +99,8 @@ class SpatialErrorView:
     """
     def __init__(self, figsize=(10, 8)):
         self.fig = plt.figure(figsize=figsize)
-        self.ax = self.fig.add_subplot(111, projection='3d')
+        from spatial_axes import SpatialAxes3D
+        self.ax = self.fig.add_subplot(111, axes_class=SpatialAxes3D)
         self.fig.subplots_adjust(left=0, right=0.85, bottom=0.05, top=0.95)
         self.cbar_ax = self.fig.add_axes([0.85, 0.15, 0.03, 0.7])
         self.cbar = None
