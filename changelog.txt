@@ -1,17 +1,12 @@
-11/10/26 - Latest changes (uncommitted)
+11/10/26 - Latest changes
 
 - Stage 4 added Sound Power vs Harmonic Degree, with total and per-degree
-  traces versus frequency, Internal/External field selection, HALS styling,
-  SPL-style zoom and pan, reset axes, and blue filled/empty legend boxes for
-  trace visibility.
+  traces versus frequency, Internal/External field selection.
 
 - Order N growth optimisation moved to Stage 4 before the full solve. It uses
   the current Target N Max, including manually entered values, rather than only
-  Stage 3 recommendations. The default-enabled control is in Advanced Settings.
-  Use manual order table is off by default; enabling it disables and bypasses
-  optimisation. Optimised schedules stay separate from the manual table.
-  Transitions can delay up to 3x their original entry frequency, bounded by the
-  solve range, then activate even if the condition ceiling is unmet so higher
+  Stage 3 recommendations.  Transitions can delay up to 3x their original entry
+  frequency, then activate even if the condition ceiling is unmet so higher
   orders are still considered. The growth explanation and comparison plots
   moved from Stage 3 help to Stage 4 help, with the search limits documented.
 
@@ -20,20 +15,17 @@
   tested range; disabling a side exports zero coordinate shift on that side.
   Updated Stage 2 help.
 
-- Progress reporting now shows completed and remaining tasks for Stage 1 file
-  peak scanning and Stage 2 speed-of-sound probes, with finer Stage 3
-  completion updates. Stages 1-4 show phase progress and adaptive ETA in the
-  bottom bar, alongside system CPU utilisation. Spatial error reconstruction
-  also reports progress and ETA.
+- Progress reporting improved. Stages 1-4 show progress and adaptive ETA in the
+  bottom bar, alongside system CPU utilisation.
 
 - The Stage 4 spatial error viewer uses azimuth/elevation (azel) rotation to
   keep roll fixed without changing other 3D viewers.
 
-- Studio CLI panes follow new output only when within three lines of the
+- CLI panes follow new output only when within three lines of the
   bottom. Earlier text remains in place while users scroll back, including
   across shared views and updating progress lines.
 
-09/10/26 - Earlier fixes (uncommitted)
+09/10/26 - Earlier fixes
 
 - Stage 2 applies optimized origins only within its selected test range.
   Origins outside that range are saved as zero shift, clearing values from an
