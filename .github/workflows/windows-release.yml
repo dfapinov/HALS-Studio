@@ -99,7 +99,7 @@ jobs:
           $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $name" | Set-Content -Encoding ascii -LiteralPath "$path.sha256"
       - name: Save installer artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: HALS-Studio-windows-${{ steps.version.outputs.version }}
           path: |
@@ -113,11 +113,11 @@ jobs:
     name: Attach installer to published release
     if: github.event_name == 'release'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: HALS-Studio-windows-${{ needs.build.outputs.version }}
           path: installer
