@@ -90,8 +90,8 @@ class ProcessWorkspace(W.QWidget):
         self.previous=W.QPushButton('< Previous');self.previous.clicked.connect(lambda:self.sample.setCurrentIndex((self.sample.currentIndex()-1)%max(1,self.sample.count())));bar.addWidget(self.previous)
         self.next=W.QPushButton('Next >');self.next.clicked.connect(lambda:self.sample.setCurrentIndex((self.sample.currentIndex()+1)%max(1,self.sample.count())));bar.addWidget(self.next)
 
-        self.power_reset=W.QPushButton('Reset axes');self.power_reset.setFixedHeight(32);self.power_reset.clicked.connect(self.reset);bar.addWidget(self.power_reset)
-        bar.addStretch();self.save_image_button=W.QPushButton('Save image');self.save_image_button.clicked.connect(self.save_image);bar.addWidget(self.save_image_button)
+        bar.addStretch();self.power_reset=W.QPushButton('Reset axes');self.power_reset.setFixedHeight(32);self.power_reset.clicked.connect(self.reset);bar.addWidget(self.power_reset)
+        self.save_image_button=W.QPushButton('Save image');self.save_image_button.clicked.connect(self.save_image);bar.addWidget(self.save_image_button)
         self.stage2_tools=W.QWidget();s2=W.QHBoxLayout(self.stage2_tools);s2.setContentsMargins(0,0,0,0);rescan=W.QPushButton('Full grid rescan of selected frequency');rescan.clicked.connect(lambda:self.run('rescan'));s2.addWidget(rescan);s2.addWidget(W.QLabel('Frequency'));self.rescan_frequency=W.QComboBox();self.rescan_frequency.setFixedWidth(145);self.rescan_frequency.currentIndexChanged.connect(self.sample.setCurrentIndex);self.sample.currentIndexChanged.connect(self.rescan_frequency.setCurrentIndex);s2.addWidget(self.rescan_frequency);edit=W.QPushButton('Edit coordinate table');edit.clicked.connect(self.edit_origins);s2.addWidget(edit);s2.addStretch();bar.insertWidget(2,self.stage2_tools)
         self.stage3_tools=W.QWidget();s3=W.QHBoxLayout(self.stage3_tools);s3.setContentsMargins(0,0,0,0);s3.addWidget(W.QLabel('Sound power reference'));self.reference_order.setMaximumWidth(200);s3.addWidget(self.reference_order);s3.addStretch();bar.insertWidget(0,self.stage3_tools)
         self.order_choice.hide()
