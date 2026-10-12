@@ -5,6 +5,7 @@ from matplotlib.transforms import ScaledTranslation
 import hals_studio.analysis.acoustics as ac
 from hals_studio.analysis.analysis_metrics import minimum_phase, trend_fit
 from hals_studio.ui.plotting.plots import style, response_directions, audio_ticks, audio_frequency
+from hals_studio.ui.plotting.trace_legend import trace_legend
 
 
 def phase_values(freqs, pressure, mode, wrapped, delay):
@@ -133,7 +134,6 @@ def draw_chart(pane, s, levels, rel, i):
                         bbox=dict(facecolor='#101c28', alpha=.85, edgecolor='none'))
             except ValueError as exc: note += ' · Fit: '+str(exc)
         style(ax, '', ylabel=ylabel)
-        if curves: ax.legend(fontsize=7, ncol=2 if len(curves) > 5 else 1, loc='lower left' if c['fit'] else 'best')
         phase_mode = c['phase_mode'] if kind in GROUPS['SPL & phase'] or c['magnitude_selection'] is not None else 'None'
         if kind in ('phase', 'minimum'): phase_mode = 'Minimum phase' if kind == 'minimum' else 'Total phase'
         if di_curves: phase_mode = 'DI'
@@ -194,15 +194,11 @@ def draw_chart(pane, s, levels, rel, i):
                 phase_ax.text(1, 1, 'dB' if di_curves else 'Phase', transform=phase_ax.transAxes +
                               ScaledTranslation(5/72, 12/72, fig.dpi_scale_trans),
                               ha='left', va='bottom', color=axis_colour, fontsize=8, clip_on=False)
-            handles, labels = ax.get_legend_handles_labels()
-            if phase_ax is not ax:
-                extra_handles, extra_labels = phase_ax.get_legend_handles_labels()
-                handles += extra_handles; labels += extra_labels
-            ax.legend(handles, labels, fontsize=7, loc='lower left' if c['fit'] else 'best')
             if phase_mode == 'Minimum phase': phase_note = 'Finite-band minimum-phase estimate; no propagation delay.'
         elif not curves:
             ax.text(.5, .5, 'Select magnitude responses or a phase plot from the plot menu.',
                     transform=ax.transAxes, ha='center', va='center', fontsize=9, color='#91aabe', wrap=True)
+        trace_legend(ax, [phase_ax] if phase_ax is not None else [])
     pane.frequency_marker = ax.axvline(s.freqs[i], color='#7db0c0', alpha=.35, lw=.8)
     ax.set_xlim(s.freqs[0], 20000. if 19800. <= s.freqs[-1] < 20000. else s.freqs[-1])
     if c['auto_axes'] and not kind.startswith('map_') and curves:
@@ -222,5 +218,6 @@ def draw_chart(pane, s, levels, rel, i):
     pane.interaction.finish(axes, phase_ax if phase_ax is not ax else None)
     pane.note.setText(' · '.join(part for part in (note, phase_note) if part) or 'Wheel: zoom at cursor · Zoom out: full view')
     if not kind.startswith('map_'):
-        pane.cursor.bind(ax, phase_ax if phase_mode not in ('None', 'DI') else None)
+        pane.cursor.bind(ax, phase_ax if phase_mode not in ('None', 'DI') else None,
+                         di_ax=phase_ax if phase_mode == 'DI' else None)
     pane.chart.done()

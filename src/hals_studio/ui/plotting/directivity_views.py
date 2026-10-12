@@ -4,16 +4,30 @@ import pyvista as pv
 from hals_studio.ui.plotting.plots import audio_ticks, audio_frequency
 
 
-def position_globe_handle(pane, ax, rotation):
-    """Keep the grab handle attached to the globe's angular orientation."""
-    key = pane._globe_rotation_axes[ax]
-    angle = np.deg2rad((140 if key == 'horizontal' else 40) + rotation)
+def add_rotation_handle(pane, ax, rotation):
+    artists = tuple(ax.plot([], [], transform=ax.transAxes, color='#8ca4b8',
+                            linewidth=2, solid_capstyle='round', clip_on=False,
+                            zorder=30)[0] for _ in range(3))
+    for artist in artists: artist.set_in_layout(False)
+    pane._rotation_handle_artists[ax] = artists
+    position_rotation_handle(pane, ax, rotation)
+
+
+def position_rotation_handle(pane, ax, rotation):
+    """Keep the grab handle attached to the plot's angular orientation."""
+    key = pane._rotation_axes[ax]
+    base_angle = 140 if key == 'horizontal' else 40
+    if pane.config['kind'] == 'polar' and key == 'vertical':
+        # Cancel the default clockwise quarter-turn so both polar grips
+        # start at the same top-left angle, then follow manual rotation.
+        base_angle = 230
+    angle = np.deg2rad(base_angle + rotation)
     radial = np.array([np.cos(angle), np.sin(angle)])
     tangent = np.array([-radial[1], radial[0]])
     center = np.array([.5, .5])
     grip = center + .68*radial
-    pane._globe_handles[ax] = tuple(grip)
-    stem, hook, arrow = pane._globe_handle_artists[ax]
+    pane._rotation_handles[ax] = tuple(grip)
+    stem, hook, arrow = pane._rotation_handle_artists[ax]
     stem_points = center + np.outer([.52, .648], radial)
     stem.set_data(stem_points[:, 0], stem_points[:, 1])
     arc_angles = np.linspace(np.pi, np.deg2rad(430), 25)
@@ -105,14 +119,14 @@ def draw_globe(pane, sphere, relative):
     axes = []
     rotation = c.get('globe_rotation', 0.)
     rotations = rotation if isinstance(rotation, dict) else {'horizontal': float(rotation), 'vertical': float(rotation)}
-    pane._globe_rotation_axes = {}
-    pane._globe_handles = {}
-    pane._globe_handle_artists = {}
+    pane._rotation_axes = {}
+    pane._rotation_handles = {}
+    pane._rotation_handle_artists = {}
     for column, (title, values) in enumerate([('Horizontal', h), ('Vertical', v)]):
         ax = fig.add_subplot(grid[0, column], projection='polar'); axes.append(ax)
         ax.set_anchor('C'); ax.set_title(title, pad=20)
         key = title.lower()
-        pane._globe_rotation_axes[ax] = key
+        pane._rotation_axes[ax] = key
         ax.set_theta_zero_location('S', offset=rotations.get(key, 0.)); ax.set_theta_direction(1)
         ax.grid(False)
         img = ax.pcolormesh(np.deg2rad(angles), radius, values, shading='nearest', cmap='PColor', vmin=-c['span'], vmax=0)
@@ -125,19 +139,10 @@ def draw_globe(pane, sphere, relative):
         ticks = audio_ticks(f[0], f[-1]); ax.set_yticks(np.log10(ticks/f[0]), [audio_frequency(t)+' Hz' for t in ticks])
         degrees = np.arange(0, 360, 30)
         ax.set_thetagrids(degrees, [f'{d if d <= 180 else d-360}\N{DEGREE SIGN}' for d in degrees])
-        ax.grid(True, alpha=.35); ax.set_rlabel_position(0)
+        ax.grid(True, alpha=.35); ax.set_rlabel_position(-rotations.get(key, 0.))
         # The thin stem and curved grip use axes coordinates, so both scale
         # with the globe and can be positioned as its angle changes.
-        text_color = ax.get_xticklabels()[0].get_color()
-        stem, = ax.plot([], [], transform=ax.transAxes, color=text_color,
-                        linewidth=2, solid_capstyle='round', clip_on=False, zorder=30)
-        hook, = ax.plot([], [], transform=ax.transAxes, color=text_color,
-                        linewidth=2, solid_capstyle='round', clip_on=False, zorder=30)
-        arrow, = ax.plot([], [], transform=ax.transAxes, color=text_color,
-                         linewidth=2, solid_capstyle='round', clip_on=False, zorder=30)
-        for artist in (stem, hook, arrow): artist.set_in_layout(False)
-        pane._globe_handle_artists[ax] = (stem, hook, arrow)
-        position_globe_handle(pane, ax, rotations.get(key, 0.))
+        add_rotation_handle(pane, ax, rotations.get(key, 0.))
     colour_axis = fig.add_subplot(grid[0, 2])
     fig.colorbar(img, cax=colour_axis, label='Relative level / dB')
     pane.interaction.finish(axes)

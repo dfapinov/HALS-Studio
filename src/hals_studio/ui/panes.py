@@ -36,7 +36,7 @@ def selected_magnitudes(config):
     return [key for key in selected if key in MAGNITUDE_KINDS]
 
 
-DEFAULT = dict(directivity_display='Sonogram', directivity_on_axis=False, directivity_contour_step=6., csd_level_reference=False, wavelet_level_reference=False, wavelet_time_reference=False, csd_method='CSD', wavelet_units='Cycles', wavelet_cycles=12., wavelet_duration=20., wavelet_pre=1., csd_mode='3D waterfall', csd_time=20., csd_pre_time=1., csd_span=30., csd_auto_time=True, csd_fmin=100., csd_fmax=20000., kind='probe', normalization='Peak', smoothing='None', globe_rotation=0., span=36., palette='PColor',
+DEFAULT = dict(directivity_display='Sonogram', directivity_on_axis=False, directivity_contour_step=6., csd_level_reference=False, wavelet_level_reference=False, wavelet_time_reference=False, csd_method='CSD', wavelet_units='Cycles', wavelet_cycles=12., wavelet_duration=20., wavelet_pre=1., csd_mode='3D waterfall', csd_time=20., csd_pre_time=1., csd_span=30., csd_auto_time=True, csd_fmin=100., csd_fmax=20000., kind='probe', normalization='Peak', smoothing='None', globe_rotation={'horizontal': 0., 'vertical': 90.}, polar_rotation={'horizontal': 0., 'vertical': 270.}, span=36., palette='PColor',
     geometry='dB radius', reference_sphere=True, edges=False, phase_colour=False, orbit='Az / El - no roll',
     contours=True, extent=90., step=10., symmetric=True, sweep_direction='+/-', delay=0., offset=0., wrapped=True,
     di_auto=True, di_min=-5., di_max=20., phase_auto=True, phase_min=-180., phase_max=180., phase=True, phase_mode='Total phase', magnitude_selection=None, phase_height=.45,
@@ -731,7 +731,7 @@ class PlotPane(W.QFrame):
                 from hals_studio.ui.plotting.directivity_views import draw_globe
                 draw_globe(self, s, rel)
             elif kind == 'polar':
-                draw_zoomable_polars(self.chart, s, rel, i, c['span']); self.interaction.finish(self.chart.fig.axes)
+                draw_zoomable_polars(self.chart, s, rel, i, c['span'], pane=self); self.interaction.finish(self.chart.fig.axes)
             else: self.draw_chart(s, levels, rel, i)
         self.last_render = (id(o.sphere), o.frequency.value(), o.azimuth.value(), o.elevation.value(),
                             repr(c), o.overlay_revision, o.axis)

@@ -13,10 +13,13 @@ class SPLCursor:
         self.lines = {}; self.phase = {}; self.ax = None
         self.label.clear(); self.label.hide()
 
-    def bind(self, ax, phase_ax=None):
+    def bind(self, ax, phase_ax=None, di_ax=None):
         self.ax = ax
         self.lines = {line.get_label(): line for line in ax.lines
                       if not line.get_label().startswith(('_', 'Fit')) and 'phase' not in line.get_label().lower()}
+        if di_ax is not None and di_ax is not ax:
+            self.lines.update({line.get_label(): line for line in di_ax.lines
+                               if not line.get_label().startswith('_')})
         self.phase = {}
         if phase_ax is not None and phase_ax is not ax:
             for line in phase_ax.lines:

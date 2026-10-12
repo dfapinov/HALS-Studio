@@ -33,7 +33,7 @@ class PlotInteraction(C.QObject):
         self.pane = pane; self.axes = []; self.full = {}; self.saved = {}; self.signature = None
         self.phase_ax = self.main_ax = None; self.dragging = False; self.positioning = False
         self.pan = None
-        self.globe_drag = None
+        self.rotation_drag = None
         canvas = pane.chart.canvas
         canvas.mpl_connect('scroll_event', self.wheel)
         canvas.mpl_connect('button_press_event', self.press)
@@ -74,10 +74,10 @@ class PlotInteraction(C.QObject):
 
     def press(self, event):
         ax = self.main_ax
-        if event.button == 1 and self.pane.config.get('kind', '').startswith('globe_') and ax is not None and event.x is not None and event.y is not None:
-            handles = getattr(self.pane, '_globe_handles', {})
-            axes_keys = getattr(self.pane, '_globe_rotation_axes', {})
-            stored = self.pane.config.get('globe_rotation', 0.)
+        if event.button == 1 and (self.pane.config.get('kind', '').startswith('globe_') or self.pane.config.get('kind') == 'polar') and ax is not None and event.x is not None and event.y is not None:
+            handles = getattr(self.pane, '_rotation_handles', {})
+            axes_keys = getattr(self.pane, '_rotation_axes', {})
+            stored = self.pane.config.get('polar_rotation' if self.pane.config['kind'] == 'polar' else 'globe_rotation', 0.)
             rotations = dict(stored) if isinstance(stored, dict) else {'horizontal': float(stored), 'vertical': float(stored)}
             for candidate in self.axes:
                 center = candidate.transAxes.transform((.5, .5))
@@ -88,7 +88,7 @@ class PlotInteraction(C.QObject):
                 on_edge = abs(np.hypot(dx, dy)-radius) <= max(16., radius*.09)
                 if on_handle or on_edge:
                     key = axes_keys.get(candidate, 'horizontal')
-                    self.globe_drag = (candidate, center, np.arctan2(dy, dx), rotations.get(key, 0.), key)
+                    self.rotation_drag = (candidate, center, np.arctan2(dy, dx), rotations.get(key, 0.), key)
                     self.pane.chart.fig.set_layout_engine('none')
                     self.pane.chart.canvas.setCursor(C.Qt.ClosedHandCursor)
                     return
@@ -104,20 +104,23 @@ class PlotInteraction(C.QObject):
             self.drag_offset = event.y-self.phase_ax.bbox.y1
 
     def move(self, event):
-        if self.globe_drag and event.x is not None and event.y is not None:
-            ax, center, previous, rotation, key = self.globe_drag
+        if self.rotation_drag and event.x is not None and event.y is not None:
+            ax, center, previous, rotation, key = self.rotation_drag
             angle = np.arctan2(event.y-center[1], event.x-center[0])
             rotation += np.degrees(np.arctan2(np.sin(angle-previous), np.cos(angle-previous)))
-            self.globe_drag = (ax, center, angle, rotation, key)
+            self.rotation_drag = (ax, center, angle, rotation, key)
             snapped = float(10*np.round(rotation/10)) % 360
-            rotations = self.pane.config.get('globe_rotation', 0.)
+            rotations = self.pane.config.get('polar_rotation' if self.pane.config['kind'] == 'polar' else 'globe_rotation', 0.)
             rotations = dict(rotations) if isinstance(rotations, dict) else {'horizontal': float(rotations), 'vertical': float(rotations)}
             rotations[key] = snapped
-            self.pane.config['globe_rotation'] = rotations
-            ax.set_theta_zero_location('S', offset=snapped)
-            ax.set_rlabel_position(0)
-            from hals_studio.ui.plotting.directivity_views import position_globe_handle
-            position_globe_handle(self.pane, ax, snapped)
+            self.pane.config['polar_rotation' if self.pane.config['kind'] == 'polar' else 'globe_rotation'] = rotations
+            if ax.name == 'polar':
+                ax.set_theta_zero_location('S', offset=snapped)
+                ax.set_rlabel_position(-snapped)
+            else:
+                self.pane._polar_transforms[ax].clear().rotate_deg(snapped)
+            from hals_studio.ui.plotting.directivity_views import position_rotation_handle
+            position_rotation_handle(self.pane, ax, snapped)
             self.pane.chart.canvas.draw_idle()
             return
         if self.pan and event.x is not None and event.y is not None:
@@ -143,8 +146,8 @@ class PlotInteraction(C.QObject):
         else: self.pane.chart.canvas.unsetCursor()
 
     def release(self, event):
-        if self.globe_drag:
-            self.globe_drag = None; self.pane.last_render = None
+        if self.rotation_drag:
+            self.rotation_drag = None; self.pane.last_render = None
             self.pane.chart.canvas.unsetCursor()
         if self.pan:
             self.pan = None; self.pane.chart.canvas.unsetCursor()
@@ -183,6 +186,10 @@ class PlotInteraction(C.QObject):
         self.saved.clear()
         for i, ax in enumerate(self.axes):
             ax.set_xlim(self.full[i][0]); ax.set_ylim(self.full[i][1])
+            legend = ax.get_legend()
+            if legend is not None:
+                legend.set_bbox_to_anchor(None)
+                legend.set_loc('best')
         self.pane.chart.canvas.draw_idle()
 
     def eventFilter(self, watched, event):

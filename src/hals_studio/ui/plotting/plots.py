@@ -227,10 +227,14 @@ def draw_polars(chart, sphere, rel, i, dynamic_range):
     chart.done()
 
 
-def draw_zoomable_polars(chart, sphere, rel, i, dynamic_range):
+def draw_zoomable_polars(chart, sphere, rel, i, dynamic_range, pane=None):
     """Polar cuts on Cartesian axes so cursor-centred zoom also pans correctly."""
     from matplotlib.patches import Circle
-    chart.fig.clear(); chart.fig.set_layout_engine('constrained'); chart.fig.get_layout_engine().set(rect=(0, 0, 1, 1))
+    from matplotlib.transforms import Affine2D
+    if pane is not None:
+        pane._rotation_axes = {}; pane._rotation_handles = {}
+        pane._rotation_handle_artists = {}; pane._polar_transforms = {}
+    chart.fig.clear(); chart.fig.set_layout_engine('constrained'); chart.fig.get_layout_engine().set(rect=(.08, .08, .84, .84))
     angles, h, v = sphere.cuts(rel)
     theta = np.deg2rad(np.r_[angles, angles[0]+360])
     horizontal = chart.width() > chart.height()*1.3
@@ -249,6 +253,17 @@ def draw_zoomable_polars(chart, sphere, rel, i, dynamic_range):
             ax.plot([0, dynamic_range*np.sin(rad)], [0, dynamic_range*np.cos(rad)], color='#385061', lw=.5)
             ax.text((dynamic_range+4)*np.sin(rad), (dynamic_range+4)*np.cos(rad), text,
                     ha='center', va='center', color='#8ca4b8', fontsize=8, clip_on=True)
+        if pane is not None:
+            from hals_studio.ui.plotting.directivity_views import add_rotation_handle
+            key = 'horizontal' if j == 0 else 'vertical'
+            stored = pane.config.get('polar_rotation', {'horizontal': 0., 'vertical': 270.})
+            rotation = stored.get(key, 0.) if isinstance(stored, dict) else float(stored)
+            transform = Affine2D().rotate_deg(rotation)
+            for artist in [*ax.lines, *ax.patches, *ax.texts]:
+                artist.set_transform(transform + ax.transData)
+            pane._polar_transforms[ax] = transform
+            pane._rotation_axes[ax] = key
+            add_rotation_handle(pane, ax, rotation)
         ax.set_xlim(-dynamic_range-9, dynamic_range+9); ax.set_ylim(-dynamic_range-9, dynamic_range+9)
         ax.set_aspect('equal', adjustable='box'); ax.set_axis_off(); ax.set_title(title, color=color, fontsize=9)
     chart.done()
