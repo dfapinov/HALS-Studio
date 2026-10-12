@@ -1,3 +1,4 @@
 -r requirements.txt
 pytest>=8
 pyinstaller>=6.0
+ruff>=0.9

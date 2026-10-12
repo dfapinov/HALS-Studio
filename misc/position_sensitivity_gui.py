@@ -9,6 +9,9 @@ Stage 2 is rerun for each perturbation before Stage 3/4.
 """
 
 from __future__ import annotations
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 import csv
 import json
@@ -35,10 +38,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-import schema
-from stage3_optimize_she_settings import run_open_branch_optimizer
-from stage4_run_she_solve import run_she_solve
-from utils import parse_coords_from_filename, spherical_to_cartesian
+import hals_studio.process_engine.schema as schema
+from hals_studio.process_engine.stage3_optimize_she_settings import run_open_branch_optimizer
+from hals_studio.process_engine.stage4_run_she_solve import run_she_solve
+from hals_studio.process_engine.utils import parse_coords_from_filename, spherical_to_cartesian
 
 
 _COORD_RE = re.compile(
@@ -407,7 +410,7 @@ def run_position_sensitivity(
 
 
 def _print_baseline_coordinate_audit(source_npz, case_npz, renamed_rows):
-    from utils import load_and_parse_npz
+    from hals_studio.process_engine.utils import load_and_parse_npz
 
     src = load_and_parse_npz(source_npz)
     dst = load_and_parse_npz(case_npz)
@@ -427,7 +430,7 @@ def _print_baseline_coordinate_audit(source_npz, case_npz, renamed_rows):
 
 
 def _run_stage2_for_case(input_dir, input_filename, stage2_settings, speed_of_sound, kr_offset):
-    from stage2_centre_origin import export_interpolated_origins, run_origin_search
+    from hals_studio.process_engine.stage2_centre_origin import export_interpolated_origins, run_origin_search
 
     res = run_origin_search(
         input_dir_origins=input_dir,

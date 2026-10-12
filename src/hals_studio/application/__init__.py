@@ -1,0 +1,1 @@
+"""HALS Studio application package."""

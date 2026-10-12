@@ -3,6 +3,9 @@
 Run from the repository root:
     python misc/system_testing/hals_tof_test/export_test.py --coeff path/to/coefficients.h5
 """
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'src'))
 import argparse
 import json
 from pathlib import Path
@@ -11,9 +14,9 @@ import sys
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 sys.path.insert(0, str(ROOT))
-import bootstrap
+import hals_studio.bootstrap as bootstrap
 sys.path.insert(0, str(ROOT / 'process_engine'))
-from stage5_extract_pressures import run_sweep_extraction
+from hals_studio.process_engine.stage5_extract_pressures import run_sweep_extraction
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)

@@ -14,7 +14,7 @@ Controls the HALS measurement robot, audio interface and measurement sequence. I
 **HALS Studio — Part 2: Processing, Analysis & Export**  
 Takes the measurement dataset produced by HALS Control and turns it into a 'holographic' acoustic model. Studio provides tools for inspecting and analysing the reconstructed sound field and an Export workspace for extracting FRD and impulse-response (IR) data for use in other applications.
 
-![HALS Studio](./images/main_cartoon_small.png)
+![HALS Studio](./src/hals_studio/resources/images/main_cartoon_small.png)
 
 # What makes HALS different?
 
@@ -101,7 +101,7 @@ The solve simultaneously separates the internally generated loudspeaker field fr
 
 Once Stage 4 is complete, the model is ready for **Analysis** and **Export**.
 
-![process_screenshot](./images/process_screenshot.png)
+![process_screenshot](./src/hals_studio/resources/images/process_screenshot.png)
 
 ---
 
@@ -150,9 +150,9 @@ CSD progressively removes the earlier part of the impulse response to show what 
 
 Both are particularly useful for revealing resonances and stored or delayed energy in the reflection-free HALS data.
 
-![analysis_screenshot](./images/analysis_screenshot.png)
+![analysis_screenshot](./src/hals_studio/resources/images/analysis_screenshot.png)
 
-![analysis2_screenshot](./images/analysis2_screenshot.png)
+![analysis2_screenshot](./src/hals_studio/resources/images/analysis2_screenshot.png)
 
 ---
 
@@ -202,7 +202,7 @@ As the model retains full complex pressure information, it can also be exported 
 
 IR exports retain the physical time-of-flight propagation delay, behaving like an impulse response captured by a real microphone at the chosen virtual position.  
 
-![export_screenshot](./images/export_screenshot.png)
+![export_screenshot](./src/hals_studio/resources/images/export_screenshot.png)
 
 ---
 
@@ -285,13 +285,23 @@ Topics include:
 
 ```text
 HALS-Studio/
-├── process_engine/     Main signal processing scripts
-├── documentation/      HALS technical and user documentation
-├── assets/             Application resources
-├── images/             Images and UI resources
-├── misc/               Standalone measurement/diagnostic utilities
-└── *.py                Studio UI, analysis, plotting and export tools
+|-- src/hals_studio/
+|   |-- application/      Controllers, requests and stage orchestration
+|   |-- analysis/         Acoustic analysis and metrics
+|   |-- process_engine/   Numerical stages and shared engine helpers
+|   |-- persistence/      Projects, sessions, preferences and caches
+|   |-- infrastructure/   Workers, Qt job adapters and frozen-app checks
+|   |-- ui/               Workspace widgets and ui/plotting renderers
+|   `-- resources/        Icons, images and processing settings schema
+|-- tests/                Numerical, application-boundary and Qt regressions
+|-- scripts/              Pipeline and workspace smoke checks
+|-- documentation/        Technical, user and developer documentation
+|-- misc/                 Diagnostics and historical reproductions
+`-- entry.py              Source and frozen application launcher
 ```
+
+See [Application architecture](documentation/architecture.md) for dependency
+boundaries, development checks and remaining refactoring opportunities.
 
 ---
 

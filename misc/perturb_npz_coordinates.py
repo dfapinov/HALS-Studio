@@ -13,6 +13,9 @@ Example:
 """
 
 from __future__ import annotations
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 import argparse
 import math
@@ -29,8 +32,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROCESS_DIR = SCRIPT_DIR.parent / "process_engine"
 sys.path.insert(0, str(PROCESS_DIR))
 
-import schema  # noqa: E402
-from utils import parse_coords_from_filename, spherical_to_cartesian  # noqa: E402
+import hals_studio.process_engine.schema as schema  # noqa: E402
+from hals_studio.process_engine.utils import parse_coords_from_filename, spherical_to_cartesian  # noqa: E402
 
 
 COORD_RE = re.compile(

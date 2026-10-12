@@ -1,4 +1,4 @@
-HALS Atlas uses unmodified Qt and PySide6 6.11.2 shared libraries.
+HALS Studio uses unmodified Qt and PySide6 6.11.2 shared libraries.
 Copyright The Qt Company Ltd. and other contributors.
 
 Qt/PySide6 are available under open-source LGPL/GPL terms as applicable
@@ -17,5 +17,5 @@ directory and can be replaced with compatible builds. No restriction on
 modifying/relinking these libraries or reverse engineering for debugging
 such modifications is imposed by this application.
 
-HALS Atlas application source is provided in the _internal/source directory
+HALS Studio application source is provided in the _internal/source directory
 of the application bundle. Its MIT license is in ../HALS-MIT.txt.

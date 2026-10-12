@@ -1,3 +1,15 @@
+11/10/26 - Stage 2 fixes
+
+- Corrected the Stage 2 startup message to show the actual search mode. Normal
+  runs no longer display the misleading "Full 3D Volumetric Sweep" heading.
+
+- Full grid rescan now uses the X, Y, and Z bounds and grid resolution currently
+  entered in Stage 2, instead of the values cached by the earlier origin search.
+
+- Speed-of-sound optimization now selects its six 5-10 kHz probe frequencies
+  from the measured frequency bins. The Stage 2 octave resolution setting only
+  controls the origin search frequencies.
+
 11/10/26 - Latest changes
 
 - Stage 1 now highlights and initially displays the IR filename nearest the

@@ -12,10 +12,20 @@ license = {file = "LICENSE"}
 dynamic = ["dependencies"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pyinstaller>=6.0"]
+dev = ["pytest>=8", "pyinstaller>=6.0", "ruff>=0.9"]
 
-[tool.setuptools]
-py-modules = []
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+hals_studio = ["resources/**/*", "resources/*", "process_engine/*.json", "process_engine/*.md"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["F821"]

@@ -8,6 +8,9 @@ Spherical Harmonic Expansion (SHE) fit error for each measurement point.
 This tool helps diagnose where the mathematical model is most dissimilar
 from the measured data in physical space.
 """
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 import os
 import math
@@ -23,14 +26,14 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'process_engine')))
 try:
-    import schema
-    from utils import load_and_parse_npz, spherical_to_cartesian
-    from extract_pressures_core import evaluate_she_field
+    import hals_studio.process_engine.schema as schema
+    from hals_studio.process_engine.utils import load_and_parse_npz, spherical_to_cartesian
+    from hals_studio.process_engine.extract_pressures_core import evaluate_she_field
 except ImportError as e:
     sys.exit(f"Error: Could not import required project modules. {e}")
 
 try:
-    from config_process import SPEED_OF_SOUND
+    from hals_studio.process_engine.config_process import SPEED_OF_SOUND
 except ImportError:
     SPEED_OF_SOUND = 343.0
 
@@ -170,7 +173,7 @@ class SpatialErrorViewerApp:
         self._build_ui()
         
         try:
-            from config_process import OUTPUT_DIR_FDW, OUTPUT_FILENAME_FDW, OUTPUT_DIR_SHE, OUTPUT_FILENAME_SHE
+            from hals_studio.process_engine.config_process import OUTPUT_DIR_FDW, OUTPUT_FILENAME_FDW, OUTPUT_DIR_SHE, OUTPUT_FILENAME_SHE
             default_npz = os.path.join(OUTPUT_DIR_FDW, OUTPUT_FILENAME_FDW)
             default_h5 = os.path.join(OUTPUT_DIR_SHE, OUTPUT_FILENAME_SHE)
             if os.path.exists(default_npz): self.npz_path.set(default_npz)

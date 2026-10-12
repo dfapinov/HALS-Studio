@@ -3,6 +3,9 @@
 Run from repository root: .venv/Scripts/python.exe misc/rft_onset_experiment.py
 No production settings are changed. Cached solves are keyed by input content.
 """
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from pathlib import Path
 import os
 for key in ('OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS'):
@@ -12,10 +15,10 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / 'process_engine')]
-from utils import load_and_parse_npz, translate_coordinates, get_grid_limit, get_kr_limit
-from she_solver_core import _solve_one_frequency
-from stage3_optimize_she_settings import select_stage3_frequency_indices
-from sound_power import degree_power
+from hals_studio.process_engine.utils import load_and_parse_npz, translate_coordinates, get_grid_limit, get_kr_limit
+from hals_studio.process_engine.she_solver_core import _solve_one_frequency
+from hals_studio.process_engine.stage3_optimize_she_settings import select_stage3_frequency_indices
+from hals_studio.analysis.sound_power import degree_power
 from scipy.signal import savgol_filter
 import matplotlib
 matplotlib.use('Agg')
@@ -129,7 +132,7 @@ def main():
         settings = parsed['stage1_settings']
         rft = project.get('stage3_vars', {}).get('fdw_rft_ms', project.get('stage1_vars', {}).get('fdw_rft_ms'))
         resolution = settings.get('fdw_oct_res', project.get('stage1_vars', {}).get('fdw_oct_res'))
-        from rft_range import transition_frequency_hz
+        from hals_studio.process_engine.rft_range import transition_frequency_hz
         reference = transition_frequency_hz(rft, resolution) if rft and resolution else None
         records.append(dict(name=name, path=str(path), digest=digest, curves=curves,
                             reference=reference, settings=settings, project_rft_ms=rft,

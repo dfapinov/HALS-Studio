@@ -1,4 +1,7 @@
 """Optional re-export from existing solved coefficients; never overwrites bundled evidence WAVs."""
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / 'src'))
 from pathlib import Path
 import argparse
 import sys
@@ -12,9 +15,9 @@ def main():
     p.add_argument('--repo',type=Path,default=HERE.parents[3])
     args=p.parse_args()
     sys.path.insert(0, str(args.repo))
-    import bootstrap
+    import hals_studio.bootstrap as bootstrap
     sys.path.insert(0,str(args.repo/'process_engine'))
-    from stage5_extract_pressures import run_sweep_extraction
+    from hals_studio.process_engine.stage5_extract_pressures import run_sweep_extraction
     synthetic=args.case=='synthetic'
     coord=(125.5,186.3,.17565) if synthetic else (41.81,3.1,.33002)
     run_sweep_extraction(coeff_path=args.coeff,output_dir=HERE/'reexports',frd_prefix=args.case,
