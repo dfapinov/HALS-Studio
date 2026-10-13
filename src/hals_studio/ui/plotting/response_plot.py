@@ -63,7 +63,7 @@ def _one_magnitude(pane, s, levels, config=None):
 
 
 def magnitude_curves(pane, s, levels, config=None):
-    from hals_studio.ui.panes import selected_magnitudes
+    from hals_studio.ui.plotting.plot_settings import selected_magnitudes
     c = pane.config if config is None else config
     curves, labels, notes = {}, [], []
     for kind in selected_magnitudes(c):
@@ -77,7 +77,7 @@ def magnitude_curves(pane, s, levels, config=None):
 
 def draw_chart(pane, s, levels, rel, i):
     from hals_studio.ui.mic_calibration import config as shared_config
-    from hals_studio.ui.panes import GROUPS, selected_magnitudes
+    from hals_studio.ui.plotting.plot_settings import GROUPS, selected_magnitudes
     c, o, kind = pane.config, pane.owner, pane.config['kind']
     fig = pane.chart.fig; fig.clear(); fig.set_layout_engine('constrained'); ax = fig.add_subplot(111)
     pane.phase_axis = None; pane.phase_handle = None; pane.magnitude_curves = {}; pane.fit_result = None

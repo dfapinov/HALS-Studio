@@ -1,7 +1,8 @@
 """Selectable Export panes; geometry remains outside these hosts."""
 from copy import deepcopy
 from PySide6 import QtCore as C, QtWidgets as W
-from hals_studio.ui.panes import PlotPane, GROUPS, TITLES, default_config
+from hals_studio.ui.panes import PlotPane
+from hals_studio.ui.plotting.plot_settings import GROUPS, TITLES, default_config
 from hals_studio.ui.cli_log import CliLog
 
 

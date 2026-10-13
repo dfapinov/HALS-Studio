@@ -9,7 +9,9 @@ from matplotlib.ticker import FuncFormatter
 from hals_studio.ui.plotting.plots import Chart, audio_ticks, audio_frequency
 from hals_studio.ui.plotting.plot_interaction import PlotInteraction
 
-DEFAULTS = dict(csd_level_reference=False, wavelet_level_reference=False, wavelet_time_reference=False, csd_method='CSD', wavelet_units='Cycles', wavelet_cycles=12., wavelet_duration=20., wavelet_pre=1., csd_mode='3D waterfall', csd_time=20., csd_pre_time=1., csd_span=30., csd_auto_time=True, csd_fmin=100., csd_fmax=20000.)
+from hals_studio.ui.plotting.plot_settings import decay_setting_keys
+
+from hals_studio.ui.plotting.plot_settings import DECAY_DEFAULTS as DEFAULTS
 
 
 def decay(ir, fs, duration=20., window=None, slices=160, pre_time=1.):
@@ -142,18 +144,7 @@ def wavelet_map(ir, fs, config):
     return frequencies, coordinate, db
 
 
-def decay_setting_keys(config):
-    if config.get('_all_decay_controls'):
-        return ['csd_method','csd_mode','csd_level_reference','wavelet_level_reference','wavelet_time_reference','wavelet_cycles','wavelet_units','csd_auto_time','csd_time','csd_pre_time','wavelet_duration','wavelet_pre','csd_span','csd_fmin','csd_fmax']
-    wavelet = config.get('csd_method') == 'Morlet wavelet' or config.get('kind') == 'wavelet'
-    keys = ['csd_method','csd_mode']
-    if wavelet:
-        keys += ['wavelet_level_reference', 'wavelet_time_reference', 'wavelet_cycles']
-    else: keys += ['csd_level_reference']
-    keys += ['wavelet_units', 'csd_auto_time']
-    if config.get('_all_time_controls') or config.get('wavelet_units', 'Cycles') != 'Cycles': keys += ['csd_time', 'csd_pre_time']
-    if config.get('_all_time_controls') or config.get('wavelet_units', 'Cycles') == 'Cycles': keys += ['wavelet_duration', 'wavelet_pre']
-    return keys + ['csd_span', 'csd_fmin', 'csd_fmax']
+# Shared with Analysis pane setup.
 
 
 def analysis_ir(owner, sphere):
@@ -299,7 +290,8 @@ class CSDPanel(W.QWidget):
             unit = 'cycles' if self.config.get('wavelet_units', 'Cycles') == 'Cycles' else 'ms'
             self.note.setText(f'HALS IR - display {self.view.data[1][0]:.2f} to {self.view.data[1][-1]:.2f} {unit}')
     def settings(self):
-        from hals_studio.ui.panes import SPECS,editor
+        from hals_studio.ui.plotting.plot_settings import SPECS
+        from hals_studio.ui.pane_setup import editor
         dialog=W.QDialog(self); dialog.setWindowTitle('Time / frequency decay settings'); form=W.QFormLayout(dialog); values={**DEFAULTS, **self.config}
         rows={}
         def changed(key,value):

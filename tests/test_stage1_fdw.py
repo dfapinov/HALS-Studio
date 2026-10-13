@@ -98,5 +98,5 @@ def test_viewer_schema_exposes_persisted_options():
 
 
 def test_cross_sonogram_setup_matches_directivity():
-    from hals_studio.ui.panes import setting_keys
+    from hals_studio.ui.plotting.plot_settings import setting_keys
     assert set(('directivity_on_axis','contours','directivity_contour_step')) <= set(setting_keys('cross_sonograms'))

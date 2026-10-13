@@ -7,7 +7,9 @@ from PySide6 import QtCore as C, QtGui as G, QtWidgets as W
 import hals_studio.bootstrap as bootstrap
 import hals_studio.analysis.acoustics as ac
 from hals_studio.ui.app import STYLE, label, button, number
-from hals_studio.ui.panes import PlotPane, DEFAULT, TITLES, SPECS, editor, setting_keys, default_config
+from hals_studio.ui.panes import PlotPane
+from hals_studio.ui.plotting.plot_settings import TITLES, SPECS, setting_keys
+from hals_studio.ui.pane_setup import editor
 from hals_studio.analysis.analysis_metrics import cea2034, reference_axis
 from hals_studio.infrastructure.worker_pool import WarmPool
 from hals_studio.persistence.preferences import studio_settings
@@ -40,7 +42,7 @@ class ViewButton(W.QPushButton):
             index = sum(x > self.owner.view_buttons[name].geometry().center().x() for name in others)
             others.insert(index, self.view_name)
             if others != list(self.owner.views):
-                self.owner.views = {name: self.owner.views[name] for name in others}
+                self.owner.view_collection.reorder(others)
                 self.owner.view_bar.removeWidget(self); self.owner.view_bar.insertWidget(index, self)
             event.accept(); return
         super().mouseMoveEvent(event)
@@ -103,7 +105,8 @@ class Workspace(W.QMainWindow):
         self.pool_timer = C.QTimer(self); self.pool_timer.setInterval(400); self.pool_timer.timeout.connect(self.pool_status)
         self.pool_timer.start()
         self.settings = settings if settings is not None else studio_settings()
-        self.views = self.template_views()
+        from hals_studio.ui.view_state import ViewCollection
+        self.view_collection = ViewCollection(self.template_views())
         self._build_workspace(); self._menus()
         self.menuBar().setStyleSheet('QMenuBar { border-bottom: 1px solid rgba(150, 170, 190, 65); }')
         file_menu = self.menuBar().actions()[0].menu(); file_menu.clear()
@@ -128,23 +131,31 @@ class Workspace(W.QMainWindow):
         ensure_export(self)
         self.set_workspace(int(self.settings.value('default_workspace', 0)))
 
+    @property
+    def views(self):
+        return self.view_collection.views
+
+    @views.setter
+    def views(self, views):
+        self.view_collection.views = views
+
+    @property
+    def current_view(self):
+        return self.view_collection.current
+
+    @current_view.setter
+    def current_view(self, name):
+        self.view_collection.current = name
+
     @staticmethod
     def default_views():
-        result = {}
-        for name, kinds in {'Sound field': ['balloon', 'probe', 'polar', 'map_h'],
-                            'Directivity': ['cross_sonograms', 'map_h', 'map_v', 'di'],
-                            'Globes': ['globe_hv', 'cross_sonograms', 'polar', 'probe'],
-                            'CEA2034': ['cea', 'reflections', 'cea_Sound power DI', 'cea_Early reflections DI']}.items():
-            configs = [default_config(k) for k in kinds]
-            for config in configs:
-                if config['kind'] != 'probe': config['phase_mode'] = 'None'
-            if name == 'Sound field': configs[0]['pins'] = ['normalization', 'span', 'geometry']
-            result[name] = dict(version=2, panes=configs, outer=[600, 380], rows=[[700, 800], [700, 800]])
-        return result
+        from hals_studio.ui.view_state import default_views
+        return default_views()
 
     @staticmethod
     def valid_view(view):
-        return isinstance(view, dict) and len(view.get('panes', [])) == 4 and all(p.get('kind') in (*TITLES, 'volume', 'globe_h', 'globe_v') for p in view['panes'])
+        from hals_studio.ui.view_state import valid_view
+        return valid_view(view)
 
     def _build_workspace(self):
         root = W.QWidget(); self.setCentralWidget(root); layout = W.QVBoxLayout(root)
@@ -483,23 +494,10 @@ class Workspace(W.QMainWindow):
         return dict(version=2, panes=configs, outer=self.outer.sizes(), rows=[r.sizes() for r in self.rows])
 
     def apply_view(self, view):
-        if not self.valid_view(view): raise ValueError('A view must contain four recognized plot panes.')
+        from hals_studio.ui.view_state import restore_view
+        view = restore_view(view)
         for pane, config in zip(self.panes, view['panes']):
-            pane.config = dict(default_config(config['kind']), **deepcopy(config))
-            if 'sweep_direction' not in config:
-                pane.config['sweep_direction'] = '+/-' if config.get('symmetric', True) else '+'
-            pane.config['pins'] = ['sweep_direction' if key == 'symmetric' else key for key in pane.config['pins']]
-            # Older templates/projects captured the former 1/12 default.
-            # Migrate once; newly saved explicit smoothing choices still persist.
-            if config.get('energy_smoothing_version', 0) < 1:
-                pane.config['smoothing'] = 'None'
-                pane.config['energy_smoothing_version'] = 1
-            if pane.config['kind'] in ('globe_h', 'globe_v'): pane.config['kind'] = 'globe_hv'
-            if pane.config['kind'] == 'volume': pane.config['kind'] = 'cross_sonograms'
-            if 'phase_mode' not in config:
-                pane.config['phase_mode'] = ('Minimum phase' if config['kind'] == 'minimum' else
-                    'Total phase' if config['kind'] in ('probe', 'phase') and config.get('phase', True) else 'None')
-            if pane.config['volume_mode'] == 'Coverage envelopes': pane.config['volume_mode'] = 'Closed contour surfaces'
+            pane.config = config
             pane.invalidate()
         self.outer.setSizes(view.get('outer', [600, 400]))
         for row, sizes in zip(self.rows, view.get('rows', [[1, 1], [1, 1]])): row.setSizes(sizes)
@@ -522,17 +520,10 @@ class Workspace(W.QMainWindow):
     def view_menu(self, name, position):
         menu = W.QMenu(self)
         def rename():
-            updated, ok = W.QInputDialog.getText(self, 'Rename view', 'New name:', text=name)
-            if ok and updated.strip() and updated.strip() != name:
-                updated = updated.strip()
-                if updated in self.views:
-                    W.QMessageBox.warning(self, 'Name in use', 'Choose a different view name.'); return
-                self.views[updated] = self.views.pop(name)
-                if self.current_view == name: self.current_view = updated
-                self.persist_views()
+            self.rename_named_view(name)
         def remove():
             if self.current_view == name: self.delete_view()
-            else: self.views.pop(name); self.persist_views()
+            else: self.view_collection.remove(name); self.persist_views()
         menu.addAction('Rename...', rename); menu.addAction('Delete', remove).setEnabled(len(self.views) > 1)
         menu.exec(position)
 
@@ -541,7 +532,7 @@ class Workspace(W.QMainWindow):
         for title, b in self.view_buttons.items(): b.setChecked(name == title)
 
     def load_view(self, name):
-        if getattr(self, 'current_view', None) in self.views: self.views[self.current_view] = self.view_dict()
+        self.view_collection.remember(self.view_dict())
         self.apply_view(self.views[name]); self.select_view_name(name)
         self.settings.setValue('last_view', name)
 
@@ -550,14 +541,8 @@ class Workspace(W.QMainWindow):
         self.rebuild_view_buttons(); self.select_view_name(self.current_view)
 
     def template_views(self):
-        try:
-            saved = json.loads(self.settings.value('views_v2', '{}'))
-            if isinstance(saved, dict):
-                views = {name: view for name, view in saved.items()
-                         if name not in ('Beam tunnel', 'Beam tube') and self.valid_view(view)}
-                if views: return views
-        except (ValueError, TypeError): pass
-        return self.default_views()
+        from hals_studio.ui.view_state import template_views
+        return template_views(self.settings.value('views_v2', '{}'))
 
     def reset_views(self):
         self.views = self.template_views()
@@ -571,9 +556,8 @@ class Workspace(W.QMainWindow):
         if name in self.views:
             W.QMessageBox.warning(self, 'Name in use', 'Choose a different view name.'); return
         snapshot = self.view_dict()
-        if self.current_view in self.views: self.views[self.current_view] = deepcopy(snapshot)
-        self.views[name] = snapshot
-        self.current_view = name; self.persist_views()
+        self.view_collection.add(name, snapshot)
+        self.persist_views()
         self.statusBar().showMessage('Viewport added. Save Project to store it in the project.')
 
     def save_default_template(self):
@@ -585,18 +569,19 @@ class Workspace(W.QMainWindow):
         self.statusBar().showMessage('Default view template saved.')
 
     def rename_view(self):
-        name, ok = W.QInputDialog.getText(self, 'Rename view', 'New name:', text=self.current_view)
-        if ok and name.strip() and name.strip() != self.current_view:
+        self.rename_named_view(self.current_view)
+
+    def rename_named_view(self, original):
+        name, ok = W.QInputDialog.getText(self, 'Rename view', 'New name:', text=original)
+        if ok and name.strip() and name.strip() != original:
             if name.strip() in self.views:
                 W.QMessageBox.warning(self, 'Name in use', 'Choose a different view name.'); return
-            self.views[name.strip()] = self.views.pop(self.current_view); self.current_view = name.strip(); self.persist_views()
+            self.view_collection.rename(original, name.strip())
+            self.persist_views()
 
     def delete_view(self):
         if len(self.views) <= 1: return
-        self.views.pop(self.current_view)
-        # Keep the deleted name current until load_view has switched panes:
-        # otherwise it saves the outgoing layout over the destination view.
-        target = next(iter(self.views))
+        target = self.view_collection.remove(self.current_view)
         self.rebuild_view_buttons()
         self.load_view(target)
 
@@ -606,7 +591,7 @@ class Workspace(W.QMainWindow):
 
     def capture_overlay(self, pane=None):
         if self.sphere is None: return
-        from hals_studio.ui.panes import selected_magnitudes
+        from hals_studio.ui.plotting.plot_settings import selected_magnitudes
         pane = pane or getattr(self, 'active_plot', None) or self.panes[1]
         selected = selected_magnitudes(pane.config)
         if not selected:
@@ -630,7 +615,7 @@ class Workspace(W.QMainWindow):
             self.overlay_revision += 1; self.schedule()
 
     def overlay_dialog(self):
-        from hals_studio.ui.panes import selected_magnitudes
+        from hals_studio.ui.plotting.plot_settings import selected_magnitudes
         dialog = W.QDialog(self); dialog.setWindowTitle('Plot overlays'); dialog.resize(600, 400)
         layout = W.QVBoxLayout(dialog)
         tree = W.QTreeWidget(); tree.setHeaderHidden(True); layout.addWidget(tree)
@@ -691,7 +676,7 @@ class Workspace(W.QMainWindow):
         state = self.pending_session
         if not state: return
         if state.get('view_order'):
-            self.views = {name: self.views[name] for name in dict.fromkeys([*state['view_order'], *self.views]) if name in self.views}
+            self.view_collection.reorder(state['view_order'])
             self.rebuild_view_buttons(); self.select_view_name(self.current_view)
         self.axis = tuple(state.get('axis', (0., 0.))); self.axis_source = state.get('axis_source'); self.cea_cache.clear()
         self.overlays = state.get('overlays', []); self.overlay_revision += 1

@@ -19,6 +19,11 @@ or install it with `python -m pip install -e .` and use `python -m hals_studio`.
 
 `Workspace` composes `AnalysisController`; it no longer inherits a second
 application window. Controllers remain Qt-aware where queued signals are needed.
+`ExportWorkspace` composes `ExportController`, which owns the export thread and
+delivers results tagged with the settings generation that produced them. The
+workspace handles debouncing and rejects outdated previews. The controller
+releases completed threads before notifying the workspace, and cancellation
+cannot queue another preview while the application is closing.
 `JobCoordinator` tracks running threads, cancellation and asynchronous pool
 shutdown. Completion is handled after worker termination, so closing windows or
 starting dependent stages does not block the GUI waiting for a worker.
@@ -27,6 +32,15 @@ Export customization uses `ExportHooks`. Shared sweep-coordinate construction
 serves preview and export. Plot implementations are normal imports with explicit
 renderer dispatch, rather than source extraction or runtime replacement of
 function globals.
+
+Plot configuration and setting visibility live in `ui/plotting/plot_settings.py`.
+Analysis and Export share decay defaults and editors; `ui/pane_setup.py` owns
+the settings dialog. These modules do not import the main window or `PlotPane`.
+`ui/view_state.py` owns view defaults, restoration and the project-local named
+view collection. Complete snapshots are validated before widgets are changed,
+and restored configurations are copied so editing a pane cannot alter a saved
+template. `ui/plotting/export_geometry.py` draws export scenes from explicit
+geometry/configuration inputs without depending on workspace controls or tables.
 
 Project writes are atomic. Persisted sessions, embedded state and processing
 caches have version checks. Existing HALS project/cache readers remain supported.
@@ -61,12 +75,25 @@ numerical tolerance. Empty Process, Analysis and Export workspace screenshots
 matched exactly with the live CPU label held constant. These comparisons do not
 replace interactive testing of every populated plot or measurement dataset.
 
+The next UI extraction pass added regressions for populated view switching and
+session restoration, view deletion, dialog accept/cancel, isolated settings
+snapshots, stale preview rejection, export cancellation/restart and closing with
+an active preview. Comparison with the preceding revision found identical values
+in 134 plotted arrays and 18 export scene meshes. Headless screenshots matched
+for the four default Analysis views and the three Export geometry modes. These
+screenshots check layout and plotted charts; they do not establish native-window
+font or GPU rendering behavior, so scene meshes were compared separately.
+
 ## Remaining improvement opportunities
 
-The workspace and pane classes still contain substantial widget construction and
-interaction code. Further extraction should follow individual features, with
-populated-workspace regression coverage before changing signal wiring. Large
-numerical routines have deliberately retained their algorithmic structure;
+The remaining large classes primarily assemble widgets and coordinate their
+interaction. Further candidates are Process stage-form construction and the
+Analysis pane's selection of time/directivity renderers. Extract those when a
+feature needs work, preserving signal order and extending populated-workspace
+coverage for that feature. The view collection, plot settings/dialogs, export
+job lifecycle and export scene renderer have now been separated.
+
+Large numerical routines have deliberately retained their algorithmic structure;
 orchestration and runtime dependencies were extracted around them. Avoid splitting
 those routines merely to reduce line counts.
 

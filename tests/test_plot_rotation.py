@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-from hals_studio.ui.panes import default_config
+from hals_studio.ui.plotting.plot_settings import default_config
 from hals_studio.ui.plotting.plot_interaction import PlotInteraction
 from hals_studio.ui.plotting.plots import draw_zoomable_polars
 

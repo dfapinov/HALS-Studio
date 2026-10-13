@@ -50,7 +50,7 @@ def test_legend_moves_with_secondary_trace_and_avoids_fit_note():
 @pytest.mark.parametrize('fit', [False, True])
 def test_response_kinds_share_automatic_legend(kind, fit):
     from hals_studio.analysis.acoustics import demo
-    from hals_studio.ui.panes import default_config
+    from hals_studio.ui.plotting.plot_settings import default_config
     from hals_studio.ui.plotting.response_plot import draw_chart
 
     sphere = demo()

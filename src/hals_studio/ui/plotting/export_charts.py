@@ -199,7 +199,8 @@ class ResponsePanel(W.QWidget):
         for widget, key, label in [(low, 'fit_low', 'Fit from / Hz'), (high, 'fit_high', 'Fit to / Hz')]:
             widget.setRange(.1, 100000); widget.setValue(self.config[key]); form.addRow(label, widget)
         # Use the Analysis schema and editors so labels, units and limits stay identical.
-        from hals_studio.ui.panes import SPECS, editor
+        from hals_studio.ui.plotting.plot_settings import SPECS
+        from hals_studio.ui.pane_setup import editor
         axis_values = {key: self.config[key] for key in ('auto_axes', 'fmin', 'fmax', 'ymin', 'ymax', 'phase_auto', 'phase_min', 'phase_max')}
         axis_controls = {}
         def axis_changed(key, value):
