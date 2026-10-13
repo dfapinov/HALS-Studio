@@ -58,9 +58,9 @@ Input Arguments:
     freq_end_hz (float): Upper bound frequency for the search.
     initial_simplex_step (float): Size of the initial Nelder-Mead simplex in mm.
     max_iterations (int): Maximum iterations per frequency optimization.
-    x_bounds (tuple | float): Scan boundaries for the X axis (Depth).
-    y_bounds (tuple | float): Scan boundaries for the Y axis (Width).
-    z_bounds (tuple | float): Scan boundaries for the Z axis (Height).
+    x_bounds (tuple | float): Full grid scan boundaries for the X axis (Depth).
+    y_bounds (tuple | float): Full grid scan boundaries for the Y axis (Width).
+    z_bounds (tuple | float): Full grid scan boundaries for the Z axis (Height).
     grid_res_mm (float): Resolution of the volumetric scan grid in mm.
     target_n_max_origins (int): Hard upper cap on harmonic order N for origin search.
     manual_order_table (dict): Dictionary mapping maximum frequency to N order.
@@ -380,13 +380,13 @@ def run_simplex_descent_3d(start_point, context, runtime=None
     runtime = runtime or EngineRuntime()
     runtime.check()
     cfg = context[-1]
-    current_pos = np.array(start_point)
+    from .origin_scan_region import inside_scan, project_to_cylinder
+    current_pos = (project_to_cylinder(start_point, cfg) if 'scan_radius_mm' in cfg
+                   else np.array(start_point))
     path = [current_pos.copy()]
     
     def objective(p):
-        if not (cfg['x_bounds'][0] <= p[0] <= cfg['x_bounds'][1]) or \
-           not (cfg['y_bounds'][0] <= p[1] <= cfg['y_bounds'][1]) or \
-           not (cfg['z_bounds'][0] <= p[2] <= cfg['z_bounds'][1]):
+        if not inside_scan(p, cfg):
             return 1e6
         return solve_physics_3d(p[0], p[1], p[2], context)
         
@@ -402,6 +402,15 @@ def run_simplex_descent_3d(start_point, context, runtime=None
         current_pos + [0.0, 0.0, cfg['initial_simplex_step']]
     ])
         
+    if 'scan_radius_mm' in cfg:
+        for axis in range(3):
+            vertex = project_to_cylinder(initial_simplex[axis + 1], cfg)
+            if np.allclose(vertex, current_pos):
+                vertex = current_pos.copy()
+                vertex[axis] -= cfg['initial_simplex_step']
+                vertex = project_to_cylinder(vertex, cfg)
+            initial_simplex[axis + 1] = vertex
+
     res = minimize(
         objective, 
         current_pos, 
@@ -685,6 +694,7 @@ def run_origin_search(
         'noise_floor_max_db': NOISE_FLOOR_MAX_DB,
         'max_lambda': MAX_LAMBDA,
         'speed_of_sound': speed_of_sound,
+        'full_grid_bounds': dict(x_bounds=x_bounds, y_bounds=y_bounds, z_bounds=z_bounds),
         'x_bounds': x_bounds,
         'y_bounds': y_bounds,
         'z_bounds': z_bounds,
@@ -711,6 +721,13 @@ def run_origin_search(
     th_arr = parsed_data['th_arr']
     ph_arr = parsed_data['ph_arr']
     data = parsed_data['raw_data'] # Used for dict re-saving at the very end
+
+    if not enable_full_grid_scan:
+        from .origin_scan_region import measurement_cylinder
+        cfg.update(measurement_cylinder(r_arr, th_arr))
+        runtime.print(f"Automatic scan cylinder: radius {cfg['scan_radius_mm']:g} mm; "
+                      f"Z {cfg['z_bounds'][0]:g} to {cfg['z_bounds'][1]:g} mm")
+
 
     N_grid, M_unique = get_grid_limit(th_arr, ph_arr)
     cfg['N_grid'] = N_grid

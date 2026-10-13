@@ -71,6 +71,15 @@ class Results(W.QWidget):
                 lo,hi=get();mid=(lo+hi)/2;setter(mid+(lo-mid)*factor,mid+(hi-mid)*factor)
             self.canvas.draw_idle()
         self.canvas.mpl_connect('scroll_event',zoom)
+    def enable_plot_controls(self, axes, kind):
+        from .plot_interaction import PlotInteraction
+        self.chart = self
+        self.config = {'kind': kind}
+        self.interaction = PlotInteraction(self)
+        self.interaction.begin(kind)
+        self.interaction.finish(axes)
+        self.canvas.setToolTip('Wheel: zoom at cursor ? Wheel over an axis: zoom that axis\nMiddle drag: pan ? Reset axes: full view')
+
     def draw(self, workspace):
         from hals_studio.ui.plotting.process_renderers import renderer_for
         kind = workspace.view.currentText()
@@ -81,3 +90,5 @@ class Results(W.QWidget):
             for patch in list(view.ax_err.patches):
                 patch.remove()
         self.show_figure(view.fig)
+        if workspace.stage == 1:
+            self.enable_plot_controls([view.ax1], 'fdw')

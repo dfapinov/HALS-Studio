@@ -394,12 +394,16 @@ class ValidationUI:
             wait_win.update_idletasks()
             wait_win.update()
             
+            scan_cfg = dict(self.cfg)
+            scan_cfg.update(scan_cfg.get('full_grid_bounds', {}))
+            scan_cfg.pop('scan_radius_mm', None)
+
             def rescan_thread_task():
                 for f in freqs_to_rescan:
                     idx = (np.abs(self.f_all - f)).argmin()
                     P = [self.d_dict[k][idx] for k in self.keys]
                     N = get_order_for_frequency(f, self.cfg.get('manual_order_table',{}), self.cfg.get('target_n_max_origins',4), self.cfg.get('N_grid',999))
-                    pc = ([(float(f), float(2*np.pi*f/self.cfg['speed_of_sound']), np.conj(np.array(P)))], self.r_arr, self.th_arr, self.ph_arr, N, self.cfg)
+                    pc = ([(float(f), float(2*np.pi*f/self.cfg['speed_of_sound']), np.conj(np.array(P)))], self.r_arr, self.th_arr, self.ph_arr, N, scan_cfg)
                     x_vals, y_vals, z_vals, grid = generate_3d_landscape_volumetric(pc)
                     min_idx = np.unravel_index(np.argmin(grid), grid.shape)
                     tc = (x_vals[min_idx[0]], y_vals[min_idx[1]], z_vals[min_idx[2]])
@@ -413,7 +417,7 @@ class ValidationUI:
                 if hasattr(self.browser3d, 'refresh_data'): self.browser3d.refresh_data()
                 else: self.browser3d.refresh_plot()
                 if not self.cfg['enable_full_grid_scan']:
-                    self.rescan_browser = FrequencyBrowser3D({f: self.sweep_results[f] for f in freqs_to_rescan}, self.cfg, show_immediately=False)
+                    self.rescan_browser = FrequencyBrowser3D({f: self.sweep_results[f] for f in freqs_to_rescan}, scan_cfg, show_immediately=False)
                     self.rescan_browser.root.deiconify()
                     
             import gc

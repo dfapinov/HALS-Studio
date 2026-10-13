@@ -42,6 +42,8 @@ def editor(key, value, callback, options=None):
         w = W.QDoubleSpinBox()
         w.setRange(*spec)
         w.setDecimals(3 if key == "delay" else 1)
+        if key == "delay":
+            w.setSingleStep(0.1)
         if key == "phase_height":
             w.setDecimals(2)
             w.setSingleStep(0.05)

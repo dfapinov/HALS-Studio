@@ -11,6 +11,97 @@ from matplotlib.figure import Figure
 from hals_studio.ui.plotting.trace_legend import trace_legend
 
 
+def test_frequency_cursor_does_not_displace_an_upper_right_legend():
+    fig = Figure(figsize=(6, 4))
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_subplot()
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    ax.plot([0, 1], [.3, .3], label='SPL')
+    cursor = ax.axvline(.96, gid='frequency-cursor')
+    legend = trace_legend(ax)
+    canvas.draw()
+    box = legend.get_window_extent().frozen()
+    assert box.x1 > ax.bbox.x1 - 10
+    assert box.y1 > ax.bbox.y1 - 10
+    assert cursor.get_transform().transform_path(cursor.get_path()).intersects_bbox(box)
+    cursor.set_xdata([.1, .1])
+    canvas.draw()
+    np.testing.assert_allclose(legend.get_window_extent().bounds, box.bounds)
+
+
+def test_legend_uses_space_above_shortened_di_axis_without_covering_fit_note():
+    fig = Figure(figsize=(5.8, 4.2))
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_axes([.1, .12, .78, .82])
+    di = fig.add_axes([.1, .12, .78, .36], frameon=False, sharex=ax)
+    di.xaxis.set_visible(False)
+    di.yaxis.tick_right()
+    di.yaxis.set_label_position('right')
+    di.set_ylabel('DI / dB')
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    di.set_ylim(0, 15)
+    for i, label in enumerate(['On axis', 'Listening window', 'Early reflections', 'Sound power']):
+        ax.plot([0, 1], [.55 + i * .04] * 2, label=label)
+    ax.plot([0, 1], [.7, .7], '--', label='Fit - On axis')
+    di.plot([0, 1], [2, 9], label='Sound power DI')
+    di.plot([0, 1], [1, 6], label='Early reflections DI')
+    note = ax.text(.02, .97, 'On axis: -0.16 dB/oct | 3.01 dB max\n100-10k Hz | RMS 0.97 dB',
+                   va='top', fontsize=8, transform=ax.transAxes,
+                   bbox=dict(pad=3, facecolor='black'))
+    ax.axvline(.65, gid='frequency-cursor')
+    legend = trace_legend(ax, [di])
+    canvas.draw()
+    box = legend.get_window_extent()
+    assert box.y1 > ax.bbox.y1 - 10
+    assert ax.bbox.x1 < box.x1 < fig.bbox.x1
+    assert not box.overlaps(note.get_bbox_patch().get_window_extent())
+    for axis in [ax, di]:
+        for line in axis.lines:
+            if line.get_gid() != 'frequency-cursor':
+                assert not line.get_transform().transform_path(line.get_path()).intersects_bbox(box)
+
+
+def test_hidden_traces_do_not_block_legend_and_sampling_does_not_bias_placement():
+    fig = Figure(figsize=(6, 4))
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_subplot()
+    di = ax.twinx()
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    di.set_ylim(0, 1)
+    spl, = ax.plot([0, 1], [.85, .85], label='SPL')
+    di.plot([0, 1], [.1, .9], label='DI')
+    hidden, = di.plot([0, 1], [.98, .98], label='Hidden DI', visible=False)
+    legend = trace_legend(ax, [di])
+    canvas.draw()
+    before = legend.get_window_extent().frozen()
+    level = di.transData.inverted().transform((before.x0, (before.y0 + before.y1) / 2))[1]
+    hidden.set_ydata([level, level])
+    spl.set_data(np.linspace(0, 1, 10000), np.full(10000, .85))
+    canvas.draw()
+    np.testing.assert_allclose(legend.get_window_extent().bounds, before.bounds)
+    # Invisible lines remain in the legend but do not reserve plotting space.
+    assert hidden.get_transform().transform_path(hidden.get_path()).intersects_bbox(before)
+
+
+def test_automatic_legend_does_not_shrink_axes_on_repeated_draws():
+    fig = Figure(figsize=(5.8, 4.2), layout='constrained')
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_subplot()
+    di = fig.add_axes([.1, .1, .8, .35], frameon=False, sharex=ax)
+    di.set_in_layout(False)
+    di.xaxis.set_visible(False)
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    di.set_ylim(0, 1)
+    ax.plot([0, 1], [.3, .3], label='Sound power')
+    di.plot([0, 1], [.1, .2], label='Sound power DI')
+    trace_legend(ax, [di])
+    canvas.draw()
+    original = ax.get_position().frozen()
+    for _ in range(3):
+        canvas.draw()
+        np.testing.assert_allclose(ax.get_position().bounds, original.bounds, atol=1e-6)
+
+
 def test_legend_moves_with_secondary_trace_and_avoids_fit_note():
     fig = Figure(figsize=(8, 5))
     canvas = FigureCanvasAgg(fig)
@@ -122,3 +213,199 @@ def test_double_click_di_legend_selects_marker_readout():
     assert cursor.active == 'Sound power DI'
     label.setText.assert_called_with('1000 Hz, 6.0 dB')
     assert not cursor.phase
+
+
+def test_legend_search_updates_every_second_frame_and_on_resize():
+    from unittest.mock import patch
+    fig = Figure(figsize=(6, 4))
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_subplot()
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    ax.plot([0, 1], [.3, .3], label='SPL')
+    legend = trace_legend(ax)
+    with patch.object(legend, '_search_position', wraps=legend._search_position) as search:
+        canvas.draw()
+        assert search.call_count == 1
+        ax.set_ylim(.2, .4)
+        canvas.draw()
+        assert search.call_count == 1
+        ax.lines[0].set_visible(False)
+        canvas.draw()
+        assert search.call_count == 2
+        fig.set_size_inches(7, 4)
+        canvas.draw()
+        assert search.call_count == 3
+
+
+def test_collision_simplification_preserves_narrow_peaks():
+    fig = Figure(figsize=(6, 4))
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_subplot()
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    x = np.linspace(0, 1, 16000)
+    y = np.full_like(x, .1)
+    y[np.argmin(abs(x - .95))] = 1
+    line, = ax.plot(x, y, label='Narrow peak')
+    legend = trace_legend(ax)
+    canvas.draw()
+    assert not line.get_transform().transform_path(line.get_path()).intersects_bbox(
+        legend.get_window_extent(), filled=False)
+
+
+def test_legend_uses_36_positions_and_coarse_collision_geometry_only():
+    fig = Figure(figsize=(6, 4))
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_subplot()
+    x = np.linspace(0, 1, 16000)
+    line, = ax.plot(x, np.sin(x * 10), label='SPL')
+    legend = trace_legend(ax)
+    original = line.get_path().vertices.copy()
+    threshold = line.get_path().simplify_threshold
+    canvas.draw()
+    renderer = canvas.get_renderer()
+    notes, traces = legend._obstacles(renderer)
+    assert len(list(legend._positions(100, 50, renderer, notes))) == 36
+    assert len(traces[0][0].vertices) < len(x) / 10
+    np.testing.assert_array_equal(line.get_path().vertices, original)
+    assert line.get_path().simplify_threshold == threshold
+
+
+@pytest.mark.parametrize('blocked_corners', range(5))
+def test_clear_corners_take_priority_over_clear_top_edge(blocked_corners):
+    fig = Figure(figsize=(6, 4))
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_subplot()
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    ax.plot([.4, .6], [.5, .5], label='SPL')
+    # Block corners in preference order, leaving the top middle clear.
+    for x, y in [( .95, .96), (.05, .96), (.95, .04), (.05, .04)][:blocked_corners]:
+        ax.plot([x, x], [y - .04, y + .04], label='_nolegend_')
+    legend = trace_legend(ax)
+    canvas.draw()
+    renderer = canvas.get_renderer()
+    box = legend.get_window_extent(renderer)
+    positions = list(legend._positions(box.width, box.height, renderer, []))
+    expected = positions[blocked_corners] if blocked_corners < 4 else None
+    if expected is not None:
+        np.testing.assert_allclose((box.x0, box.y0), expected)
+    else:
+        assert not any(np.allclose((box.x0, box.y0), corner) for corner in positions[:4])
+    for line in ax.lines:
+        assert not line.get_transform().transform_path(line.get_path()).intersects_bbox(box, filled=False)
+
+
+def test_blocked_corners_choose_open_space_over_barely_clear_position():
+    from unittest.mock import patch
+    from matplotlib.path import Path
+    fig = Figure()
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_subplot()
+    ax.plot([0, 1], [0, 1], label='SPL')
+    legend = trace_legend(ax)
+    positions = [(0, 0), (90, 0), (0, 90), (90, 90), (20, 12), (40, 40)]
+    traces = [(Path([(0, y), (100, y)]), None, 0) for y in (5, 95)]
+    with patch.object(legend, '_positions', return_value=iter(positions)), \
+         patch.object(legend, '_obstacles', return_value=([], traces)):
+        assert legend._search_position(10, 10, canvas.get_renderer()) == (40, 40)
+
+
+def test_legend_stays_put_without_a_clear_corner_and_moves_when_trace_approaches():
+    from unittest.mock import patch
+    from matplotlib.path import Path
+    from matplotlib.transforms import Bbox
+    fig = Figure()
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_subplot()
+    ax.plot([0, 1], [0, 1], label='SPL')
+    legend = trace_legend(ax)
+    legend._previous_positions = {(10, 10): (40, 40)}
+    legend._previous_geometry = legend._geometry()
+    renderer = canvas.get_renderer()
+    positions = [(0, 0), (90, 0), (0, 90), (90, 90), (60, 40)]
+    corner_notes = [Bbox.from_bounds(x, y, 10, 10) for x, y in positions[:4]]
+    with patch.object(legend, '_obstacles', return_value=(corner_notes, [])), \
+         patch.object(legend, '_positions', return_value=iter(positions)):
+        assert legend._search_position(10, 10, renderer) == (40, 40)
+    # Still no overlap, but now less than the twelve-pixel stay-put margin.
+    approaching = [(Path([(0, 35), (100, 35)]), None, 0)]
+    with patch.object(legend, '_obstacles', return_value=(corner_notes, approaching)), \
+         patch.object(legend, '_positions', return_value=iter(positions)):
+        assert legend._search_position(10, 10, renderer) != (40, 40)
+
+
+def test_clearance_distinguishes_gaps_in_same_old_score_band():
+    from matplotlib.path import Path
+    from matplotlib.transforms import Bbox
+    fig = Figure()
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_subplot()
+    ax.plot([0, 1], [0, 1], label='SPL')
+    legend = trace_legend(ax)
+    traces = [(Path([(0, 0), (200, 0)]), None, 0)]
+    near = Bbox.from_bounds(30, 20, 10, 10)
+    far = Bbox.from_bounds(30, 30, 10, 10)
+    assert legend._clearance(far, [], traces, canvas.get_renderer()) > legend._clearance(near, [], traces, canvas.get_renderer())
+
+
+def test_unavoidable_trace_overlap_prefers_grazing_over_center_crossing():
+    from unittest.mock import patch
+    from matplotlib.path import Path
+    fig = Figure()
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_subplot()
+    ax.plot([0, 1], [0, 1], label='SPL')
+    legend = trace_legend(ax)
+    positions = [(0, 0), (90, 0), (0, 90), (90, 90), (60, 10), (20, 10)]
+    traces = [(Path([(0, y), (110, y)]), None, 0) for y in (5, 95)]
+    traces += [(Path([(61, 20), (79, 20)]), None, 0),
+               (Path([(21, 11), (39, 11)]), None, 0)]
+    with patch.object(legend, '_positions', return_value=iter(positions)), \
+         patch.object(legend, '_obstacles', return_value=([], traces)):
+        assert legend._search_position(20, 20, canvas.get_renderer()) == (20, 10)
+
+
+def test_interior_rows_cover_between_columns_and_favour_left_on_ties():
+    fig = Figure(figsize=(6, 4))
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_subplot()
+    ax.plot([0, 1], [0, 1], label='SPL')
+    legend = trace_legend(ax)
+    renderer = canvas.get_renderer()
+    positions = list(legend._positions(80, 40, renderer, []))
+    assert len(positions) == 36
+    left = min(x for x, _ in positions)
+    right = max(x for x, _ in positions)
+    step = (right - left) / 5
+    interior_y = sorted({y for _, y in positions})[2]
+    interior_x = sorted(x for x, y in positions if y == interior_y)
+    np.testing.assert_allclose(interior_x,
+                               [left, left + 1.5*step, left + 2.5*step,
+                                left + 3.5*step, left + 4.5*step, right])
+    assert positions.index((interior_x[1], interior_y)) < positions.index(
+        (interior_x[-2], interior_y))
+
+
+def test_new_clear_corner_overrides_stable_middle_position():
+    from unittest.mock import patch
+    from matplotlib.transforms import Bbox
+    fig = Figure()
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_subplot()
+    ax.plot([0, 1], [0, 1], label='SPL')
+    legend = trace_legend(ax)
+    legend._previous_positions = {(10, 10): (40, 40)}
+    legend._previous_geometry = legend._geometry()
+    renderer = canvas.get_renderer()
+    corners = [(90, 90), (0, 90), (90, 0), (0, 0)]
+    positions = corners + [(40, 40)]
+    blockers = [Bbox.from_bounds(x, y, 10, 10) for x, y in corners]
+    with patch.object(legend, '_obstacles', return_value=(blockers, [])), \
+         patch.object(legend, '_positions', return_value=iter(positions)):
+        assert legend._search_position(10, 10, renderer) == (40, 40)
+    with patch.object(legend, '_obstacles', return_value=(blockers[:-1], [])), \
+         patch.object(legend, '_positions', return_value=iter(positions)):
+        assert legend._search_position(10, 10, renderer) == (0, 0)
+    legend._previous_positions = {(10, 10): (0, 0)}
+    with patch.object(legend, '_obstacles', return_value=(blockers[1:-1], [])), \
+         patch.object(legend, '_positions', return_value=iter(positions)):
+        assert legend._search_position(10, 10, renderer) == (0, 0)

@@ -42,6 +42,13 @@ and restored configurations are copied so editing a pane cannot alter a saved
 template. `ui/plotting/export_geometry.py` draws export scenes from explicit
 geometry/configuration inputs without depending on workspace controls or tables.
 
+`ui/process_forms.py` owns schema-driven stage fields, advanced sections and
+local field dependencies. It emits action signals for RFT reset and manual-order
+editing; `ProcessWorkspace` retains project state and processing actions.
+`ui/plotting/analysis_renderers.py` selects the Analysis content renderer and
+shares lazy decay-view creation and unavailable-data presentation. `PlotPane`
+retains render caching, navigation, plot titles and interaction state.
+
 Project writes are atomic. Persisted sessions, embedded state and processing
 caches have version checks. Existing HALS project/cache readers remain supported.
 Preferences use the HALS/Studio namespace; no old-brand settings are migrated.
@@ -84,14 +91,19 @@ for the four default Analysis views and the three Export geometry modes. These
 screenshots check layout and plotted charts; they do not establish native-window
 font or GPU rendering behavior, so scene meshes were compared separately.
 
+The final named UI extractions were compared against the preceding revision:
+all four Process forms and six Analysis plot states matched headless screenshots,
+and 46 captured arrays were identical. Regression tests exercise form signal
+routing, manual-order/regularization controls, sparse-bin error recovery,
+surface/chart switching and reuse of the 3D scene between plot types.
+
 ## Remaining improvement opportunities
 
-The remaining large classes primarily assemble widgets and coordinate their
-interaction. Further candidates are Process stage-form construction and the
-Analysis pane's selection of time/directivity renderers. Extract those when a
-feature needs work, preserving signal order and extending populated-workspace
-coverage for that feature. The view collection, plot settings/dialogs, export
-job lifecycle and export scene renderer have now been separated.
+The named UI extractions are complete: view collection, plot settings/dialogs,
+export job lifecycle, export scene drawing, Process stage forms and Analysis
+renderer selection. The remaining workspace code primarily assembles widgets
+and coordinates their interaction. Keep future changes within these boundaries
+and extend regression coverage when changing signal order or render caching.
 
 Large numerical routines have deliberately retained their algorithmic structure;
 orchestration and runtime dependencies were extracted around them. Avoid splitting
@@ -101,3 +113,14 @@ those routines merely to reduce line counts.
 dependencies. Keep production changes and automated tests in the package and
 `tests`, respectively. Ruff currently checks undefined names; broad formatting
 or additional lint rules should be adopted separately from behavioral changes.
+
+Stage 2 normal origin searches derive a cylinder from the parsed NPZ filename
+coordinates (outer radius and minimum/maximum Z). `origin_scan_region.py` owns
+these constraints and projects initial simplex vertices into the volume.
+Manual XYZ bounds and grid resolution belong to the full grid re-scan only;
+re-scans explicitly discard the cylinder constraint before refinement.
+
+Full grid re-scan fields initially use the Cartesian box enclosing that cylinder.
+StageForms tracks per-axis manual overrides; process layout state saves those
+overrides so automatic defaults can follow measurement updates without replacing
+user-entered bounds. Filename coordinates already loaded for Stage 1 are reused.

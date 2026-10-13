@@ -44,7 +44,7 @@ class FDWView:
         self.ax1 = self.fig.add_subplot(self.gs[0])
         self.ax2 = self.fig.add_subplot(self.gs[1]) 
         self.ax3 = self.fig.add_subplot(self.gs[2], sharex=self.ax1)
-        self.fig.subplots_adjust(bottom=0.08, right=0.79, left=0.08, top=0.95)
+        self.fig.subplots_adjust(bottom=0.08, right=0.79, left=0.08, top=0.91)
 
     @staticmethod
     def _first_non_dc_freq(freqs):
@@ -88,17 +88,15 @@ class FDWView:
         else:
             self.ax1.semilogx(freqs, mag_db_raw, 'k', lw=2, zorder=10, label="FDW Raw")
 
-        mag_y_min, mag_y_max = self.ax1.get_ylim()
-        mag_y_mid = mag_y_min + ((mag_y_max - mag_y_min) * 0.5)
-        window_label_step = (mag_y_max - mag_y_min) * 0.14
+        window_labels = []
         
         f_trans = m['f_trans']
         f_anchor = m.get('f_lf_anchor', 200.0)
         
         self.ax1.axvspan(f_trans, fs/2, color='#E0F7FA', alpha=0.5)
-        self.ax1.text(np.sqrt(f_trans*(fs/2)), 0.9, "Reflection free range",
-                     color='#006064', fontsize=9, fontweight='bold', va='center', ha='center',
-                     transform=self.ax1.get_xaxis_transform(),
+        self.ax1.text(1, 1.02, "Reflection free range",
+                     color='#006064', fontsize=9, fontweight='bold', va='bottom', ha='right',
+                     transform=self.ax1.transAxes,
                      bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'), zorder=20)
         
         cmap = plt.get_cmap('YlOrRd')
@@ -141,9 +139,9 @@ class FDWView:
             self.ax1.axvline(fc, color=line_color, ls='-', alpha=0.8, linewidth=1.2)
             
             t_win_ms = m['t_windows'][i] * 1000
-            label_y = mag_y_mid + ((valid_band_idx % 3) - 1) * window_label_step
+            label_y = .08 + (valid_band_idx % 3) * .14
             label_va = 'center'
-            self.ax1.text(fc, label_y, f"{fc:.0f}Hz\n{t_win_ms:.1f}ms", ha='right' if np.isclose(fc, plot_f_max) else 'center', va=label_va, fontsize=8, bbox=dict(facecolor='white', alpha=0.6, edgecolor='none'), zorder=20)
+            window_labels.append(self.ax1.text(fc, label_y, f"{fc:.0f}Hz\n{t_win_ms:.1f}ms", ha='right' if np.isclose(fc, plot_f_max) else 'center', va=label_va, fontsize=8, transform=self.ax1.get_xaxis_transform(), clip_on=True, bbox=dict(facecolor='white', alpha=0.6, edgecolor='none'), zorder=20))
             
             if len(t_ms) > 0:
                 win_len_ms = t_win_ms
@@ -168,6 +166,9 @@ class FDWView:
                 
                 self.ax2.plot(t_full[valid], y_full[valid], color=line_color, lw=2, alpha=0.8, zorder=10, label=f"{fc:.0f}Hz: {win_len_ms:.1f}ms")
             valid_band_idx += 1
+
+        from .plot_annotations import StackedWindowLabels
+        self.window_labels = StackedWindowLabels(self.ax1, window_labels)
 
         self.ax2.legend(loc='upper left', bbox_to_anchor=(0.80, 0.90),
                         bbox_transform=self.fig.transFigure, fontsize=8, labelspacing=0.3)
@@ -198,7 +199,7 @@ class FDWView:
         self._set_frequency_axis(self.ax3, plot_f_min, fs/2)
         self.ax3.grid(True, which='both', alpha=0.3)
 
-        self.ax1.set_title(f"File [{index}]: {fname}\nFDW Magnitude")
+        self.ax1.set_title(f"File [{index}]: {fname}\nFDW Magnitude", pad=24)
         self.ax1.set_ylabel("Magnitude (dB)")
         self._set_frequency_axis(self.ax1, plot_f_min, fs/2)
         self.ax1.grid(True, which='both', alpha=0.3)

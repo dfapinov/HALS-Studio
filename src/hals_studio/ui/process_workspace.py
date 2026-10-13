@@ -1,5 +1,5 @@
 """Qt Process workspace backed exclusively by the viewer's processing snapshot."""
-import json,os,pickle,sys,subprocess
+import json
 from pathlib import Path
 from copy import deepcopy
 import numpy as np
@@ -8,13 +8,12 @@ import hals_studio.bootstrap as bootstrap
 import hals_studio.persistence.process_cache as process_cache
 from hals_studio.ui.cli_log import CliLog
 from hals_studio.persistence.project_paths import project_path_value
-from hals_studio.ui.plotting.plots import Chart,style
+from hals_studio.ui.plotting.plots import Chart
 from pyvistaqt import QtInteractor
 import pyvista as pv
 
 SCHEMA=json.loads((bootstrap.RESOURCES/'process_schema.json').read_text(encoding='utf-8'))
 VIEWS={1:['FDW results'],2:['Validation','3D coordinate cloud','3D grid scan'],3:['Order recommendations'],4:['Fit error','Condition number','Spatial error','Sound Power vs Harmonic Degree']}
-MAIN={1:['fdw_oct_res','fdw_max_cap_ms','enable_auto_gain','target_peak_db'],2:['octave_resolution','freq_start_hz'],3:['freq_end_hz','freq_start_hz'],4:['target_n_max']}
 
 class ProcessWorkspace(W.QWidget):
     def __init__(self,owner):
@@ -32,44 +31,16 @@ class ProcessWorkspace(W.QWidget):
         self.project_name=W.QLineEdit(self);self.project_name.hide()
         self.ir_folder=W.QLineEdit(self);self.ir_folder.hide()
         self.speed_settings=W.QWidget();speedrow=W.QHBoxLayout(self.speed_settings);self.manual_speed=W.QCheckBox('Manual sound speed');speedrow.addWidget(self.manual_speed);self.speed=W.QDoubleSpinBox();self.speed.setRange(250,450);self.speed.setValue(343);self.speed.setSuffix(' m/s');self.speed.setFixedWidth(120);speedrow.addWidget(self.speed);box.addWidget(self.speed_settings);self.manual_speed.toggled.connect(self.speed.setEnabled);self.speed.setEnabled(False)
-        self.pages=W.QStackedWidget();box.addWidget(self.pages,1);self.controls={};self.advanced={}
-        for stage in range(1,5):
-            scroll=W.QScrollArea();scroll.setWidgetResizable(True);page=W.QWidget();pagebox=W.QVBoxLayout(page);main=W.QGroupBox('Main Settings');mainform=W.QFormLayout(main);pagebox.addWidget(main)
-            toggle=W.QToolButton();toggle.setText('Show Advanced Settings');toggle.setCheckable(True);toggle.setToolButtonStyle(C.Qt.ToolButtonTextBesideIcon);toggle.setArrowType(C.Qt.RightArrow);pagebox.addWidget(toggle)
-            advanced=W.QGroupBox('Advanced Settings');advancedform=W.QFormLayout(advanced);pagebox.addWidget(advanced);advanced.hide();self.advanced[stage]=(toggle,advanced)
-            def expand(checked,b=toggle,g=advanced):g.setVisible(checked);b.setText('Hide Advanced Settings' if checked else 'Show Advanced Settings');b.setArrowType(C.Qt.DownArrow if checked else C.Qt.RightArrow)
-            toggle.toggled.connect(expand);form=W.QFormLayout();pagebox.addLayout(form);pagebox.addStretch();scroll.setWidget(page);self.pages.addWidget(scroll)
-            for key,spec in SCHEMA[str(stage)].items():
-                value=self.values[stage][key]
-                if isinstance(value,bool):
-                    control=W.QCheckBox()
-                    control.setChecked(value)
-                    control.toggled.connect(lambda v,s=stage,k=key:self.values[s].update({k:v}))
-                else:control=W.QLineEdit(str(value));control.textChanged.connect(lambda v,s=stage,k=key:self.values[s].update({k:v}))
-                control.setToolTip(spec['help']);caption=W.QLabel(spec['label']);caption.setWordWrap(False)
-                if isinstance(control,W.QLineEdit):control.setFixedWidth(145 if key.endswith('bounds') or key=='test_order_range' else 105)
-                field=control
-                if stage==3 and key=='freq_start_hz':
-                    field=W.QWidget();row=W.QHBoxLayout(field);row.setContentsMargins(0,0,0,0);row.addWidget(control)
-                    self.rft_reset_button=W.QPushButton('Set from RFT');self.rft_reset_button.clicked.connect(self.set_range_from_rft);row.addWidget(self.rft_reset_button);row.addStretch()
-                if not (stage==2 and key in ('hold_origin_lf','hold_origin_hf')):(mainform if key in MAIN[stage] else advancedform).addRow(caption,field)
-                self.controls[stage,key]=control
-            if stage==2:
-                holds=W.QWidget();holdrow=W.QHBoxLayout(holds);holdrow.setContentsMargins(0,0,0,0)
-                for key in ('hold_origin_lf','hold_origin_hf'):
-                    control=self.controls[2,key];control.setText(SCHEMA['2'][key]['label']);holdrow.addWidget(control)
-                holdrow.addStretch();advancedform.addRow('Hold coordinate outside test range',holds)
-            if stage==3:
-                self.order_choice=W.QComboBox();self.order_choice.setSizeAdjustPolicy(W.QComboBox.AdjustToContents);self.order_choice.currentIndexChanged.connect(self.refresh_order_action)
-                self.reference_order=W.QComboBox();self.reference_order.setSizeAdjustPolicy(W.QComboBox.AdjustToContents);self.reference_order.currentIndexChanged.connect(self.change_reference)
-            if stage==4:
-                control=self.controls[4,'use_manual_table'];caption=advancedform.labelForField(control);advancedform.removeWidget(control);advancedform.removeWidget(caption);caption.deleteLater();control.setText(SCHEMA['4']['use_manual_table']['label']);advancedform.addRow(control)
-                edit=W.QPushButton('Edit manual order table');edit.setSizePolicy(W.QSizePolicy.Fixed,W.QSizePolicy.Fixed);edit.clicked.connect(self.edit_orders);advancedform.addRow(edit)
-                optimizer=self.controls[4,'condition_preflight'];optimizer_label=advancedform.labelForField(optimizer)
-                def growth_controls(manual,optimizer=optimizer,label=optimizer_label,button=edit):
-                    optimizer.setEnabled(not manual);label.setEnabled(not manual);button.setEnabled(manual)
-                control.toggled.connect(growth_controls)
-                growth_controls(control.isChecked())
+        from hals_studio.ui.process_forms import StageForms
+        self.pages = StageForms(SCHEMA, self.values)
+        box.addWidget(self.pages, 1)
+        self.controls = self.pages.controls
+        self.advanced = self.pages.advanced
+        self.rft_reset_button = self.pages.rft_reset_button
+        self.pages.rft_reset_requested.connect(self.set_range_from_rft)
+        self.pages.edit_orders_requested.connect(self.edit_orders)
+        self.order_choice=W.QComboBox();self.order_choice.setSizeAdjustPolicy(W.QComboBox.AdjustToContents);self.order_choice.currentIndexChanged.connect(self.refresh_order_action)
+        self.reference_order=W.QComboBox();self.reference_order.setSizeAdjustPolicy(W.QComboBox.AdjustToContents);self.reference_order.currentIndexChanged.connect(self.change_reference)
         actions=W.QHBoxLayout();box.addLayout(actions);self.run_button=W.QPushButton('Run Stage 1');self.run_button.setObjectName('primary');self.run_button.clicked.connect(lambda:self.run());actions.addWidget(self.run_button)
         self.cancel_button=W.QPushButton('Cancel');self.cancel_button.setEnabled(False);self.cancel_button.clicked.connect(lambda:self.cancel());actions.addWidget(self.cancel_button)
         self.left_panel=left;left.setMinimumWidth(0);left.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Expanding)
@@ -120,14 +91,6 @@ class ProcessWorkspace(W.QWidget):
         self.controls[1,'fdw_oct_res'].textChanged.connect(self.refresh_rft_range)
         self.select_stage(1)
         C.QTimer.singleShot(0,self.restore_sidebar_width)
-        self.controls[1,'enable_auto_gain'].toggled.connect(self.controls[1,'target_peak_db'].setEnabled);self.controls[1,'target_peak_db'].setEnabled(self.controls[1,'enable_auto_gain'].isChecked())
-        for key in ('noise_floor_start_db','noise_floor_max_db','max_lambda'):
-            control=self.controls[4,key];form=control.parentWidget().layout();caption=form.labelForField(control)
-            def show_regularization(on,c=control,label=caption):c.setVisible(on);label.setVisible(on)
-            self.controls[4,'enable_regularization'].toggled.connect(show_regularization);show_regularization(self.controls[4,'enable_regularization'].isChecked())
-    @staticmethod
-    def form_button(form,title,callback):
-        b=W.QPushButton(title);b.clicked.connect(callback);form.addRow(b)
     def restore_sidebar_width(self):
         if self.split.width() > 0:
             width=int(self.owner.settings.value('process_sidebar_width',self._sidebar_width))
@@ -207,11 +170,14 @@ class ProcessWorkspace(W.QWidget):
             if self.cache(stage).exists():
                 self.results[stage]=process_cache.load(self.cache(stage),stage)
         state=data.get('hals_studio', data.get('hals_viewer',{})).get('session',{}).get('process_layout') or {}
+        self.pages.restore_scan_bounds_state(state.get('manual_scan_bounds'))
+        self.refresh_scan_bounds()
         saved_ir_folder=project_path_value(state.get('input_ir_folder'),folder)
         if saved_ir_folder:self.ir_folder.setText(saved_ir_folder)
         self.select_stage(state.get('stage',1));self.start_host()
     def layout_state(self):
-        return dict(stage=self.stage,input_ir_folder=self.ir_folder.text())
+        return dict(stage=self.stage,input_ir_folder=self.ir_folder.text(),
+                    manual_scan_bounds=sorted(self.pages.manual_scan_bounds))
     def project_payload(self):
         return dict(project_name=self.project_name.text().strip(),**{f'stage{s}_vars':deepcopy(v) for s,v in self.values.items()},stage4_manual_table=self.manual_table,
             global_vars=dict(enable_manual_speed_of_sound=self.manual_speed.isChecked(),speed_of_sound=str(self.speed.value())))
@@ -331,6 +297,7 @@ class ProcessWorkspace(W.QWidget):
             self.results[1]=process_cache.load_stage1(event['cache'],self.stage1_plot_settings())
             self.refresh_rft_range()
         else:self.results[stage]=process_cache.load(event['cache'],stage)
+        if stage in (1, 2):self.refresh_scan_bounds()
         if stage==3 and self.results[3].get('below_rft'):self.set_value(3,'freq_start_hz',self.results[3]['test_band_hz'][0])
         self.select_stage(stage)
         if getattr(self,'active_request',{}).get('action')=='rescan':
@@ -381,8 +348,27 @@ class ProcessWorkspace(W.QWidget):
             elif self.stage==4:
                 self.results[4]=process_cache.load_stage4_summary(self.coefficient_path())
             else:raise ValueError('Run this stage to obtain its full diagnostics.')
+            if self.stage in (1, 2):self.refresh_scan_bounds()
             self.update_selectors();self.draw()
         except Exception as e:W.QMessageBox.warning(self,'Results',str(e))
+    def refresh_scan_bounds(self):
+        from hals_studio.process_engine.origin_scan_region import measurement_cylinder
+        from hals_studio.process_engine.utils import parse_coords_from_filename
+        measurement = self.results.get(1)
+        coordinates = []
+        if measurement is not None:
+            for name in measurement[1]:
+                try:coordinates.append(parse_coords_from_filename(name))
+                except ValueError:continue
+        if coordinates:
+            radii, angles, _ = np.asarray(coordinates).T
+            bounds = measurement_cylinder(radii, angles)
+        else:
+            result = self.results.get(2)
+            if result is None or 'scan_radius_mm' not in result[5]:return
+            bounds = result[5]
+        self.pages.apply_scan_bounds(bounds)
+
     def update_selectors(self):
         self.rescan_frequency.blockSignals(True);self.rescan_frequency.clear()
         self.sample.blockSignals(True);self.sample.clear();r=self.results.get(self.stage)
@@ -438,7 +424,7 @@ class ProcessWorkspace(W.QWidget):
         self.last_plot_error=None
         view=self.view.currentText()
         self.power_tools.setVisible(self.stage==4 and view=='Sound Power vs Harmonic Degree')
-        self.power_reset.setVisible(self.stage==4 and view=='Sound Power vs Harmonic Degree')
+        self.power_reset.setVisible(self.stage==1 or (self.stage==4 and view=='Sound Power vs Harmonic Degree'))
         if view!=getattr(self,'_last_view_kind',None):
             self._last_view_kind=view
             if view in ('Fit error','Spatial error'):

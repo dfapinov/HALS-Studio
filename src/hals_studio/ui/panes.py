@@ -6,7 +6,7 @@ from PySide6 import QtCore as C, QtGui as G, QtWidgets as W
 from hals_studio.analysis.analysis_metrics import contour_levels
 from hals_studio.process_engine.stage5_pressure_utils import get_min_phase_delay
 from hals_studio.ui.plotting.plot_interaction import PlotInteraction
-from hals_studio.ui.plotting.plots import (Chart, draw_zoomable_polars)
+from hals_studio.ui.plotting.plots import Chart
 
 from hals_studio.ui.plotting.plot_settings import (
     GROUPS, TITLES, MAGNITUDE_KINDS, default_config,
@@ -419,22 +419,8 @@ class PlotPane(W.QFrame):
         self.probe_controls.setVisible(kind == 'balloon')
         self.frequency_controls.setVisible(kind == 'balloon')
         if kind in ('balloon', 'cross_sonograms'):
-            previous = getattr(self, '_scene_kind', None)
-            self.ensure_3d()
-            if previous != kind:
-                self.plotter.clear_sphere_widgets(); self.handle = None; self.plotter.clear(); self.set_lighting()
-            if kind == 'balloon':
-                self.probe_frequency.setText(f'{s.freqs[i]:,.0f} Hz')
-                self.probe_controls.adjustSize(); self.probe_controls.move(4,max(4,self.plotter.interactor.height()-self.probe_controls.height()-6)); self.probe_controls.show(); self.probe_controls.raise_()
-                self.frequency_controls.adjustSize(); self.frequency_controls.show(); self.frequency_controls.raise_()
-                self.balloon(s, rel, i)
-            else:
-                from hals_studio.ui.plotting.directivity_views import draw_cross_sonograms
-                draw_cross_sonograms(self, s, rel)
-            if previous != kind: self.camera()
-            from hals_studio.ui.viewer_theme import scene_theme
-            scene_theme(self.plotter)
-            self._scene_kind = kind
+            from hals_studio.ui.plotting.analysis_renderers import render_scene
+            render_scene(self, s, rel, i)
         else:
             self.stack.setCurrentWidget(self.chart_frame)
             if c['auto_axes'] and (kind in GROUPS['SPL & phase'] or c['magnitude_selection'] is not None):
@@ -442,45 +428,8 @@ class PlotPane(W.QFrame):
                 if probe_key != getattr(self, '_range_probe', None): self.interaction.saved.clear()
                 self._range_probe = probe_key
             self.interaction.begin((id(s), kind, c['auto_axes'], c['fmin'], c['fmax'], c['ymin'], c['ymax'], c['wrapped'], c['phase_mode'], c['phase_auto'], c['phase_min'], c['phase_max'], c['di_auto'], c['di_min'], c['di_max'], tuple(selected_magnitudes(c))))
-            if kind.startswith('map_') and c.get('directivity_display') in ('3D surface','Waterfall'):
-                from hals_studio.ui.plotting.csd_plot import CSDView
-                if not hasattr(self,'csd_view'):
-                    self.csd_view=CSDView(); self.stack.addWidget(self.csd_view)
-                angles,h,v=s.cuts(rel); data=h if kind=='map_h' else v
-                self.stack.setCurrentWidget(self.csd_view)
-                self.csd_view.render(None,1.,{**c, 'csd_mode':'3D waterfall','csd_span':c['span'], '_surface_data':(s.freqs,angles,data.T),'_y_label':('Horizontal' if kind=='map_h' else 'Vertical')+' angle / degrees'})
-                self.note.setText('Directivity surface - frequency / angle / relative level - drag to orbit, wheel to zoom')
-            elif kind == 'impulse':
-                from hals_studio.ui.plotting.csd_plot import analysis_ir
-                from hals_studio.ui.plotting.export_charts import ImpulsePanel
-                if not hasattr(self, 'ir_panel'):
-                    self.ir_panel = ImpulsePanel(show_toolbar=False); self.stack.addWidget(self.ir_panel)
-                try:
-                    ir, fs, _ = analysis_ir(o, s)
-                    self.ir_panel.update_ir(np.arange(len(ir))/fs, ir, None, id(s))
-                    self.stack.setCurrentWidget(self.ir_panel)
-                    self.note.setText('HALS IR generator ? selected probe ? normalized amplitude ? time from generated IR start')
-                except (ValueError, OSError) as exc:
-                    self.stack.setCurrentWidget(self.chart_frame); self.chart.fig.clear()
-                    axis = self.chart.fig.add_subplot(); axis.set_axis_off(); axis.text(.5,.5,str(exc),ha='center',va='center',wrap=True)
-                    self.chart.done(); self.note.setText('Impulse response unavailable for this source')
-            elif kind in ('csd', 'wavelet'):
-                from hals_studio.ui.plotting.csd_plot import analysis_ir, CSDView
-                if not hasattr(self, 'csd_view'):
-                    self.csd_view = CSDView(); self.stack.addWidget(self.csd_view)
-                self.stack.setCurrentWidget(self.csd_view)
-                try:
-                    ir, fs, note = analysis_ir(o, s); self.csd_view.render(ir, fs, {**c, 'csd_method': 'Morlet wavelet' if kind == 'wavelet' else 'CSD'}); self.note.setText(note)
-                except (ValueError, OSError) as exc:
-                    self.stack.setCurrentWidget(self.chart_frame); self.chart.fig.clear()
-                    axis = self.chart.fig.add_subplot(); axis.set_axis_off(); axis.text(.5,.5,str(exc),ha='center',va='center',wrap=True)
-                    self.chart.done(); self.note.setText('CSD unavailable for this source')
-            elif kind.startswith('globe_'):
-                from hals_studio.ui.plotting.directivity_views import draw_globe
-                draw_globe(self, s, rel)
-            elif kind == 'polar':
-                draw_zoomable_polars(self.chart, s, rel, i, c['span'], pane=self); self.interaction.finish(self.chart.fig.axes)
-            else: self.draw_chart(s, levels, rel, i)
+            from hals_studio.ui.plotting.analysis_renderers import render_chart
+            render_chart(self, s, levels, rel, i)
         self.last_render = (id(o.sphere), o.frequency.value(), o.azimuth.value(), o.elevation.value(),
                             repr(c), o.overlay_revision, o.axis)
 

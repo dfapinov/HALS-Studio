@@ -37,6 +37,138 @@ def pump_until(app, predicate, timeout=5):
     assert predicate()
 
 
+def test_process_forms_keep_stage_values_and_control_dependencies(window):
+    from hals_studio.ui.process_forms import StageForms
+    from hals_studio.ui.process_workspace import SCHEMA
+
+    values = {
+        int(stage): {key: deepcopy(spec["default"]) for key, spec in fields.items()}
+        for stage, fields in SCHEMA.items()
+    }
+    forms = StageForms(SCHEMA, values, window)
+    assert forms.count() == 4
+    assert len(forms.controls) == sum(len(fields) for fields in SCHEMA.values())
+    previous = values[2]["freq_start_hz"]
+    forms.controls[3, "freq_start_hz"].setText("1234")
+    assert values[3]["freq_start_hz"] == "1234"
+    assert values[2]["freq_start_hz"] == previous
+    gain, peak = forms.controls[1, "enable_auto_gain"], forms.controls[1, "target_peak_db"]
+    for enabled in (True, False):
+        gain.setChecked(enabled)
+        assert values[1]["enable_auto_gain"] is enabled
+        assert peak.isEnabled() is enabled
+    edit = next(
+        button
+        for button in forms.findChildren(W.QPushButton)
+        if button.text() == "Edit manual order table"
+    )
+    optimizer = forms.controls[4, "condition_preflight"]
+    for manual in (True, False):
+        forms.controls[4, "use_manual_table"].setChecked(manual)
+        assert optimizer.isEnabled() is not manual
+        assert edit.isEnabled() is manual
+    for enabled in (True, False):
+        forms.controls[4, "enable_regularization"].setChecked(enabled)
+        for key in ("noise_floor_start_db", "noise_floor_max_db", "max_lambda"):
+            field = forms.controls[4, key]
+            label = field.parentWidget().layout().labelForField(field)
+            assert field.isHidden() is not enabled
+            assert label.isHidden() is not enabled
+    toggle, group = forms.advanced[2]
+    toggle.click()
+    assert not group.isHidden() and toggle.arrowType() == C.Qt.DownArrow
+    toggle.click()
+    assert group.isHidden() and toggle.arrowType() == C.Qt.RightArrow
+    requested = []
+    forms.rft_reset_requested.connect(lambda: requested.append("rft"))
+    forms.edit_orders_requested.connect(lambda: requested.append("orders"))
+    forms.rft_reset_button.click()
+    forms.controls[4, "use_manual_table"].setChecked(True)
+    edit.click()
+    assert requested == ["rft", "orders"]
+    forms.deleteLater()
+
+
+@pytest.mark.parametrize("kind", ["impulse", "csd", "wavelet"])
+def test_time_renderer_rejects_sparse_bins_and_recovers_with_native_bins(window, kind):
+    from hals_studio.analysis.acoustics import demo
+
+    sphere = demo()
+    window.set_sphere(sphere)
+    pane = window.panes[1]
+    pane.set_kind(kind)
+    pane.config.update(csd_mode="Sonogram", csd_auto_time=False, csd_time=5.0, wavelet_duration=5.0)
+    pane.invalidate()
+    pane.render()
+    assert pane.stack.currentWidget() is pane.chart_frame
+    assert "unavailable" in pane.note.text()
+    assert "native frequency bins" in pane.chart.fig.axes[0].texts[0].get_text()
+    # Changing data must replace the error view with an actual time plot.
+    sphere.freqs = np.linspace(100, 20000, len(sphere.freqs))
+    pane.invalidate()
+    pane.render()
+    if kind == "impulse":
+        assert pane.stack.currentWidget() is pane.ir_panel
+        assert pane.ir_panel.chart.fig.axes[0].lines
+    else:
+        assert pane.stack.currentWidget() is pane.csd_view
+        assert pane.csd_view.config["csd_method"] == ("CSD" if kind == "csd" else "Morlet wavelet")
+        assert all(np.isfinite(array).all() for array in pane.csd_view.data)
+    pane.set_kind("probe")
+    pane.render()
+    assert pane.stack.currentWidget() is pane.chart_frame
+    assert pane.chart.fig.axes[0].lines
+
+
+@pytest.mark.parametrize("kind", ["map_h", "map_v"])
+def test_directivity_renderer_switches_surface_and_chart_without_losing_settings(window, kind):
+    from hals_studio.analysis.acoustics import demo
+
+    window.set_sphere(demo())
+    pane = window.panes[1]
+    pane.set_kind(kind)
+    pane.config.update(directivity_display="Waterfall", span=42.0)
+    pane.render()
+    assert pane.stack.currentWidget() is pane.csd_view
+    view = pane.csd_view
+    expected = tuple(array.copy() for array in view.data)
+    pane.config["directivity_display"] = "Sonogram"
+    pane.render()
+    assert pane.stack.currentWidget() is pane.chart_frame
+    pane.config["directivity_display"] = "Waterfall"
+    pane.render()
+    assert pane.csd_view is view
+    assert pane.config["span"] == 42.0
+    for actual, original in zip(view.data, expected):
+        np.testing.assert_array_equal(actual, original)
+
+
+def test_analysis_scene_switching_reuses_plotter_and_restores_probe_controls(window):
+    from hals_studio.analysis.acoustics import demo
+
+    window.set_sphere(demo())
+    pane = window.panes[1]
+    pane.set_kind("balloon")
+    pane.render()
+    plotter = pane.plotter
+    assert pane._scene_kind == "balloon"
+    assert not pane.probe_controls.isHidden()
+    pane.set_kind("cross_sonograms")
+    pane.render()
+    assert pane.plotter is plotter
+    assert pane._scene_kind == "cross_sonograms"
+    assert pane.probe_controls.isHidden()
+    pane.set_kind("polar")
+    pane.render()
+    assert pane.stack.currentWidget() is pane.chart_frame
+    pane.set_kind("balloon")
+    pane.render()
+    assert pane.plotter is plotter
+    assert pane._scene_kind == "balloon"
+    assert not pane.probe_controls.isHidden()
+    assert not pane.frequency_controls.isHidden()
+
+
 def test_view_restoration_keeps_user_choices_and_does_not_alias_snapshots():
     view = default_views()["Sound field"]
     legacy = dict(

@@ -91,7 +91,8 @@ def test_short_capture_keeps_one_window():
 
 
 def test_viewer_schema_exposes_persisted_options():
-    from hals_studio.ui.process_workspace import SCHEMA,MAIN
+    from hals_studio.ui.process_workspace import SCHEMA
+    from hals_studio.ui.process_forms import MAIN
     for key in ('sliding_hf','compare_smoothing'):
         assert key not in SCHEMA['1']
         assert key not in MAIN[1]

@@ -199,7 +199,8 @@ def draw_chart(pane, s, levels, rel, i):
             ax.text(.5, .5, 'Select magnitude responses or a phase plot from the plot menu.',
                     transform=ax.transAxes, ha='center', va='center', fontsize=9, color='#91aabe', wrap=True)
         trace_legend(ax, [phase_ax] if phase_ax is not None else [])
-    pane.frequency_marker = ax.axvline(s.freqs[i], color='#7db0c0', alpha=.35, lw=.8)
+    pane.frequency_marker = ax.axvline(s.freqs[i], color='#7db0c0', alpha=.35, lw=.8,
+                                     gid='frequency-cursor')
     ax.set_xlim(s.freqs[0], 20000. if 19800. <= s.freqs[-1] < 20000. else s.freqs[-1])
     if c['auto_axes'] and not kind.startswith('map_') and curves:
         values = np.concatenate([line.get_ydata() for line in ax.lines if not line.get_label().startswith(('_', 'Fit'))])

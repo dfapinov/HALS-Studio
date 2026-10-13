@@ -74,6 +74,7 @@ def search_origins(request, runtime, out, filename, input_name):
                 cfg[f"{axis}_bounds"] = tuple(
                     float(part.strip()) for part in v[f"{axis}_bounds"].split(",")
                 )
+            cfg.pop("scan_radius_mm", None)  # Full grid re-scans use only manual XYZ bounds.
             cfg["grid_res_mm"] = float(v["grid_res_mm"])
             for f in request["rescan"]:
                 i = np.argmin(abs(freqs - f))
@@ -105,7 +106,6 @@ def search_origins(request, runtime, out, filename, input_name):
                 rows[f].update(grid=grid, X_vals=x, Y_vals=y, Z_vals=z, final_c=centre, path=path)
                 refining.advance()
     else:
-        bounds = lambda k: tuple(float(x.strip()) for x in v[k].split(","))
         result = run_origin_search(
             input_dir_origins=str(out),
             input_filename_origins=filename,
@@ -116,10 +116,6 @@ def search_origins(request, runtime, out, filename, input_name):
             freq_end_hz=float(v["freq_end_hz"]),
             initial_simplex_step=float(v["initial_simplex_step"]),
             max_iterations=int(v["max_iterations"]),
-            x_bounds=bounds("x_bounds"),
-            y_bounds=bounds("y_bounds"),
-            z_bounds=bounds("z_bounds"),
-            grid_res_mm=float(v["grid_res_mm"]),
             target_n_max_origins=int(v["target_n_max_origins"]),
             manual_order_table=None,
             save_to_disk=False,

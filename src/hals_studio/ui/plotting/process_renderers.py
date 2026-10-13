@@ -30,7 +30,7 @@ def draw_fdw(host, workspace):
     match=_ph_pat.match(name)
     if match:
         decode=lambda key:float(match.group(key).replace('p','.'))
-        view.ax1.set_title(f"Radius {decode('rmm'):g} mm | Phi {decode('ph'):g} deg | Height {decode('zmm'):g} mm\nFDW Magnitude")
+        view.ax1.set_title(f"Radius {decode('rmm'):g} mm | Phi {decode('ph'):g} deg | Height {decode('zmm'):g} mm\nFDW Magnitude", pad=24)
     view.fig.subplots_adjust(right=.79,top=.91,hspace=.5)
     from hals_studio.ui.viewer_theme import NAME
     if NAME=='Dark':
@@ -222,10 +222,8 @@ def draw_sound_power(host, workspace):
     r = p.results[p.stage]
     kind = p.view.currentText()
     from hals_studio.analysis.sound_power import sound_power_figure, PowerLegend
-    from hals_studio.ui.plotting.plot_interaction import PlotInteraction
     self.show_figure(sound_power_figure(p.coefficient_path(),p.power_field.currentText()))
-    self.chart=self;self.config={'kind':'sound_power'}
-    self.interaction=PlotInteraction(self);self.interaction.begin('sound_power');self.interaction.finish(self.fig.axes)
+    self.enable_plot_controls(self.fig.axes, 'sound_power')
     path=str(p.coefficient_path())
     if getattr(self,'power_legend_path',None)!=path:self.power_hidden=set();self.power_legend_path=path
     self.power_legend=PowerLegend(self.fig,self.power_hidden)
