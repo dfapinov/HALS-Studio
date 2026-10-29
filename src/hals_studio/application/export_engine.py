@@ -21,6 +21,7 @@ DEFAULT_EXPORT = dict(
     mode='Arc sweep', direction='horizontal', range_deg=90, increment_deg=10, dist_mic=1.,
     zero_theta=90., zero_phi=0., offset_x=0., offset_y=0., offset_z=0., offset_step_mm=10.,
     subtract_tof='Ref Origin', frd_db_offset=0., generate_ir_files=False,
+    normalize_ir_set=False, ir_target_peak_dbfs=-6.,
     apply_mic_cal=False, mic_cal_file='', mic_cal_mode='subtract', mic_cal_fade_octaves=1.,
     obs_mode='Internal', use_optimized_origins=True, manual_ir_capture_padding=False,
     ir_capture_padding_samples=50, manual_coords=[[90., 0., 1.]],
@@ -75,6 +76,7 @@ def geometry(config):
 
 def validate(config, writing=False):
     c = dict(DEFAULT_EXPORT, **config)
+    c['use_optimized_origins'] = True
     if c['mode'] not in ('Arc sweep', 'Manual coordinates', 'CTA-2034'): raise ValueError('Unknown export mode.')
     for key in ('direction', 'obs_mode', 'subtract_tof', 'mic_cal_mode'):
         allowed = dict(direction=('horizontal', 'vertical', 'hor_vert'), obs_mode=('Internal', 'External', 'Full'),
@@ -87,6 +89,8 @@ def validate(config, writing=False):
         raise ValueError('Use a positive distance, sweep range 0–180° and increment of at least 1°.')
     if c['ir_capture_padding_samples'] < 0 or c['mic_cal_fade_octaves'] < 0:
         raise ValueError('Padding and calibration fade cannot be negative.')
+    if not -120 <= c['ir_target_peak_dbfs'] <= 0:
+        raise ValueError('IR target peak must be between -120 and 0 dBFS.')
     if not 0 <= c['zero_theta'] <= 180: raise ValueError('Reference theta must be between 0° and 180°.')
     if not re.fullmatch(r'[^<>:"/\\|?*\x00-\x1f]+', c['frd_prefix']) or c['frd_prefix'].strip('. ') != c['frd_prefix']:
         raise ValueError('Enter a filename prefix without path separators or reserved characters.')
@@ -111,6 +115,17 @@ class PoolAdapter:
 
     # Viewer workers already yield batches in completion order.
     imap_unordered = imap
+
+
+def needs_aggregate_preview(config):
+    """Only visible metric/directivity panes require a complete point set."""
+    panes = config.get('plot_panes', [{}, {}, {}])
+    for index, pane in enumerate(panes):
+        mode = pane.get('mode', 'native')
+        if config['mode'] == 'CTA-2034':
+            if mode != 'cli' and not pane.get('cta_show_info', index == 2): return True
+        elif mode == 'directivity': return True
+    return False
 
 
 def run_export(config, pool=None, writing=False, progress=lambda *_: None, cancelled=lambda: False, log=lambda *_: None):
@@ -158,7 +173,8 @@ def run_export(config, pool=None, writing=False, progress=lambda *_: None, cance
     if c['mode'] != 'CTA-2034':
         common.update(use_coord_list=c['mode'] == 'Manual coordinates', coord_list=c['manual_coords'],
                       direction=c['direction'], range_deg=c['range_deg'], increment_deg=c['increment_deg'],
-                      frd_prefix=c['frd_prefix'], generate_ir_files=c['generate_ir_files'])
+                      frd_prefix=c['frd_prefix'], generate_ir_files=c['generate_ir_files'],
+                      normalize_ir_set=c['normalize_ir_set'], ir_target_peak_dbfs=c['ir_target_peak_dbfs'])
     root = Path(c['output_dir']).expanduser().resolve() if writing else None
     if root: root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.hals-studio-export-', dir=root) as tmp:
@@ -171,7 +187,7 @@ def run_export(config, pool=None, writing=False, progress=lambda *_: None, cance
                       processed=processed.get('pressure'), tof_distance=processed.get('distance'), tof_time=processed.get('time'))
         if writing:
             progress(92, 'Finalizing export and settings manifest')
-            record = dict(settings=c, native_frequency_bins=len(result['freqs']), observation_points=len(layout['xyz']),
+            record = dict(settings=c, ir_gain_db=result.get('ir_gain_db'), native_frequency_bins=len(result['freqs']), observation_points=len(layout['xyz']),
                           engine='HALS Stage 5 snapshot', note='FRD uses delay compensation and dB offset; sweep complex NPZ/WAV retain propagation phase.')
             (Path(tmp)/'hals-studio-export.json').write_text(json.dumps(record, indent=2), encoding='utf-8')
             (Path(tmp)/'export.log').write_text('\n'.join(messages), encoding='utf-8')

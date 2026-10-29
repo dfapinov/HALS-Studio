@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 import json
-from hals_studio.ui.plotting.plot_settings import default_config, TITLES
+from hals_studio.ui.plotting.plot_settings import default_config, TITLES, GROUPS, selected_magnitudes
 
 
 class ViewCollection:
@@ -104,6 +104,9 @@ def restore_pane(config):
             if config["kind"] in ("probe", "phase") and config.get("phase", True)
             else "None"
         )
+    if result.get("magnitude_selection") is not None:
+        result["magnitude_selection"] = selected_magnitudes(result)
+    if result["kind"] in GROUPS["CEA2034"]: result["phase_mode"] = "None"
     if result["volume_mode"] == "Coverage envelopes":
         result["volume_mode"] = "Closed contour surfaces"
     return result

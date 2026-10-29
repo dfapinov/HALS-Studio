@@ -81,6 +81,7 @@ def draw_export_geometry(plotter, data, config, baffle_visible, output):
     )
     point_mesh = pv.PolyData(xyz)
     point_mesh["rgb"] = colors
+    point_mesh["base_rgb"] = colors.copy()
     p.add_mesh(
         point_mesh,
         scalars="rgb",

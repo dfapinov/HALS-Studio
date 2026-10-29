@@ -6,6 +6,7 @@ import hals_studio.analysis.acoustics as ac
 from hals_studio.analysis.analysis_metrics import minimum_phase, trend_fit
 from hals_studio.ui.plotting.plots import style, response_directions, audio_ticks, audio_frequency
 from hals_studio.ui.plotting.trace_legend import trace_legend
+from hals_studio.ui.plotting.spl_cursor import add_frequency_cursor
 
 
 def phase_values(freqs, pressure, mode, wrapped, delay):
@@ -48,18 +49,13 @@ def _one_magnitude(pane, s, levels, config=None):
         note = 'Sweep angles use nearest sphere samples about +X.'
     else:
         metrics = o.get_cea(c['smoothing'])
-        if kind == 'cea': names = ['On axis', 'Listening window', 'Early reflections', 'Sound power', 'Sound power DI', 'Early reflections DI']
-        elif kind == 'reflections':
-            names = {'All': ['Floor', 'Ceiling', 'Front wall', 'Side walls', 'Rear wall'],
-                     'Horizontal': ['Front wall', 'Side walls', 'Rear wall', 'Horizontal reflections'],
-                     'Vertical': ['Floor', 'Ceiling', 'Vertical reflections']}[c['breakout']]
-        else: names = [kind[4:]]
-        if kind == 'cea_Sound power' and c['breakout'] != 'All': names += [c['breakout']+' sound power']
+        from hals_studio.ui.plotting.plot_settings import cta_curve_names
+        names = cta_curve_names(kind, c['breakout'])
         curves = {n: metrics[n] for n in names}
         if all(n.endswith('DI') for n in names): ylabel = 'Directivity index / dB'
         note = f'CEA2034-derived · reference H {o.axis[0]:g}° / V {o.axis[1]:g}° · interpolated energy'
     offset = 0 if ylabel == 'Directivity index / dB' else c['offset']
-    return {name: values+offset for name, values in curves.items()}, ylabel, note
+    return {name: values+(0 if name.endswith('DI') else offset) for name, values in curves.items()}, ylabel, note
 
 
 def magnitude_curves(pane, s, levels, config=None):
@@ -75,134 +71,171 @@ def magnitude_curves(pane, s, levels, config=None):
     return curves, ylabel, ' · '.join(notes)
 
 
+def response_axis(ax, label, colour, *, separate=True):
+    """Create/style the shared phase or DI axis."""
+    axis = ax
+    if separate:
+        axis = ax.figure.add_axes(ax.get_position(), sharex=ax, frameon=False)
+        axis.set_in_layout(False); axis.patch.set_visible(False)
+        axis.xaxis.set_visible(False); axis.yaxis.tick_right(); axis.yaxis.set_label_position('right')
+        for edge in ('top', 'left', 'bottom'): axis.spines[edge].set_visible(False)
+    axis.tick_params(axis='y', colors=colour, labelsize=8)
+    axis._response_axis_colour = colour
+    axis.set_ylabel(label, color=colour, fontsize=8)
+    axis.yaxis.set_major_locator(MaxNLocator(5))
+    return axis
+
+
+def response_axis_handle(axis, label):
+    """The same draggable height handle for phase and DI in both workspaces."""
+    from matplotlib.patches import ConnectionPatch
+    colour = axis._response_axis_colour
+    scale = axis.figure.dpi_scale_trans
+    start = axis.transAxes + ScaledTranslation(5/72, 7/72, scale)
+    end = axis.transAxes + ScaledTranslation(33/72, 7/72, scale)
+    handle = ConnectionPatch((1, 1), (1, 1), coordsA=start, coordsB=end,
+                             color=colour, linewidth=2.5, clip_on=False, annotation_clip=False)
+    axis.add_artist(handle)
+    axis.text(1, 1, label, transform=axis.transAxes + ScaledTranslation(5/72, 12/72, scale),
+              ha='left', va='bottom', color=colour, fontsize=8, clip_on=False)
+    return handle
+
+
+def fit_annotation(name, fit):
+    return (f'{name}: {fit["slope"]:+.2f} dB/oct \N{MIDDLE DOT} \N{PLUS-MINUS SIGN}{fit["deviation"]:.2f} dB max\n'
+            f'{audio_frequency(fit["low"])}\N{EN DASH}{audio_frequency(fit["high"])} Hz \N{MIDDLE DOT} RMS {fit["rms"]:.2f} dB')
+
+
 def draw_chart(pane, s, levels, rel, i):
+    """Prepare Analysis data, then use the shared response renderer."""
     from hals_studio.ui.mic_calibration import config as shared_config
     from hals_studio.ui.plotting.plot_settings import GROUPS, selected_magnitudes
     c, o, kind = pane.config, pane.owner, pane.config['kind']
-    fig = pane.chart.fig; fig.clear(); fig.set_layout_engine('constrained'); ax = fig.add_subplot(111)
-    pane.phase_axis = None; pane.phase_handle = None; pane.magnitude_curves = {}; pane.fit_result = None
-    phase_ax = None; note = ''; phase_note = ''
-    selected = selected_magnitudes(c)
     if kind.startswith('map_'):
-        angles, h, v = s.cuts(rel); values = h if kind == 'map_h' else v
-        img = ax.pcolormesh(s.freqs, angles, values.T, cmap='PColor', vmin=-c['span'], vmax=0, shading='auto')
-        fig.colorbar(img, ax=ax, label='Relative level / dB', pad=.02)
-        if c['contours']:
-            thresholds = sorted(n for n in -np.arange(c.get('directivity_contour_step',6.),c['span'],c.get('directivity_contour_step',6.)) if values.min() < n < values.max())
-            if thresholds: ax.contour(s.freqs, angles, values.T, levels=thresholds, colors='white', linewidths=.5)
+        from hals_studio.ui.plotting.directivity_views import draw_spectrogram
+        fig = pane.chart.fig; fig.clear(); fig.set_layout_engine('constrained')
+        ax = fig.add_subplot()
+        angles, h, v = s.cuts(rel)
+        image = draw_spectrogram(ax, s.freqs, angles, h if kind == 'map_h' else v, c)
+        fig.colorbar(image, ax=ax, label='Relative level / dB', pad=.02)
         style(ax, '', ylabel='Angle / degrees'); ax.set_ylim(-180, 180)
-    else:
-        curves, ylabel, note = magnitude_curves(pane, s, levels)
-        pane.magnitude_curves = curves
-        di_curves = {name: values for name, values in curves.items() if name.endswith('DI')}
-        curves = {name: values for name, values in curves.items() if name not in di_curves}
-        if di_curves: ylabel = 'HALS level / dB + offset'
-        trace_colours = {}
-        for title, values in curves.items():
-            line, = ax.plot(s.freqs, values, lw=1.4, label=title)
-            trace_colours[title] = line.get_color()
-        # DI inherits its SPL partner's actual colour. Unpaired DI uses the
-        # next unused colour from the same cycle, including DI-only plots.
-        from matplotlib import rcParams
-        from itertools import cycle
-        palette = cycle(rcParams['axes.prop_cycle'].by_key()['color'])
-        for _ in curves: next(palette)
-        di_colours = {}
-        for name in di_curves:
-            partner = name.removesuffix(' DI')
-            di_colours[name] = trace_colours[partner] if partner in trace_colours else next(palette)
-        if c['overlays']:
-            for overlay in o.plot_overlays(pane):
-                if not overlay['visible']: continue
-                if 'magnitude' in overlay:
-                    if overlay.get('di'):
-                        di_curves[overlay['name']] = np.interp(s.freqs, overlay['freqs'], overlay['magnitude'])
-                        di_colours[overlay['name']] = next(palette)
-                    else:
-                        ax.plot(overlay['freqs'], np.asarray(overlay['magnitude'])+c['offset']+shared_config(o)['frd_db_offset'], lw=1, alpha=.8, label=overlay['name'])
-                    continue
-                freq = np.asarray(overlay['freqs']); raw = np.asarray(overlay['real'])+1j*np.asarray(overlay['imag'])
-                ax.plot(freq, ac.db(raw)+c['offset']+shared_config(o)['frd_db_offset'], lw=1, alpha=.8, label=overlay['name'])
-        if c['fit'] and curves:
-            selected = c['fit_curve'] if c['fit_curve'] in curves else next(iter(curves))
-            try:
-                fit = trend_fit(s.freqs, curves[selected], c['fit_low'], c['fit_high']); pane.fit_result = fit
-                ax.plot(fit['freqs'], fit['line'], '--', lw=2., color='#f3e69b', label=f'Fit · {selected}')
-                ax.text(.02, .97, f'{selected}: {fit["slope"]:+.2f} dB/oct · ±{fit["deviation"]:.2f} dB max\n'
-                        f'{audio_frequency(fit["low"])}–{audio_frequency(fit["high"])} Hz · RMS {fit["rms"]:.2f} dB',
-                        transform=ax.transAxes, va='top', fontsize=8, color='#f3e69b',
-                        bbox=dict(facecolor='#101c28', alpha=.85, edgecolor='none'))
-            except ValueError as exc: note += ' · Fit: '+str(exc)
-        style(ax, '', ylabel=ylabel)
-        phase_mode = c['phase_mode'] if kind in GROUPS['SPL & phase'] or c['magnitude_selection'] is not None else 'None'
-        if kind in ('phase', 'minimum'): phase_mode = 'Minimum phase' if kind == 'minimum' else 'Total phase'
-        if di_curves: phase_mode = 'DI'
-        if phase_mode != 'None':
-            delay = pane.delay_ms() if phase_mode != 'DI' else 0
-            phase_note = pane.delay_note if phase_mode != 'DI' else ''
-            if curves:
-                phase_ax = fig.add_axes(ax.get_position(), sharex=ax, frameon=False)
-                phase_ax.set_in_layout(False); phase_ax.patch.set_visible(False)
-                phase_ax.xaxis.set_visible(False); phase_ax.yaxis.tick_right(); phase_ax.yaxis.set_label_position('right')
-                for edge in ('top', 'left', 'bottom'): phase_ax.spines[edge].set_visible(False)
-            else: phase_ax = ax
-            axis_colour = next(iter(di_colours.values())) if di_curves else '#baacf8'
-            phase_ax.tick_params(axis='y', colors=axis_colour, labelsize=8)
-            phase_ax._response_axis_colour = axis_colour
-            phase_ax.set_ylabel('Directivity index / dB' if di_curves else 'Phase / degrees', color=axis_colour, fontsize=8)
-            phase_ax.yaxis.set_major_locator(MaxNLocator(5))
-            if di_curves:
-                for name, values in di_curves.items():
-                    phase_ax.plot(s.freqs, values, lw=1.2, label=name, color=di_colours[name])
+        ax.set_xlim(s.freqs[0], s.freqs[-1])
+        ax.set_xticks(audio_ticks(*ax.get_xlim())); ax.xaxis.set_major_formatter(FuncFormatter(lambda value, _: audio_frequency(value)))
+        pane.phase_axis = pane.phase_handle = None
+        pane.frequency_marker = add_frequency_cursor(ax, s.freqs[i])
+        pane.interaction.finish([ax]); pane.chart.done()
+        return
+    curves, ylabel, note = magnitude_curves(pane, s, levels)
+    selected = selected_magnitudes(c)
+    phase_mode = c['phase_mode'] if kind in GROUPS['SPL & phase'] else 'None'
+    if kind in ('phase', 'minimum'): phase_mode = 'Minimum phase' if kind == 'minimum' else 'Total phase'
+    if any(name.endswith('DI') for name in curves): phase_mode = 'None'
+    phase_traces, overlays = [], []
+    if phase_mode != 'None':
+        delay = pane.delay_ms()
+        sample = s.index(*o.axis) if selected == ['reference'] else s.index(o.azimuth.value(), o.elevation.value())
+        source = 'Reference' if selected == ['reference'] else 'Probe'
+        values = phase_values(s.freqs, s.pressure[:, *sample], phase_mode, c['wrapped'], delay)
+        phase_traces.append((source+' '+phase_mode.lower(), s.freqs, values))
+        phase_note = 'Finite-band minimum-phase estimate; no propagation delay.' if phase_mode == 'Minimum phase' else pane.delay_note
+        note = ' - '.join(part for part in (note, phase_note) if part)
+    if c['overlays']:
+        for overlay in o.plot_overlays(pane):
+            if not overlay['visible']: continue
+            frequency = np.asarray(overlay['freqs'])
+            is_di = bool(overlay.get('di'))
+            if 'magnitude' in overlay: values = np.asarray(overlay['magnitude'])
             else:
-                sample = s.index(*o.axis) if selected == ['reference'] else s.index(o.azimuth.value(), o.elevation.value())
-                values = phase_values(s.freqs, s.pressure[:, *sample], phase_mode, c['wrapped'], delay)
-                source = 'Reference' if selected == ['reference'] else 'Probe'
-                px, py = phase_trace(s.freqs, values, c['wrapped'])
-                phase_ax.plot(px, py, color='#baacf8', lw=.85, alpha=.8, label=f'{source} {phase_mode.lower()}')
-                all_values = [values]
-                if c['overlays'] and ('probe' in selected or not selected):
-                    for overlay in o.plot_overlays(pane):
-                        if not overlay['visible'] or 'magnitude' in overlay: continue
-                        freq = np.asarray(overlay['freqs']); raw = np.asarray(overlay['real'])+1j*np.asarray(overlay['imag'])
-                        phase = phase_values(freq, raw, phase_mode, c['wrapped'], delay); all_values.append(phase)
-                        px, py = phase_trace(freq, phase, c['wrapped'])
-                        phase_ax.plot(px, py, lw=.8, alpha=.7, label=overlay['name']+' phase')
-            pane.phase_axis = phase_ax
-            if di_curves:
-                values = np.concatenate(list(di_curves.values()))
-                low, high = min(0., float(np.nanmin(values))), max(0., float(np.nanmax(values)))
-                padding = max(1., (high-low)*.05)
-                phase_ax.set_ylim((low-padding, high+padding) if c['di_auto'] else (c['di_min'], c['di_max']))
-            elif c['wrapped']:
-                phase_ax.set_ylim(-180, 180); phase_ax.set_yticks([-180, -90, 0, 90, 180])
-            else:
-                values = np.concatenate(all_values); low, high = float(np.nanmin(values)), float(np.nanmax(values))
-                padding = max(1., (high-low)*.05)
-                phase_ax.set_ylim(low-padding, high+padding)
-            if not di_curves and not c['phase_auto'] and c['phase_min'] < c['phase_max']:
-                phase_ax.set_ylim(c['phase_min'], c['phase_max']); phase_ax.yaxis.set_major_locator(MaxNLocator(5))
-            if curves:
-                # A short handle outside the plotting area, directly above the right axis.
-                transform = phase_ax.transAxes + ScaledTranslation(5/72, 7/72, fig.dpi_scale_trans)
-                end = phase_ax.transAxes + ScaledTranslation(33/72, 7/72, fig.dpi_scale_trans)
-                from matplotlib.patches import ConnectionPatch
-                pane.phase_handle = ConnectionPatch((1, 1), (1, 1), coordsA=transform, coordsB=end,
-                                                   color=axis_colour, linewidth=2.5, clip_on=False, annotation_clip=False)
-                pane.phase_handle.set_annotation_clip(False)
-                phase_ax.add_artist(pane.phase_handle)
-                phase_ax.text(1, 1, 'dB' if di_curves else 'Phase', transform=phase_ax.transAxes +
-                              ScaledTranslation(5/72, 12/72, fig.dpi_scale_trans),
-                              ha='left', va='bottom', color=axis_colour, fontsize=8, clip_on=False)
-            if phase_mode == 'Minimum phase': phase_note = 'Finite-band minimum-phase estimate; no propagation delay.'
-        elif not curves:
-            ax.text(.5, .5, 'Select magnitude responses or a phase plot from the plot menu.',
-                    transform=ax.transAxes, ha='center', va='center', fontsize=9, color='#91aabe', wrap=True)
-        trace_legend(ax, [phase_ax] if phase_ax is not None else [])
-    pane.frequency_marker = ax.axvline(s.freqs[i], color='#7db0c0', alpha=.35, lw=.8,
-                                     gid='frequency-cursor')
-    ax.set_xlim(s.freqs[0], 20000. if 19800. <= s.freqs[-1] < 20000. else s.freqs[-1])
-    if c['auto_axes'] and not kind.startswith('map_') and curves:
+                raw = np.asarray(overlay['real'])+1j*np.asarray(overlay['imag'])
+                values = ac.db(raw)
+                if phase_mode != 'None' and ('probe' in selected or not selected):
+                    phase_traces.append((overlay['name']+' phase', frequency,
+                        phase_values(frequency, raw, phase_mode, c['wrapped'], delay)))
+            if not is_di: values = values+c['offset']+shared_config(o)['frd_db_offset']
+            overlays.append((overlay['name'], frequency, values, is_di))
+    draw_response_curves(pane, s.freqs, curves, s.freqs[i], ylabel=ylabel, note=note,
+                         phase_mode=phase_mode, phase_traces=phase_traces, overlays=overlays)
+
+
+def draw_response_curves(pane, freqs, curves, cursor_frequency, *, ylabel='HALS level / dB + offset',
+                         note='', phase_mode='None', phase_traces=(), overlays=()):
+    """Render prepared curves identically in Analysis and Export, without data-owner access."""
+    c = pane.config
+    fig = pane.chart.fig; fig.clear(); fig.set_layout_engine('constrained'); ax = fig.add_subplot()
+    pane.phase_axis = pane.phase_handle = None; pane.fit_result = None
+    phase_ax = None
+    pane.magnitude_curves = curves
+    di_curves = {name: values for name, values in curves.items() if name.endswith('DI')}
+    curves = {name: values for name, values in curves.items() if name not in di_curves}
+    if di_curves: ylabel = 'HALS level / dB + offset'
+    trace_colours = {}
+    for title, values in curves.items():
+        line, = ax.plot(freqs, values, lw=1.4, label=title)
+        trace_colours[title] = line.get_color()
+    # DI inherits its SPL partner's actual colour. Unpaired DI uses the
+    # next unused colour from the same cycle, including DI-only plots.
+    from matplotlib import rcParams
+    from itertools import cycle
+    palette = cycle(rcParams['axes.prop_cycle'].by_key()['color'])
+    for _ in curves: next(palette)
+    di_colours = {}
+    for name in di_curves:
+        partner = name.removesuffix(' DI')
+        di_colours[name] = trace_colours[partner] if partner in trace_colours else next(palette)
+    for name, frequency, values, is_di in overlays:
+        if is_di:
+            di_curves[name] = np.interp(freqs, frequency, values)
+            di_colours[name] = next(palette)
+        else:
+            ax.plot(frequency, values, lw=1, alpha=.8, label=name)
+    if c['fit'] and curves:
+        selected = c['fit_curve'] if c['fit_curve'] in curves else next(iter(curves))
+        try:
+            fit = trend_fit(freqs, curves[selected], c['fit_low'], c['fit_high']); pane.fit_result = fit
+            ax.plot(fit['freqs'], fit['line'], '--', lw=2., color='#f3e69b', label=f'Fit · {selected}')
+            ax.text(.02, .97, fit_annotation(selected, fit),
+                    transform=ax.transAxes, va='top', fontsize=8, color='#f3e69b',
+                    bbox=dict(facecolor='#101c28', alpha=.85, edgecolor='none'))
+        except ValueError as exc: note += ' · Fit: '+str(exc)
+    style(ax, '', ylabel=ylabel)
+    if di_curves: phase_mode = 'DI'
+    if phase_mode != 'None':
+        axis_colour = next(iter(di_colours.values())) if di_curves else '#baacf8'
+        phase_ax = response_axis(ax, 'Directivity index / dB' if di_curves else 'Phase / degrees',
+                                 axis_colour, separate=bool(curves))
+        if di_curves:
+            for name, values in di_curves.items():
+                phase_ax.plot(freqs, values, lw=1.2, label=name, color=di_colours[name])
+        else:
+            all_values = []
+            for source, frequency, values in phase_traces:
+                px, py = phase_trace(frequency, values, c['wrapped'])
+                phase_ax.plot(px, py, color='#baacf8' if not all_values else None,
+                              lw=.85, alpha=.8, label=source)
+                all_values.append(values)
+        pane.phase_axis = phase_ax
+        if di_curves:
+            values = np.concatenate(list(di_curves.values()))
+            low, high = min(0., float(np.nanmin(values))), max(0., float(np.nanmax(values)))
+            padding = max(1., (high-low)*.05)
+            phase_ax.set_ylim((low-padding, high+padding) if c['di_auto'] else (c['di_min'], c['di_max']))
+        elif c['wrapped']:
+            phase_ax.set_ylim(-180, 180); phase_ax.set_yticks([-180, -90, 0, 90, 180])
+        else:
+            values = np.concatenate(all_values); low, high = float(np.nanmin(values)), float(np.nanmax(values))
+            padding = max(1., (high-low)*.05)
+            phase_ax.set_ylim(low-padding, high+padding)
+        if not di_curves and not c['phase_auto'] and c['phase_min'] < c['phase_max']:
+            phase_ax.set_ylim(c['phase_min'], c['phase_max']); phase_ax.yaxis.set_major_locator(MaxNLocator(5))
+        if curves:
+            pane.phase_handle = response_axis_handle(phase_ax, 'dB' if di_curves else 'Phase')
+    elif not curves:
+        ax.text(.5, .5, 'Select magnitude responses or a phase plot from the plot menu.',
+                transform=ax.transAxes, ha='center', va='center', fontsize=9, color='#91aabe', wrap=True)
+    trace_legend(ax, [phase_ax] if phase_ax is not None else [])
+    pane.frequency_marker = add_frequency_cursor(ax, cursor_frequency)
+    ax.set_xlim(freqs[0], 20000. if 19800. <= freqs[-1] < 20000. else freqs[-1])
+    if c['auto_axes'] and curves:
         values = np.concatenate([line.get_ydata() for line in ax.lines if not line.get_label().startswith(('_', 'Fit'))])
         top = float(np.nanmax(values)) + 6.
         ax.set_ylim(top - 40., top)
@@ -217,8 +250,7 @@ def draw_chart(pane, s, levels, rel, i):
     else: fig.get_layout_engine().set(rect=(0, 0, 1, 1))
     axes = [ax] + ([phase_ax] if phase_ax is not None and phase_ax is not ax else [])
     pane.interaction.finish(axes, phase_ax if phase_ax is not ax else None)
-    pane.note.setText(' · '.join(part for part in (note, phase_note) if part) or 'Wheel: zoom at cursor · Zoom out: full view')
-    if not kind.startswith('map_'):
-        pane.cursor.bind(ax, phase_ax if phase_mode not in ('None', 'DI') else None,
-                         di_ax=phase_ax if phase_mode == 'DI' else None)
+    pane.note.setText(note or 'Wheel: zoom at cursor - Zoom out: full view')
+    pane.cursor.bind(ax, phase_ax if phase_mode not in ('None', 'DI') else None,
+                     di_ax=phase_ax if phase_mode == 'DI' else None)
     pane.chart.done()

@@ -255,3 +255,32 @@ When we apply smoothing to the complex data (Real and Imaginary parts), we are e
 * **The chaotic phase** of the reflections varies so significantly by frequency that the peaks and valleys of those shifts average out to a small value.
 
 **In short:** Complex smoothing acts as a filter that preserves the DUTs true signal while suppressing erratic interference.
+# Opening recordings without a project JSON
+
+Open any measurement WAV through **Open data** to scan its directory for compatible
+HALS coordinate filenames. Outputs go into `outputs` in the directory above the
+recordings. Studio reports skipped filenames and rejects duplicate positions or
+mixed sample rates. An existing project in the parent directory is reused;
+otherwise a project JSON is created after Stage 1 completes successfully. Save
+Project subsequently updates that same file.
+
+If RFT is unavailable, the alpha taper uses a 5 ms fallback. The results do not
+highlight a reflection-free range, since that range has not been measured. Stage
+3 also uses 5 ms for its suggested lower test frequency, and explains this when
+Run is clicked. A manually chosen lower test frequency is retained.
+
+Without a tweeter coordinate, Stage 2 first scans the measurement cylinder at
+20 mm spacing, using an available frequency bin at or below the end frequency
+and 20 kHz. Simplex refinement supplies the HF seed; the LF branch starts at
+`(0, 0, 0)`, constrained to the measurement cylinder. The estimated tweeter
+coordinate is saved to the project for subsequent runs and Export visualisation.
+
+## Exporting Stage 1 IRs
+
+Use **Export IR...** to export the currently selected measurement, or the button's
+arrow menu for **Export All...**. When both FDW and smoothed curves are available,
+choose which to export. WAVs use 32-bit floating point and the saved sample rate.
+The shared IR export engine preserves the Stage 1 spectrum, level, and timing;
+no additional export taper, normalisation, capture-padding correction, or
+time-of-flight subtraction is applied. These files represent the processed
+Stage 1 data, not the original unwindowed recordings.

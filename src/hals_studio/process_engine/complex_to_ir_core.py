@@ -14,6 +14,8 @@ def complex_to_ir(
     p_complex: np.ndarray,
     freqs: np.ndarray,
     target_fs: float | None = None,
+    *,
+    preserve_spectrum: bool = False,
 ) -> np.ndarray:
     """
     Converts complex pressure data into a time-domain impulse response.
@@ -23,6 +25,8 @@ def complex_to_ir(
         freqs: 1D array of corresponding frequencies.
         target_fs: Optional source sample rate. When omitted, infer 44.1 or
             48 kHz from the upper frequency limit for backwards compatibility.
+        preserve_spectrum: Reconstruct complete FFT bins exactly, without export
+            tapers or FFT resizing. Used to inspect Stage 1 data as stored.
 
     Returns:
         A 1D NumPy array containing the real-valued impulse response.
@@ -32,6 +36,11 @@ def complex_to_ir(
     # 1. Determine original and target FFT lengths using frequency resolution
     df = freqs[1] - freqs[0] if len(freqs) > 1 else 1.0
     n_fft_original = int(np.round(target_fs / df))
+    if preserve_spectrum:
+        expected = np.fft.rfftfreq(n_fft_original, 1 / target_fs)
+        if expected.shape != freqs.shape or not np.allclose(expected, freqs):
+            raise ValueError('Exact IR export requires complete, uniformly spaced FFT bins.')
+        return np.fft.irfft(p_complex, n=n_fft_original)
     n_fft_target = next_fast_len(n_fft_original)
 
     # 2. Create the full one-sided spectrum for the target FFT size

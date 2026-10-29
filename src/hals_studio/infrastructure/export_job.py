@@ -4,7 +4,7 @@ from copy import deepcopy
 import threading
 from PySide6 import QtCore as C
 from hals_studio.analysis.acoustics import Cancelled
-from hals_studio.application.export_engine import run_export
+from hals_studio.application.export_engine import run_export, needs_aggregate_preview
 
 
 class ExportWorker(C.QThread):
@@ -21,7 +21,7 @@ class ExportWorker(C.QThread):
 
     def run(self):
         try:
-            if not self.writing and not self.aggregate:
+            if not self.writing and not self.aggregate and not needs_aggregate_preview(self.config):
                 result = self.preview_cache.run(
                     self.config, self.point_index, self.pool, self.progress.emit, self.stop.is_set
                 )

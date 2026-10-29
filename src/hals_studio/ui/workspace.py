@@ -306,6 +306,7 @@ class Workspace(W.QMainWindow):
         else:
             self.workspace_stack.setCurrentIndex(0); self.open_button.setText('+  Open data')
             self.badge.setText('HALS / COMPLEX FIELD')
+            self.analysis.activate_coefficients()
 
     def analysis_import_settings(self):
         from hals_studio.ui.app import ReconstructionDialog
@@ -323,8 +324,7 @@ class Workspace(W.QMainWindow):
             if options.get('step') in (5, 10, 3, 2): dialog.step.setCurrentIndex([5, 10, 3, 2].index(options['step']))
             if options.get('bins') in dialog.bin_counts: dialog.bins.setCurrentIndex(dialog.bin_counts.index(options['bins']))
             if 'mode' in options: dialog.mode.setCurrentText(options['mode'])
-            if 'origins' in options: dialog.origins.setChecked(options['origins'])
-            for field, value in zip(dialog.offsets, options.get('offset', [])): field.setValue(value)
+            dialog.manual_padding.setChecked(options.get('manual_padding', options.get('padding', 50) != 50))
             dialog.update_sampling()
             if dialog.exec() != W.QDialog.Accepted: return
             options = dialog.options()

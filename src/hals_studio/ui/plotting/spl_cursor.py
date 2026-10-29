@@ -2,9 +2,16 @@
 import numpy as np
 
 
+def add_frequency_cursor(ax, frequency, *, visible=True):
+    """One cursor style for all response plots."""
+    return ax.axvline(frequency, color='#7db0c0', alpha=.35, lw=.8,
+                      gid='frequency-cursor', visible=visible)
+
+
 class SPLCursor:
-    def __init__(self, pane, label):
+    def __init__(self, pane, label, frequency_provider=None):
         self.pane, self.label = pane, label
+        self.frequency_provider = frequency_provider
         self.active = None; self.frequency = None; self.lines = {}; self.phase = {}; self.ax = None
         canvas = pane.chart.canvas
         canvas.mpl_connect('button_press_event', self.press)
@@ -34,8 +41,13 @@ class SPLCursor:
         self.follow_marker()
 
     def follow_marker(self):
-        owner = self.pane.owner
-        self.readout(float(owner.sphere.freqs[owner.frequency.value()]))
+        if self.frequency_provider is None:
+            owner = self.pane.owner
+            frequency = float(owner.sphere.freqs[owner.frequency.value()])
+        else:
+            frequency = self.frequency_provider()
+        if frequency is None: self.label.clear()
+        else: self.readout(frequency)
 
     def highlight(self):
         if self.ax is None: return

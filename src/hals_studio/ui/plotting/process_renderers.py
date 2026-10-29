@@ -12,7 +12,7 @@ def draw_fdw(host, workspace):
     kind = p.view.currentText()
     from hals_studio.process_engine.stage1_fdwsmooth import load_and_prep_ir
     from pathlib import Path
-    f,raw,smooth,meta=r[:4];name=p.sample.currentData() or next(iter(raw));n_fft=2*(len(f)-1);fs=float(r[4]) if len(r)>4 else 2*float(f[-1]);data=None
+    f,raw,smooth,meta=r[:4];name=p.sample.currentData() or next(iter(raw));fs=float(r[4]) if len(r)>4 else 2*float(f[-1]);n_fft=round(fs/(f[1]-f[0]));data=None
     try:
         data,fs_wav=load_and_prep_ir(str(Path(p.ir_folder.text())/name),crop_samples=n_fft)
         data=np.pad(data,(0,max(0,n_fft-len(data))));fs=fs_wav
@@ -60,13 +60,17 @@ def draw_fdw(host, workspace):
         view.ax3.lines[0].set_color(probe)
     for patch in list(view.ax1.patches): patch.remove()
     rft_lower = float(meta[name]['f_trans'])
-    if NAME=='Light':
+    rft_supplied = meta[name].get('rft_supplied', True) and getattr(p, 'rft_supplied', True)
+    if NAME=='Light' and rft_supplied:
         lower = view.ax1.get_xlim()[0]
         upper = min(rft_lower, fs / 2)
         if upper > lower:
             view.ax1.axvspan(lower, upper, color='#fff2c7', alpha=1, zorder=0)
-    if rft_lower < fs / 2:
+    if rft_supplied and rft_lower < fs / 2:
         view.ax1.axvspan(rft_lower, fs / 2, color='#47d7ec', alpha=0.12)
+    if not rft_supplied:
+        for label in list(view.ax1.texts):
+            if label.get_text() == 'Reflection free range': label.remove()
     curves = [line for line in view.ax1.lines if len(line.get_xdata()) > 2]
     if smooth and p.stage1_plot_settings()['enable_smoothing']:
         smoothing_label = 'FDW + Smoothing' if meta[name].get('sliding_hf') else 'FDW + fixed smoothing'

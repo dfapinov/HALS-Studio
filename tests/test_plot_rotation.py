@@ -56,3 +56,45 @@ def test_view_round_trip_preserves_independent_rotations():
     assert panes[0].config['globe_rotation'] == {'horizontal': 30., 'vertical': 120.}
     assert panes[1].config['polar_rotation'] == {'horizontal': 10., 'vertical': 90.}
     assert default_config('globe_hv')['globe_rotation']['vertical'] == 90.
+
+
+@pytest.mark.parametrize('export_points', [False, True])
+def test_polar_signed_directions_match_top_and_side_views(export_points):
+    from hals_studio.ui.plotting.plots import draw_polar_cuts
+    fig = Figure(figsize=(9, 5)); canvas = FigureCanvasAgg(fig)
+    chart = SimpleNamespace(fig=fig, canvas=canvas, width=lambda: 900,
+                            height=lambda: 500, done=canvas.draw)
+    angles = np.array([-90., 0., 90.])
+    values = np.array([[-12., 0., -6.]])
+    pane = SimpleNamespace(chart=chart, config=default_config('polar'))
+    draw_polar_cuts(chart, {plane: (angles, values) for plane in ('horizontal', 'vertical')},
+                    0, 36, pane=pane, close_curves=not export_points, show_points=export_points)
+    for ax, expected in zip(fig.axes, ([[-30., 0.], [24., 0.]], [[0., 30.], [0., -24.]])):
+        trace = next(line for line in ax.lines if line.get_gid() == 'directivity-trace')
+        points = np.column_stack([trace.get_xdata(), trace.get_ydata()])
+        displayed = ax.transData.inverted().transform(trace.get_transform().transform(points))
+        np.testing.assert_allclose(displayed[[2, 0]], expected, atol=1e-10)
+        for prefix, direction in zip(('+90', '\N{MINUS SIGN}90'), expected):
+            label = next(text for text in ax.texts if text.get_text().startswith(prefix))
+            location = ax.transData.inverted().transform(label.get_transform().transform(label.get_position()))
+            np.testing.assert_allclose(location/np.linalg.norm(location), np.array(direction)/np.linalg.norm(direction), atol=1e-10)
+
+
+@pytest.mark.parametrize('close_curves', [True, False])
+def test_globe_defaults_match_top_side_views_and_handles_stay_top_left(close_curves):
+    from hals_studio.ui.plotting.directivity_views import draw_globe_cuts
+    fig = Figure(figsize=(9, 5)); canvas = FigureCanvasAgg(fig)
+    chart = SimpleNamespace(fig=fig, canvas=canvas, done=canvas.draw)
+    pane = SimpleNamespace(chart=chart, config=default_config('globe_hv'),
+                           interaction=SimpleNamespace(finish=lambda axes: None), note=Mock())
+    f = np.array([100., 1000., 10000.]); angles = np.arange(-180., 181., 90.)
+    cuts = {plane: (angles, np.zeros((3, 5))) for plane in ('horizontal', 'vertical')}
+    draw_globe_cuts(pane, f, cuts, close_curves=close_curves)
+    horizontal, vertical = fig.axes[:2]
+    assert horizontal.get_theta_offset() % (2*np.pi) == pytest.approx(np.pi/2)
+    assert vertical.get_theta_offset() % (2*np.pi) == pytest.approx(0.)
+    for ax in (horizontal, vertical):
+        assert ax.get_theta_direction() == 1
+        x, y = pane._rotation_handles[ax]
+        assert x < .5 and y > .5
+    np.testing.assert_allclose(pane._rotation_handles[horizontal], pane._rotation_handles[vertical])

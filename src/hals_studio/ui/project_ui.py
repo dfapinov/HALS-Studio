@@ -12,7 +12,7 @@ from hals_studio.persistence.project_paths import normalize_project_paths, norma
 def choose_data(owner):
     path, _ = W.QFileDialog.getOpenFileName(owner, 'Open HALS data',
         str(owner.settings.value('browse_folder', '')) or (str(Path(owner.project_path).parent) if owner.project_path else str(Path.home())),
-        'HALS project / coefficients / sphere (*.json *.h5 *.hdf5 *.npz);;All files (*)')
+        'HALS project / recordings / coefficients / sphere (*.json *.h5 *.hdf5 *.npz *.wav);;All files (*)')
     return path or None
 
 
@@ -34,7 +34,11 @@ def open_data_path(owner, path, options=None):
     if pane.job:
         owner.statusBar().showMessage('Wait for the current evaluation/export to finish before opening data.'); return
     path = Path(path).resolve()
+    owner.analysis.available_path = None
     try:
+        if path.suffix.lower() == '.wav':
+            open_ir_recording(owner, path)
+            return
         if path.is_dir() or path.suffix.lower() == '.json':
             from hals_studio.application.export_engine import project_files
             # Validate the selected project before applying any persisted UI state.
@@ -81,7 +85,7 @@ def open_data_path(owner, path, options=None):
             owner.project_path = None; owner.project_path_field.setText(str(path))
             pane.apply_config(dict(deepcopy(DEFAULT_EXPORT), coeff_path=str(path) if path.suffix.lower() in ('.h5', '.hdf5') else '', frd_prefix=path.stem))
             owner.analysis.open_path(path, options)
-    except (OSError, ValueError, KeyError, TypeError) as exc: owner.error(str(exc))
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError) as exc: owner.error(str(exc))
 
 
 def save_project(owner):
@@ -115,3 +119,52 @@ def save_project(owner):
         owner.project_path_field.setText(str(path.parent)); pane.metadata_editor.reload()
         owner.statusBar().showMessage('Project saved: '+str(path))
     except (OSError, ValueError, TypeError) as exc: owner.error('Could not save project: '+str(exc))
+
+
+def open_ir_recording(owner, path):
+    from hals_studio.application.ir_recovery import scan_ir_folder
+    from hals_studio.application.export_engine import project_files
+    names, skipped = scan_ir_folder(path.parent)
+    if path.name not in names:
+        raise ValueError('Select a WAV with a compatible HALS coordinate filename.')
+    root = path.parent.parent
+    try:
+        existing = project_files(root)
+    except ValueError:
+        existing = []
+    message = (f'Opening a WAV scans its directory for all compatible measurement WAVs.\n'
+               f'Found {len(names)} compatible files; skipped {len(skipped)} incompatible filenames.\n'
+               f'Input: {path.parent}\nOutputs: {root / "outputs"}\n\n'
+               'Opening the project JSON is preferable because it retains measurement metadata and settings.')
+    if existing:
+        W.QMessageBox.information(owner, 'Open measurement recordings', message +
+                                 '\n\nAn existing project was found and will be used.')
+        open_data_path(owner, root)
+        if not owner.project_path or Path(owner.project_path).parent != root:
+            return
+        owner.set_workspace(2)
+        process = owner.process_workspace
+    else:
+        W.QMessageBox.information(owner, 'Open measurement recordings', message +
+            '\n\nNo RFT was supplied. Stage 1 will use 5 ms for the alpha taper without highlighting a reflection-free range. '
+            'A project JSON will be created after Stage 1 succeeds.')
+        owner.project_path = None
+        owner.set_workspace(2)
+        process = owner.process_workspace
+        name = root.name
+        target = root / (name + '_project.json')
+        owner.project_path = str(target)
+        owner.project_path_field.setText(str(root))
+        pane = ensure_export(owner)
+        pane.apply_config(dict(deepcopy(DEFAULT_EXPORT), project_path=str(target), project_name=name,
+                               output_dir=str(root / 'outputs' / 'response_files'), frd_prefix=name))
+        owner.pending_session = None
+        owner.source_path = None
+        owner.source_options = None
+        owner.set_sphere(None)
+        owner.reset_views()
+        process.adopt_project(force=True, payload=dict(project_name=name,
+            measurement_metadata=dict(rft_supplied=False, tweeter_supplied=False, wav_recovery=True)))
+    process.ir_folder.setText(str(path.parent))
+    process.filter_ir_filenames = True
+    process.select_stage(1)

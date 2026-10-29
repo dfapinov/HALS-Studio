@@ -57,7 +57,9 @@ def selected_magnitudes(config):
     selected = config.get("magnitude_selection")
     if selected is None:
         return [config["kind"]] if config["kind"] in MAGNITUDE_KINDS else []
-    return [key for key in selected if key in MAGNITUDE_KINDS]
+    cta = config['kind'] in GROUPS['CEA2034']
+    return [key for key in selected if key in MAGNITUDE_KINDS
+            and (key in GROUPS['CEA2034']) == cta]
 
 
 DECAY_DEFAULTS = dict(
@@ -86,7 +88,7 @@ DEFAULT = dict(
     kind="probe",
     normalization="Peak",
     smoothing="None",
-    globe_rotation={"horizontal": 0.0, "vertical": 90.0},
+    globe_rotation={"horizontal": 180.0, "vertical": 90.0},
     polar_rotation={"horizontal": 0.0, "vertical": 270.0},
     span=36.0,
     palette="PColor",
@@ -316,6 +318,8 @@ def setting_keys(kind, config=None):
             if k not in ("phase_auto", "phase_min", "phase_max", "wrapped", "delay")
         ]
         common += ["di_auto", "di_min", "di_max"]
+    if kind in GROUPS['CEA2034']:
+        common = [key for key in common if key not in ('phase_mode', 'wrapped', 'delay', 'phase_auto', 'phase_min', 'phase_max')]
     common = list(dict.fromkeys(common))
     return common
 
@@ -351,3 +355,17 @@ def decay_setting_keys(config):
     if config.get("_all_time_controls") or config.get("wavelet_units", "Cycles") == "Cycles":
         keys += ["wavelet_duration", "wavelet_pre"]
     return keys + ["csd_span", "csd_fmin", "csd_fmax"]
+
+
+def cta_curve_names(kind, breakout='All'):
+    """Shared metric selections for Analysis and exact Export results."""
+    if kind == 'cea':
+        return ['On axis', 'Listening window', 'Early reflections', 'Sound power',
+                'Sound power DI', 'Early reflections DI']
+    if kind == 'reflections':
+        return {'All': ['Floor', 'Ceiling', 'Front wall', 'Side walls', 'Rear wall'],
+                'Horizontal': ['Front wall', 'Side walls', 'Rear wall', 'Horizontal reflections'],
+                'Vertical': ['Floor', 'Ceiling', 'Vertical reflections']}[breakout]
+    names = [kind[4:]]
+    if kind == 'cea_Sound power' and breakout != 'All': names += [breakout+' sound power']
+    return names

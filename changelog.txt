@@ -1,3 +1,86 @@
+29/10/26
+
+- Bump the application package version to 0.5.0.
+- Automatically use optimized origins when available in Analysis, Export and
+  Stage 4, falling back to original origins. Remove the corresponding switches.
+- Fix the Analysis sphere centre at zero and gate capture-padding editing behind
+  an unchecked checkbox; retain explicit saved padding overrides.
+
+- Share the single-row plot header between Analysis and Export CTA plots.
+
+- Default globes to the horizontal top view and vertical side view, with both
+  rotation handles starting at the top left.
+
+- Reverse polar angular display direction in Analysis and Export to match
+  the 3D field viewed from above (horizontal) and from the side (vertical).
+
+28/10/26
+
+- Defer Analysis sphere reconstruction after Stage 4 until Analysis is selected;
+  show import settings on first analysis of each new coefficient revision.
+- Share CTA response rendering, phase/DI axes and handles, cursor styling, fit
+  annotations and axis editors between Analysis and Export. Remove unused legacy
+  plot renderers while retaining Export's fast incremental response redraws.
+- Keep CTA and SPL/phase magnitude selections separate, including saved views.
+
+- Shorten Export plot names; place the CTA sampling note below the 3D viewer,
+  allow CTA plots in that pane, and restrict directivity to non-CTA modes.
+- Highlight the existing selected point sphere in red, at its normal size,
+  retaining shaded ball rendering and visibility when zooming.
+
+- Share Analysis and Export polar, globe and spectrogram rendering. Export
+  keeps sample dots and partial coverage, with the same rotation handles.
+
+- CTA-2034 Export now shows calculated metrics and reflection breakouts, with
+  individual metric choices and a sampling explanation instead of point plots.
+- Added Export directivity spectrograms, polars and globes using only export
+  points; missing planes stay empty and partial sweeps keep their coverage.
+- Full-set previews run only for visible CTA metrics or directivity plots;
+  point views retain fast selected-point previews for offset jogging.
+
+- Keep Analysis and Export plot menus separate; old analysis panes in Export
+  restore to the default export plots.
+- Add a click-to-select frequency cursor and level/phase readout to Export
+  SPL / phase. Move microphone previous/next controls into the 3D viewer.
+- Keep the 3D viewer status, selected-point readout and previous/next controls
+  together on one line; keep the SPL cursor readout on one line too.
+
+24/10/26
+
+- Added recovery without a project JSON by opening a measurement WAV. Studio
+  scans that directory for compatible coordinate filenames, reports skipped
+  files, and rejects duplicate positions or mixed sample rates. Outputs are
+  saved one directory above the recordings, in the usual outputs folder.
+
+- Reuse an existing project when opening WAVs directly; otherwise create a
+  project JSON after Stage 1 succeeds. Subsequent saves update the same file,
+  retaining the recording directory and which metadata was unavailable.
+
+- When no tweeter coordinate is supplied, Stage 2 estimates the HF seed using
+  a 20 mm grid scan inside the measurement cylinder followed by simplex
+  refinement. The scan uses an available bin at or below the end frequency,
+  capped at 20 kHz. The LF search starts at (0, 0, 0), constrained to the
+  cylinder. A Run message explains the fallback; the estimated tweeter is
+  saved to the project for reuse and display in the Export visualisation.
+
+- Missing RFT defaults to 5 ms for Stage 1 alpha tapering, without highlighting
+  an assumed reflection-free range. Stage 3 explains its 5 ms fallback when
+  Run is clicked and retains any manually chosen lower test frequency.
+
+- Added Export IR and Export All to the Stage 1 results viewer. Export the
+  selected measurement or the complete set, choosing FDW or complex-smoothed
+  data when both are available. The shared IR export engine writes float WAVs
+  at the saved sample rate without extra tapering, gain, or timing correction.
+
+- Removed automatic per-file peak normalisation from WAV export to preserve
+  relative measurement levels, including floating-point samples above 1.0.
+
+- Added optional WAV set normalisation, disabled by default, with a user-set
+  peak target defaulting to -6 dBFS. One gain is calculated from the loudest
+  sample peak across the full set and applied to every WAV. FRD and complex
+  NPZ data are unchanged; the shared gain is recorded in the export log and
+  settings manifest.
+
 13/10/26
 
 Code restructuring

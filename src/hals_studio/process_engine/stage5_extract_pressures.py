@@ -45,6 +45,32 @@ class ExportHooks:
 # Shared Helpers
 # -------------------------------------------------
 
+def write_ir_set(pressures, freqs, paths, normalize, target_dbfs, writer, output):
+    """Use one gain for every exported position, with bounded time-domain memory."""
+    if not np.isfinite(target_dbfs) or not -120 <= target_dbfs <= 0:
+        raise ValueError('IR target peak must be between -120 and 0 dBFS.')
+    sample_rate = 44100 if freqs[-1] < 23000.0 else 48000
+    peak = 0.0
+    if normalize:
+        for index in range(len(paths)):
+            output(f'IR peak scan {index + 1}/{len(paths)}')
+            ir = complex_to_ir(pressures[:, index], freqs, sample_rate)
+            if not np.isfinite(ir).all():
+                raise ValueError('Cannot normalise IRs containing non-finite samples.')
+            peak = max(peak, float(np.max(np.abs(ir))))
+    gain = 10 ** (target_dbfs / 20) / peak if normalize and peak > 0 else 1.0
+    gain_db = float(20 * np.log10(gain))
+    if normalize:
+        output(f'WAV set normalisation: target {target_dbfs:g} dBFS; shared gain {gain_db:+.3f} dB.'
+               if peak > 0 else 'WAV set is silent; no gain applied.')
+    for index, path in enumerate(paths):
+        output(f'Writing IR {index + 1}/{len(paths)}')
+        ir = complex_to_ir(pressures[:, index], freqs, sample_rate)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        writer(ir * gain, sample_rate, path, 'Impulse Response')
+    return gain_db
+
+
 def _resolve_speed_of_sound(c_sound, coeff_path, fallback, output=print):
     if c_sound is not None:
         return float(c_sound)
@@ -103,23 +129,24 @@ def calculate_cta2034_energy_metrics(energy, indices):
     result['Early reflections DI'] = result['Listening window'] - result['Early reflections']
     return result
 
+CTA2034_METRIC_NAMES = {
+    'Response_OnAxis': 'On axis', 'Response_ListeningWindow': 'Listening window',
+    'Response_EarlyReflections': 'Early reflections', 'Response_SoundPower': 'Sound power',
+    'Response_PIR': 'Predicted in-room', 'Response_ERDI': 'Early reflections DI',
+    'Response_SPDI': 'Sound power DI',
+    'reflections_breakout/Response_ER_Floor': 'Floor',
+    'reflections_breakout/Response_ER_Ceiling': 'Ceiling',
+    'reflections_breakout/Response_ER_FrontWall': 'Front wall',
+    'reflections_breakout/Response_ER_SideWalls': 'Side walls',
+    'reflections_breakout/Response_ER_RearWall': 'Rear wall',
+}
+
 def calculate_cta2034_metrics(freqs, p_matrix, map_idx, coord_deviations):
     """Adapt shared energy metrics to the Stage 5 FRD filename convention."""
     levels = calculate_cta2034_energy_metrics(np.abs(p_matrix)**2, map_idx)
     ph_ref = np.angle(p_matrix[:, map_idx['H0']], deg=True)
-    names = {
-        'Response_OnAxis': 'On axis', 'Response_ListeningWindow': 'Listening window',
-        'Response_EarlyReflections': 'Early reflections', 'Response_SoundPower': 'Sound power',
-        'Response_PIR': 'Predicted in-room', 'Response_ERDI': 'Early reflections DI',
-        'Response_SPDI': 'Sound power DI',
-        'reflections_breakout/Response_ER_Floor': 'Floor',
-        'reflections_breakout/Response_ER_Ceiling': 'Ceiling',
-        'reflections_breakout/Response_ER_FrontWall': 'Front wall',
-        'reflections_breakout/Response_ER_SideWalls': 'Side walls',
-        'reflections_breakout/Response_ER_RearWall': 'Rear wall',
-    }
     return {filename: (levels[name], np.zeros_like(ph_ref) if name.endswith(' DI') else ph_ref)
-            for filename, name in names.items()}
+            for filename, name in CTA2034_METRIC_NAMES.items()}
 
 # -------------------------------------------------
 # Writers
@@ -392,7 +419,8 @@ def run_sweep_extraction(
     frd_prefix=None, c_sound=None, save_to_disk=True, generate_ir_files=None,
     apply_mic_cal=None, mic_cal_file=None, mic_cal_mode=None,
     mic_cal_fade_octaves=None, use_optimized_origins=True, frd_db_offset=None,
-    ir_capture_padding_samples=None, use_process_pool=True, hooks: ExportHooks | None = None
+    ir_capture_padding_samples=None, use_process_pool=True, hooks: ExportHooks | None = None,
+    normalize_ir_set=False, ir_target_peak_dbfs=-6.0
 ):
     hooks = hooks or ExportHooks()
     print = hooks.output or builtins.print
@@ -559,9 +587,13 @@ def run_sweep_extraction(
     coords_log = []
     extracted_data = {}
     
-    # SHE data is capped at 24kHz, so IRs are strictly generated at standard rates
-    target_fs = 44100 if freqs[-1] < 23000.0 else 48000
-    
+    ir_gain_db = None
+    if save_to_disk and gen_ir:
+        paths = [(ir_dir / subdir if subdir else ir_dir) / (prefix + '.wav')
+                 for prefix, subdir in prefixes]
+        ir_gain_db = write_ir_set(p_raw_all, freqs, paths, normalize_ir_set,
+                                  ir_target_peak_dbfs, write_wav, print)
+
     for idx, (prefix, subdir) in enumerate(prefixes):
         p_raw = p_raw_all[:, idx]
         th_in, ph_in, r_in = coords_spherical_final[idx]
@@ -570,22 +602,6 @@ def run_sweep_extraction(
         p_frd = p_raw.copy()
         if tof_phasor is not None:
             p_frd *= tof_phasor
-
-        # --- IR Generation ---
-        if save_to_disk and gen_ir:
-            ir_out_dir = ir_dir / subdir if subdir else ir_dir
-            
-            ir_audio = complex_to_ir(
-                p_complex=p_raw,
-                freqs=freqs
-            )
-            
-            write_wav(
-                ir_audio,
-                target_fs,
-                ir_out_dir / f"{prefix}.wav",
-                "Impulse Response"
-            )
 
         eps = np.finfo(float).eps
         mags = 20 * np.log10(np.abs(p_frd) + eps)
@@ -623,7 +639,7 @@ def run_sweep_extraction(
     elapsed = time.time() - start_time
     print(f"\nStage 5 processing completed in {elapsed:.2f} seconds.")
 
-    return {"freqs": freqs, "data": extracted_data}
+    return {"freqs": freqs, "data": extracted_data, "ir_gain_db": ir_gain_db}
 
 
 # -------------------------------------------------

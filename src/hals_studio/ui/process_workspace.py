@@ -18,6 +18,7 @@ VIEWS={1:['FDW results'],2:['Validation','3D coordinate cloud','3D grid scan'],3
 class ProcessWorkspace(W.QWidget):
     def __init__(self,owner):
         super().__init__();self.owner=owner;self.stage=1;self.job=False;self.results={};self.loaded=None;self.host=None;self.buffer='';self.plotter=None;self.stage1_settings={}
+        self.rft_supplied=True;self.tweeter_supplied=True;self.filter_ir_filenames=False;self.wav_recovery=False
         self.values={int(i):{k:deepcopy(s['default']) for k,s in fields.items()} for i,fields in SCHEMA.items()}
         self.manual_table={350.:3,500.:4,625.:5,750.:6,875.:7,1500.:8,2100.:9,2800.:10,3500.:11,4100.:12,4600.:13,5000.:14,6000.:15}
         self.toolbar=W.QWidget();row=W.QHBoxLayout(self.toolbar);row.setContentsMargins(0,0,0,0);self.stage_buttons=[]
@@ -62,6 +63,9 @@ class ProcessWorkspace(W.QWidget):
         self.next=W.QPushButton('Next >');self.next.clicked.connect(lambda:self.sample.setCurrentIndex((self.sample.currentIndex()+1)%max(1,self.sample.count())));bar.addWidget(self.next)
 
         bar.addStretch();self.power_reset=W.QPushButton('Reset axes');self.power_reset.setFixedHeight(32);self.power_reset.clicked.connect(self.reset);bar.addWidget(self.power_reset)
+        self.ir_export=W.QToolButton();self.ir_export.setText('Export IR...');self.ir_export.setPopupMode(W.QToolButton.MenuButtonPopup)
+        self.ir_export.clicked.connect(lambda:self.export_stage1_ir(False));menu=W.QMenu(self.ir_export)
+        menu.addAction('Export All...',lambda:self.export_stage1_ir(True));self.ir_export.setMenu(menu);bar.addWidget(self.ir_export)
         self.save_image_button=W.QPushButton('Save image');self.save_image_button.clicked.connect(self.save_image);bar.addWidget(self.save_image_button)
         self.stage2_tools=W.QWidget();s2=W.QHBoxLayout(self.stage2_tools);s2.setContentsMargins(0,0,0,0);rescan=W.QPushButton('Full grid rescan of selected frequency');rescan.clicked.connect(lambda:self.run('rescan'));s2.addWidget(rescan);s2.addWidget(W.QLabel('Frequency'));self.rescan_frequency=W.QComboBox();self.rescan_frequency.setFixedWidth(145);self.rescan_frequency.currentIndexChanged.connect(self.sample.setCurrentIndex);self.sample.currentIndexChanged.connect(self.rescan_frequency.setCurrentIndex);s2.addWidget(self.rescan_frequency);edit=W.QPushButton('Edit coordinate table');edit.clicked.connect(self.edit_origins);s2.addWidget(edit);s2.addStretch();bar.insertWidget(2,self.stage2_tools)
         self.stage3_tools=W.QWidget();s3=W.QHBoxLayout(self.stage3_tools);s3.setContentsMargins(0,0,0,0);s3.addWidget(W.QLabel('Sound power reference'));self.reference_order.setMaximumWidth(200);s3.addWidget(self.reference_order);s3.addStretch();bar.insertWidget(0,self.stage3_tools)
@@ -89,6 +93,8 @@ class ProcessWorkspace(W.QWidget):
         self.refresh_rft_range()
         self.controls[3,'fdw_rft_ms'].textChanged.connect(self.refresh_rft_range)
         self.controls[1,'fdw_oct_res'].textChanged.connect(self.refresh_rft_range)
+        self.controls[3,'fdw_rft_ms'].textEdited.connect(self.rft_edited)
+        for axis in 'xyz':self.controls[2,'tweeter_'+axis].textEdited.connect(self.tweeter_edited)
         self.select_stage(1)
         C.QTimer.singleShot(0,self.restore_sidebar_width)
     def restore_sidebar_width(self):
@@ -130,15 +136,25 @@ class ProcessWorkspace(W.QWidget):
         try:
             xyz=waypoint(self.owner.export_workspace.config['project_geometry'],'tw')*1000
             for axis,value in zip('xyz',xyz):self.set_value(2,'tweeter_'+axis,round(float(value),3))
-        except (KeyError,ValueError,TypeError):pass
+            self.tweeter_supplied=True
+        except (KeyError,ValueError,TypeError):self.tweeter_supplied=False
+    def rft_edited(self,*_):
+        self.rft_supplied=True
+    def tweeter_edited(self,*_):
+        self.tweeter_supplied=True
     def set_value(self,stage,key,value):
         control=self.controls[stage,key]
         if isinstance(control,W.QCheckBox):control.setChecked(bool(value))
         else:control.setText(str(value))
-    def adopt_project(self,force=False):
+    def adopt_project(self,force=False,payload=None):
         path=self.owner.project_path
         if not path or (self.loaded==path and not force):return
-        data=json.loads(Path(path).read_text(encoding='utf-8-sig'));self.loaded=path;self.results={};self.stage1_settings={}
+        data=payload if payload is not None else json.loads(Path(path).read_text(encoding='utf-8-sig'))
+        from hals_studio.application.ir_recovery import metadata_availability
+        self.tweeter_supplied,self.rft_supplied=metadata_availability(data)
+        self.wav_recovery=data.get('measurement_metadata',{}).get('wav_recovery',False)
+        self.filter_ir_filenames=data.get('measurement_metadata',{}).get('filter_ir_filenames',self.wav_recovery)
+        self.loaded=path;self.results={};self.stage1_settings={}
         self.project_name.setText(data.get('project_name',Path(path).stem.replace('_project','')));self.owner.dataset_label.setText(self.project_name.text())
         self._loading_rft=True
         for stage in range(1,5):
@@ -146,7 +162,7 @@ class ProcessWorkspace(W.QWidget):
         if 'condition_preflight' not in data.get('stage4_vars',{}):
             self.set_value(4,'condition_preflight',data.get('stage3_vars',{}).get('condition_preflight',True))
         from hals_studio.process_engine.rft_range import project_rft_ms
-        self.set_value(3,'fdw_rft_ms',project_rft_ms(data))
+        self.set_value(3,'fdw_rft_ms',project_rft_ms(data) if self.rft_supplied else 5.0)
         self._loading_rft=False
         self.refresh_rft_range()
         if 'freq_start_hz' not in data.get('stage3_vars',{}):self.set_range_from_rft()
@@ -158,6 +174,8 @@ class ProcessWorkspace(W.QWidget):
         if all(grid.get('wp_tw_'+k) not in (None,'') for k in ('r','phi','z')):
             r,phi,z=[float(grid['wp_tw_'+k]) for k in ('r','phi','z')]
             for key,val in zip('xyz',(r*np.cos(np.deg2rad(phi)),r*np.sin(np.deg2rad(phi)),z)):self.set_value(2,'tweeter_'+key,round(val,3))
+        saved_folder=project_path_value(data.get('input_ir_folder'),folder)
+        if saved_folder:self.ir_folder.setText(saved_folder)
         self.cache(1).unlink(missing_ok=True)
         npz=folder/'outputs'/f'{self.project_name.text()}_complex_data.npz'
         if npz.is_file():
@@ -179,7 +197,7 @@ class ProcessWorkspace(W.QWidget):
         return dict(stage=self.stage,input_ir_folder=self.ir_folder.text(),
                     manual_scan_bounds=sorted(self.pages.manual_scan_bounds))
     def project_payload(self):
-        return dict(project_name=self.project_name.text().strip(),**{f'stage{s}_vars':deepcopy(v) for s,v in self.values.items()},stage4_manual_table=self.manual_table,
+        return dict(input_ir_folder=self.ir_folder.text(),measurement_metadata=dict(rft_supplied=self.rft_supplied,tweeter_supplied=self.tweeter_supplied,wav_recovery=self.wav_recovery,filter_ir_filenames=self.filter_ir_filenames),project_name=self.project_name.text().strip(),**{f'stage{s}_vars':deepcopy(v) for s,v in self.values.items()},stage4_manual_table=self.manual_table,
             global_vars=dict(enable_manual_speed_of_sound=self.manual_speed.isChecked(),speed_of_sound=str(self.speed.value())))
     def cache(self,stage):
         project=Path(self.owner.project_path)
@@ -188,6 +206,7 @@ class ProcessWorkspace(W.QWidget):
         if self.job:return
         path,_=W.QFileDialog.getSaveFileName(self,'New HALS project','project.json','HALS project (*.json)')
         if not path:return
+        self.rft_supplied=False;self.tweeter_supplied=False;self.wav_recovery=False;self.filter_ir_filenames=False
         from hals_studio.ui.project_ui import ensure_export
         from hals_studio.application.export_engine import DEFAULT_EXPORT
         ensure_export(self.owner).apply_config(deepcopy(DEFAULT_EXPORT))
@@ -215,7 +234,25 @@ class ProcessWorkspace(W.QWidget):
             except ValueError:W.QMessageBox.warning(self,'Harmonic order','The solver requires a maximum order of at least 2 without a manual order table.');return
         if not name or Path(name).name!=name or any(c in name for c in '<>:"/\\|?*'):W.QMessageBox.warning(self,'Project name','Use a valid filename without path separators.');return
         request=dict(stage=self.stage,settings=deepcopy(self.values[self.stage]),folder=str(Path(self.owner.project_path).parent),name=name,ir_folder=self.ir_folder.text(),cache=str(self.cache(self.stage)),manual_table=self.manual_table,speed=self.speed.value(),manual_speed=self.manual_speed.isChecked(),action=action)
-        request['rft_ms']=self.values[3]['fdw_rft_ms']
+        request['rft_ms']=self.values[3]['fdw_rft_ms'] if self.rft_supplied else 5.0
+        if self.stage==3 and not self.rft_supplied:request['settings']['fdw_rft_ms']=5.0
+        request['rft_supplied']=self.rft_supplied
+        request['tweeter_supplied']=self.tweeter_supplied
+        if self.stage==1 and self.filter_ir_filenames:
+            from hals_studio.application.ir_recovery import scan_ir_folder
+            try:request['input_filenames'],_=scan_ir_folder(self.ir_folder.text())
+            except (OSError,ValueError,RuntimeError) as exc:
+                W.QMessageBox.warning(self,'IR recordings',str(exc));return
+        if action=='run' and self.stage==2 and not self.tweeter_supplied:
+            W.QMessageBox.information(self,'Automatic tweeter seed',
+                'No tweeter coordinate was supplied. A 20 mm grid scan inside the measurement cylinder, '
+                'at or below the end frequency (capped at 20 kHz), followed by simplex refinement, '
+                'will estimate the HF seed. The LF search starts at (0, 0, 0). '
+                'The estimated tweeter coordinate will be saved to the project.')
+        if action=='run' and self.stage==3 and not self.rft_supplied:
+            W.QMessageBox.information(self,'RFT unavailable',
+                'No measured RFT was supplied. The suggested lower test frequency uses a 5 ms fallback. '
+                'The current lower test frequency is retained, including any value you entered.')
         request['project_oct_res']=self.stage1_resolution()
         if edits:request['edits']=edits
         if action=='reference':request['reference']=self.reference_order.currentData()['n']
@@ -296,7 +333,10 @@ class ProcessWorkspace(W.QWidget):
             self.stage1_settings=process_cache.load_stage1_settings(event['cache'])
             self.results[1]=process_cache.load_stage1(event['cache'],self.stage1_plot_settings())
             self.refresh_rft_range()
+            if self.wav_recovery and not Path(self.owner.project_path).exists():
+                self.owner.save_project()
         else:self.results[stage]=process_cache.load(event['cache'],stage)
+        if stage==2:self.save_estimated_tweeter()
         if stage in (1, 2):self.refresh_scan_bounds()
         if stage==3 and self.results[3].get('below_rft'):self.set_value(3,'freq_start_hz',self.results[3]['test_band_hz'][0])
         self.select_stage(stage)
@@ -370,6 +410,8 @@ class ProcessWorkspace(W.QWidget):
         self.pages.apply_scan_bounds(bounds)
 
     def update_selectors(self):
+        self.ir_export.setVisible(self.stage==1)
+        self.ir_export.setEnabled(1 in self.results and not self.job)
         self.rescan_frequency.blockSignals(True);self.rescan_frequency.clear()
         self.sample.blockSignals(True);self.sample.clear();r=self.results.get(self.stage)
         if self.stage==4:
@@ -637,45 +679,26 @@ class ProcessWorkspace(W.QWidget):
         job.start()
 
     def reload_coefficients(self, force=False):
-        path=self.coefficient_path()
-        if self.job or path is None or not path.is_file():return False
-        stat=path.stat();stamp=(str(path.resolve()),stat.st_mtime_ns,stat.st_size)
-        if self.owner.worker and self.owner.worker.isRunning():
-            return getattr(self,'_loading_coeff_stamp',None)==stamp
-        if not force and getattr(self,'_published_coeff_stamp',None)==stamp:return True
+        """Make completed coefficients available; Analysis is evaluated on demand."""
+        path = self.coefficient_path()
+        if self.job or path is None or not path.is_file(): return False
+        stamp = self.owner.analysis.coefficient_stamp(path)
+        if not force and getattr(self, '_published_coeff_stamp', None) == stamp: return True
         from hals_studio.ui.project_ui import ensure_export
         from hals_studio.application.export_preview import PreviewCache
         try:
-            pane=ensure_export(self.owner)
-            # Stage 4 can replace the same filename. Discard open evaluation
-            # sessions and plotted-result caches rather than relying on its path.
-            pane.timer.stop();pane.preview_cache=PreviewCache();pane.result=None
-            pane.response_panel.key=None;pane.ir_panel.key=None
-            options=deepcopy(self.owner.source_options) if self.owner.source_path and Path(self.owner.source_path).resolve()==path.resolve() else {}
-            self.owner.pending_session=None
-            self._published_coeff_stamp=None;self._loading_coeff_stamp=stamp
-            self.owner.analysis.open_path(path,options=options or {})
-            pane.apply_config(dict(pane.config,coeff_path=str(path)),refresh_metadata=False)
-            worker=self.owner.worker
-            if worker is None:
-                self._loading_coeff_stamp=None;return False
-            def loaded(_):
-                if not self.owner.job_cancelled:
-                    self._published_coeff_stamp=stamp
-                    self.summary.setText('Stage 4 complete. Coefficients reloaded ? ready for Analysis or Export.')
-            def finished():
-                self._loading_coeff_stamp=None
-                if self.owner.workspace_mode.currentData()==1:pane.preview_if_live()
-            def failed(message):
-                self.summary.setText('Stage 4 complete; coefficient reload failed. See CLI output.')
-                self.log.appendPlainText('Coefficient reload failed: '+str(message))
-            worker.loaded.connect(loaded);worker.failed.connect(failed);worker.finished.connect(finished)
-            self.summary.setText('Stage 4 complete. Reloading coefficients for Analysis and Export...')
+            pane = ensure_export(self.owner)
+            pane.timer.stop(); pane.preview_cache = PreviewCache(); pane.result = None
+            for plot in pane.custom_panes: plot.invalidate()
+            self.owner.pending_session = None
+            self.owner.analysis.prepare_coefficients(path)
+            pane.apply_config(dict(pane.config, coeff_path=str(path)), refresh_metadata=False)
+            self._published_coeff_stamp = stamp
+            self.summary.setText('Stage 4 complete. Coefficients ready for Analysis or Export.')
             return True
         except Exception as exc:
-            self._loading_coeff_stamp=None
-            self.log.appendPlainText('Coefficient reload failed: '+str(exc))
-            self.summary.setText('Stage 4 complete; coefficient reload failed. See CLI output.')
+            self.log.appendPlainText('Could not prepare coefficients: '+str(exc))
+            self.summary.setText('Stage 4 complete; could not prepare coefficients. See CLI output.')
             return False
 
     def publish(self, workspace=0):
@@ -683,4 +706,57 @@ class ProcessWorkspace(W.QWidget):
         path=self.coefficient_path()
         if path is None or not path.is_file():
             W.QMessageBox.information(self,'Coefficients','Run Stage 4 first.');return
-        if self.reload_coefficients():self.owner.set_workspace(workspace)
+        if self.reload_coefficients():
+            if workspace == 0 and self.owner.workspace_mode.currentData() == 0:
+                self.owner.analysis.activate_coefficients(path)
+            else: self.owner.set_workspace(workspace)
+
+
+    def save_estimated_tweeter(self):
+        cfg=self.results[2][5]
+        if self.tweeter_supplied or 'estimated_tweeter_mm' not in cfg:return
+        x,y,z=map(float,cfg['estimated_tweeter_mm'])
+        pane=self.owner.export_workspace
+        grid=dict(pane.config['project_geometry'],wp_tw_r=float(np.hypot(x,y)),
+                  wp_tw_phi=float(np.degrees(np.arctan2(y,x))),wp_tw_z=z)
+        grid['tweeter_coordinate_source']='Stage 2 automatic grid scan and simplex'
+        pane.apply_config(dict(pane.config,project_geometry=grid))
+        for axis,value in zip('xyz',(x,y,z)):self.set_value(2,'tweeter_'+axis,value)
+        self.tweeter_supplied=True
+        if hasattr(self,'metadata_editor'):self.metadata_editor.reload()
+        self.owner.save_project()
+
+    def export_stage1_ir(self, all_files=False):
+        if self.job or 1 not in self.results:return
+        from hals_studio.application.stage1_export import export_ir
+        f,raw,smooth,meta,fs=self.results[1]
+        spectra=smooth if smooth and self.stage1_plot_settings().get('enable_smoothing') else raw
+        variant='smoothed' if self.stage1_plot_settings().get('enable_smoothing') else 'fdw'
+        if smooth and self.stage1_plot_settings().get('keep_raw_and_smoothed'):
+            choice,ok=W.QInputDialog.getItem(self,'Export Stage 1 IR','Both curves are displayed. Choose the data to export:',
+                                            ['FDW + smoothing','FDW only'],0,False)
+            if not ok:return
+            if choice=='FDW only':spectra=raw;variant='fdw'
+        root=Path(self.owner.project_path).parent/'outputs'/'stage1_ir'
+        try:
+            if all_files:
+                root.mkdir(parents=True,exist_ok=True)
+                folder=W.QFileDialog.getExistingDirectory(self,'Export all Stage 1 IRs ('+variant+')',str(root))
+                if not folder:return
+                paths=[(Path(folder)/(Path(name).stem+'_'+variant+'.wav'),name) for name in spectra]
+                if any(path.exists() for path,_ in paths):
+                    if W.QMessageBox.question(self,'Replace exported IRs','Some exported WAV files already exist. Replace them?')!=W.QMessageBox.Yes:return
+            else:
+                name=self.sample.currentData()
+                if name not in spectra:return
+                root.mkdir(parents=True,exist_ok=True)
+                filename,_=W.QFileDialog.getSaveFileName(self,'Export Stage 1 IR ('+variant+')',str(root/(Path(name).stem+'_'+variant+'.wav')),'WAV (*.wav)')
+                if not filename:return
+                paths=[(Path(filename),name)]
+            source=Path(self.ir_folder.text()).resolve()
+            if any(path.resolve() in {source/name for name in raw} for path,_ in paths):
+                raise ValueError('Choose an output filename that does not overwrite an input recording.')
+            for path,name in paths:export_ir(path,f,spectra[name],fs)
+            self.log.appendPlainText(f'Exported {len(paths)} Stage 1 {variant} IR WAV file(s).')
+        except (OSError,ValueError,RuntimeError) as exc:
+            W.QMessageBox.warning(self,'Stage 1 IR export',str(exc))

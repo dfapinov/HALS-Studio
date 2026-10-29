@@ -53,6 +53,31 @@ def editor(key, value, callback, options=None):
     return w
 
 
+def axis_editors(form, config, keys):
+    """Build axis controls from the shared Analysis schema."""
+    values = {key: config[key] for key in keys}
+    controls = {}
+    def changed(key, value):
+        values[key] = value
+        automatic = ('auto_axes' if key in ('fmin', 'fmax', 'ymin', 'ymax') else
+                     'phase_auto' if key in ('phase_min', 'phase_max') else
+                     'di_auto' if key in ('di_min', 'di_max') else None)
+        if automatic in controls:
+            values[automatic] = False
+            controls[automatic].setChecked(False)
+    for key, value in values.items():
+        controls[key] = editor(key, value, lambda value, key=key: changed(key, value))
+        label = 'DI axis height (fraction)' if key == 'phase_height' and 'di_auto' in values else SPECS[key][0]
+        form.addRow(label, controls[key])
+    return values
+
+
+def valid_axis_ranges(values):
+    return all(values[low] < values[high] for low, high in
+               [('fmin', 'fmax'), ('ymin', 'ymax'), ('phase_min', 'phase_max'), ('di_min', 'di_max')]
+               if low in values and high in values)
+
+
 class Setup(W.QDialog):
     def __init__(self, pane):
         super().__init__(pane)

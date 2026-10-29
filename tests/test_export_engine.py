@@ -85,6 +85,67 @@ def test_files_and_atomic_cancellation(config, tmp_path):
     assert set(Path(c['output_dir']).iterdir()) == before
 
 
+@pytest.mark.parametrize('mode', ['Arc sweep', 'Manual coordinates'])
+def test_wav_set_normalisation_uses_one_gain(config, mode):
+    import json
+    import soundfile as sf
+    c = dict(config, mode=mode, generate_ir_files=True, normalize_ir_set=False,
+             manual_coords=[[90., 0., 1.], [90., 0., 2.]], range_deg=10)
+    baseline = run_export(c, writing=True)
+    scaled = run_export(dict(c, normalize_ir_set=True, ir_target_peak_dbfs=-6.), writing=True)
+    root, target = Path(baseline['destination']), Path(scaled['destination'])
+    paths = sorted(root.rglob('*.wav'))
+    assert len(paths) == (2 if mode == 'Manual coordinates' else 5)
+    originals = [sf.read(path)[0] for path in paths]
+    maximum = max(np.max(np.abs(samples)) for samples in originals)
+    gain = 10 ** (-6 / 20) / maximum
+    output_peak = 0
+    for path, samples in zip(paths, originals):
+        actual, _ = sf.read(target/path.relative_to(root))
+        np.testing.assert_allclose(actual, samples * gain, rtol=2e-6, atol=1e-7)
+        output_peak = max(output_peak, np.max(np.abs(actual)))
+    assert 20*np.log10(output_peak) == pytest.approx(-6, abs=1e-5)
+    record = json.loads((target/'hals-studio-export.json').read_text())
+    assert record['ir_gain_db'] == pytest.approx(20*np.log10(gain), abs=1e-5)
+    for path in root.rglob('*.frd'):
+        assert path.read_bytes() == (target/path.relative_to(root)).read_bytes()
+    for path in root.rglob('*.npz'):
+        with np.load(path) as first, np.load(target/path.relative_to(root)) as second:
+            for key in first:np.testing.assert_array_equal(first[key], second[key])
+
+
+def test_cta_export_ignores_saved_wav_options(config):
+    result = run_export(dict(config, mode='CTA-2034', generate_ir_files=True,
+                             normalize_ir_set=True), writing=True)
+    destination = Path(result['destination'])
+    assert list(destination.rglob('*.frd'))
+    assert not list(destination.rglob('*.wav'))
+    assert 'ir_gain_db' not in result
+
+
+def test_wav_set_normalisation_silence_and_cancellation(config, tmp_path):
+    from hals_studio.process_engine.stage5_extract_pressures import write_ir_set
+    captured = []
+    freqs = np.arange(0, 24001., 100.)
+    gain = write_ir_set(np.zeros((len(freqs), 2), complex), freqs,
+                        [tmp_path/'a.wav', tmp_path/'b.wav'], True, -6,
+                        lambda samples, *args: captured.append(samples), lambda text: None)
+    assert gain == 0
+    assert all(np.all(samples == 0) for samples in captured)
+    stop = []
+    with pytest.raises(Cancelled):
+        run_export(dict(config, generate_ir_files=True, normalize_ir_set=True), writing=True,
+                   log=lambda text: stop.append(True) if 'IR peak scan' in text else None,
+                   cancelled=lambda: bool(stop))
+    assert not list(Path(config['output_dir']).iterdir())
+
+
+@pytest.mark.parametrize('target', [1., -121., float('nan')])
+def test_invalid_wav_peak_target(config, target):
+    with pytest.raises(ValueError):
+        run_export(dict(config, normalize_ir_set=True, ir_target_peak_dbfs=target))
+
+
 def test_manual_absolute_and_project_units(config, tmp_path):
     import json
     c = dict(config, mode='Manual coordinates', manual_coords=[[90., 0., 1.]])

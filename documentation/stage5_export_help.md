@@ -17,6 +17,9 @@ The **Spherical Harmonic Expansion (SHE)** solver separates the sound field into
 ### 2. Frame of Reference
 To ensure your virtual measurements align with the physical reality of the speaker, you must define the correct frame of reference.
 
+Export automatically uses optimized Stage 2 origins when available and falls
+back to the original origins otherwise.
+
 **Cartesian Offset (XYZ)**
 This applies a physical shift to the virtual microphone relative to the measurement origin. For example, if your physical measurement grid was centered on the midrange driver of a 3-way speaker, but you want to perform an arc sweep rotating around the tweeter's acoustic center, you can apply a Z-axis (height) offset to raise the measurement origin accordingly.
 
@@ -86,3 +89,60 @@ Evaluating that optimized SHE data "as is" would result in a sound field that no
 This restores the true behavior of the DUT, ensuring that each frequency radiates from the correct physical location and the time delay and relative phase relationships are perfectly preserved.
 
 > **Note:** There are no user settings for this function. It operates automatically in the background, but it is a critical mathematical step that curious users may wish to understand.
+
+## Optional WAV set normalisation
+
+Enable **Generate WAV impulse files**, then **Normalise WAV set** in Output.
+**Set peak / dBFS** defaults to **-6 dBFS**; normalisation is off by default.
+The exporter measures the largest absolute sample peak across all generated IRs,
+then applies one common gain to every WAV. This preserves level differences
+between positions in manual-coordinate sets and combined horizontal/vertical
+sweeps. CTA-2034 exports frequency-response data only; WAV export and WAV
+normalisation controls are disabled in that mode.
+
+The target is a sample-peak level, not RMS, loudness, or acoustic SPL. A silent
+set stays silent. Normalisation changes only WAV amplitudes: FRDs, complex NPZs,
+and their calibration settings are unchanged. The shared gain in dB is recorded
+in the export log and settings manifest. When disabled, floating-point WAVs
+preserve their original scale, including values above 1.0.
+
+
+### Export preview plots
+
+For arc sweeps and manual coordinates, the Export pane menus offer Export SPL /
+phase, Export CSD / wavelet, Export impulse response, directivity plots and CLI output. Analysis plots stay in the Analysis
+workspace. Saved layouts containing an Analysis plot in Export restore that
+pane to its default Export plot.
+
+Click the Export SPL / phase plot to place a vertical cursor at the nearest
+available frequency bin. The toolbar shows that frequency and the selected
+microphone's plotted level and phase, including FRD level offset and delay
+compensation. The phase readout follows the wrapped/unwrapped display setting.
+The cursor remains at the selected frequency as you change microphones.
+Use the previous/next buttons below the 3D viewer to move between export points.
+
+
+Preview speed depends on the visible plots. Point SPL / phase, impulse response
+and decay views need only the selected point and its reference, so offset jogging
+is faster with those views. Visible CTA-2034 metrics or directivity plots require
+the full export point set and take longer to update. Switch away from these plots
+when you want the most responsive point-by-point preview. Run Export always
+calculates the complete set required for the output files.
+
+
+In CTA-2034 mode, two panes default to Spinorama overview and Reflection
+breakouts. Their menus offer individual CTA metrics. Directivity plots are available in
+Arc sweep and Manual coordinates modes.
+These graphs use the exact Stage 5 export results, with the FRD level offset
+applied to responses but not directivity indices. The bottom-left pane explains the
+70 sampling positions and can also be switched to a CTA metric plot; individual-point SPL, phase and decay plots are not
+available in this mode. To inspect those directions individually, use Arc sweep,
+`hor_vert`, range +/-180 degrees and 10-degree increments, keeping the same
+reference direction, distance and offsets. Shared directions and endpoints can
+make the sweep point count differ from the CTA set's 70 unique positions.
+
+Directivity plots include horizontal/vertical spectrograms, polars and globes.
+They use only evaluated export points, normalized to the export reference point.
+A horizontal-only sweep leaves the vertical view empty. Partial sweeps remain
+partial: no Analysis sphere is used to fill missing angles. The polar frequency
+and display span controls belong to the Export plot.

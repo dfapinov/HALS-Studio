@@ -152,7 +152,8 @@ def fdwsmooth(
     target_peak_db=-3.0,
     keep_raw_and_smoothed=False,
     use_process_pool=True,
-    sliding_hf=False, compare_smoothing=False, workers=None, runtime=None
+    sliding_hf=False, compare_smoothing=False, workers=None, runtime=None,
+    input_filenames=None, rft_supplied=True
 ):
     """
     Main pipeline function that orchestrates the scanning, parallel processing,
@@ -165,6 +166,9 @@ def fdwsmooth(
 
     ir_dir = input_dir
     wav_files = sorted([f for f in os.listdir(ir_dir) if f.lower().endswith('.wav')], key=natural_keys)
+    if input_filenames is not None:
+        allowed = set(input_filenames)
+        wav_files = [name for name in wav_files if name in allowed]
     if not wav_files: 
         runtime.print("No .wav files found.")
         return None
@@ -181,6 +185,8 @@ def fdwsmooth(
         file_path = os.path.join(ir_dir, f)
         data, fs = load_and_prep_ir(file_path, None) 
         
+        if fs_common is not None and fs != fs_common:
+            raise ValueError("All measurement WAV files must have the same sample rate.")
         if fs_common is None:
             fs_common = fs
             max_window_sec = float(calculate_fdw_durations(fdw_f_min, fdw_oct_res, fdw_rft_ms, fdw_max_cap_ms))
@@ -264,6 +270,7 @@ def fdwsmooth(
             processing.advance()
             
             results_raw[fname] = H_raw
+            m['rft_supplied'] = bool(rft_supplied)
             meta[fname] = m
             if H_smooth is not None:
                 results_smooth[fname] = H_smooth
@@ -288,7 +295,7 @@ def fdwsmooth(
         runtime.progress('Stage 1 saving data', 0, console=False)
         runtime.print("Saving data to disk...")
         os.makedirs(out_dir, exist_ok=True)
-        runtime_settings = dict(fdw_rft_ms=fdw_rft_ms, fdw_oct_res=fdw_oct_res,
+        runtime_settings = dict(rft_supplied=bool(rft_supplied), fdw_rft_ms=fdw_rft_ms, fdw_oct_res=fdw_oct_res,
             fdw_max_cap_ms=fdw_max_cap_ms, enable_smoothing=enable_smoothing,
             smoothing_oct_res=smoothing_oct_res if smoothing_oct_res not in (None, 0) else 'Auto',
             effective_smoothing_oct_res=eff_smooth_res, fdw_alpha_hf=fdw_alpha_hf,

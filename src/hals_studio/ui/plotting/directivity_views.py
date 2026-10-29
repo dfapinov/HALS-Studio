@@ -16,11 +16,10 @@ def add_rotation_handle(pane, ax, rotation):
 def position_rotation_handle(pane, ax, rotation):
     """Keep the grab handle attached to the plot's angular orientation."""
     key = pane._rotation_axes[ax]
-    base_angle = 140 if key == 'horizontal' else 40
-    if pane.config['kind'] == 'polar' and key == 'vertical':
-        # Cancel the default clockwise quarter-turn so both polar grips
-        # start at the same top-left angle, then follow manual rotation.
-        base_angle = 230
+    from hals_studio.ui.plotting.plot_settings import DEFAULT
+    rotation_key = 'polar_rotation' if pane.config['kind'] == 'polar' else 'globe_rotation'
+    # Both handles start top-left at the default view and follow subsequent rotation.
+    base_angle = 140 - DEFAULT[rotation_key][key]
     angle = np.deg2rad(base_angle + rotation)
     radial = np.array([np.cos(angle), np.sin(angle)])
     tangent = np.array([-radial[1], radial[0]])
@@ -109,10 +108,31 @@ def draw_cross_sonograms(pane, sphere, relative):
 def draw_globe(pane, sphere, relative):
     c = pane.config
     f, angles, h, v = cut_data(sphere, relative, c)
-    if angles[-1] - angles[0] < 359.999:
-        angles = np.r_[angles, angles[0]+360]
-        h = np.column_stack([h, h[:, 0]])
-        v = np.column_stack([v, v[:, 0]])
+    draw_globe_cuts(pane, f, {'horizontal': (angles, h), 'vertical': (angles, v)})
+
+
+def bounded_edges(values):
+    """Bin edges clipped to sampled coverage, without half-bin extrapolation."""
+    return np.r_[values[0], (values[:-1]+values[1:])/2, values[-1]]
+
+
+def draw_spectrogram(ax, frequencies, angles, values, config, *, bounded=False):
+    """Shared Analysis/Export frequency-angle heatmap and contour styling."""
+    x = np.exp(bounded_edges(np.log(frequencies))) if bounded else frequencies
+    y = bounded_edges(angles) if bounded else angles
+    image = ax.pcolormesh(x, y, values.T, shading='flat' if bounded else 'auto',
+                         cmap='PColor', vmin=-config['span'], vmax=0)
+    if config.get('contours', True):
+        step = config.get('directivity_contour_step', 6.)
+        levels = sorted(v for v in -np.arange(step, config['span'], step)
+                        if np.nanmin(values) < v < np.nanmax(values))
+        if levels:
+            ax.contour(frequencies, angles, values.T, levels=levels, colors='white', linewidths=.5)
+    return image
+
+
+def draw_globe_cuts(pane, f, cuts, *, close_curves=True):
+    c = pane.config
     radius = np.log10(f / f[0])
     fig = pane.chart.fig; fig.clear(); fig.set_layout_engine('constrained')
     grid = fig.add_gridspec(1, 3, width_ratios=[1, 1, .045], wspace=.12)
@@ -122,14 +142,25 @@ def draw_globe(pane, sphere, relative):
     pane._rotation_axes = {}
     pane._rotation_handles = {}
     pane._rotation_handle_artists = {}
-    for column, (title, values) in enumerate([('Horizontal', h), ('Vertical', v)]):
+    img = None
+    for column, title in enumerate(('Horizontal', 'Vertical')):
+        angles, values = cuts[title.lower()]
         ax = fig.add_subplot(grid[0, column], projection='polar'); axes.append(ax)
         ax.set_anchor('C'); ax.set_title(title, pad=20)
         key = title.lower()
+        if len(angles) < 2:
+            ax.set_axis_off()
+            ax.text(.5, .5, 'No '+key+' sweep data', transform=ax.transAxes, ha='center', va='center')
+            continue
+        if close_curves and angles[-1]-angles[0] < 359.999:
+            angles = np.r_[angles, angles[0]+360]
+            values = np.column_stack([values, values[:, 0]])
         pane._rotation_axes[ax] = key
         ax.set_theta_zero_location('S', offset=rotations.get(key, 0.)); ax.set_theta_direction(1)
         ax.grid(False)
-        img = ax.pcolormesh(np.deg2rad(angles), radius, values, shading='nearest', cmap='PColor', vmin=-c['span'], vmax=0)
+        theta = np.deg2rad(angles if close_curves else bounded_edges(angles))
+        radial = radius if close_curves else bounded_edges(radius)
+        img = ax.pcolormesh(theta, radial, values, shading='nearest' if close_curves else 'flat', cmap='PColor', vmin=-c['span'], vmax=0)
         if c.get('contours', True):
             step = c.get('directivity_contour_step', 6.)
             levels = sorted(value for value in -np.arange(step, c['span'], step) if np.nanmin(values) < value < np.nanmax(values))
@@ -144,7 +175,8 @@ def draw_globe(pane, sphere, relative):
         # with the globe and can be positioned as its angle changes.
         add_rotation_handle(pane, ax, rotations.get(key, 0.))
     colour_axis = fig.add_subplot(grid[0, 2])
-    fig.colorbar(img, cax=colour_axis, label='Relative level / dB')
+    if img is not None: fig.colorbar(img, cax=colour_axis, label='Relative level / dB')
+    else: colour_axis.set_axis_off()
     pane.interaction.finish(axes)
     pane.chart.done()
     pane.note.setText('Horizontal / vertical globes share frequency and colour scales. Drag the curved handle outside either globe to rotate it independently.')

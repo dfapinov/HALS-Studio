@@ -101,7 +101,10 @@ class ExportWorkspace(W.QWidget):
         self.add('Output', 'output_dir', 'Output directory', 'directory')
         self.add('Output', 'frd_prefix', 'Filename prefix', str)
         self.add('Output', 'generate_ir_files', 'Generate WAV impulse files', bool)
-        note = W.QLabel('Sweep: FRD + full complex NPZ + coordinate list; optional WAV.\nCTA-2034: Stage 5 metric FRDs and reflection breakout.\n\nFRD uses the selected delay compensation and level offset. Complex NPZ and WAV retain propagation phase and their original level, as in Stage 5.\n\nEach export creates a new run folder, with settings and a log.')
+        self.add('Output', 'normalize_ir_set', 'Normalise WAV set', bool)
+        self.add('Output', 'ir_target_peak_dbfs', 'Set peak / dBFS', (-120, 0, 2))
+        self.controls['normalize_ir_set'].setToolTip('Find the largest absolute IR peak across the whole export and apply one shared gain to every WAV.')
+        note = W.QLabel('Sweep: FRD + full complex NPZ + coordinate list; optional WAV.\nCTA-2034: metric FRDs and reflection breakout.\n\nFRD uses the selected delay compensation and level offset. Complex NPZ and WAV retain propagation phase. WAV levels are preserved unless set normalisation is enabled; one shared gain preserves relative levels across the entire set.\n\nEach export creates a new run folder, with settings and a log.')
         note.setWordWrap(True); note.setStyleSheet('color:#91aabe'); self.forms['Output'].addRow(note)
         self.section('Output', 'CALIBRATION')
         self.add('Output', 'frd_db_offset', 'FRD offset / dB', (-200, 200, 2))
@@ -110,7 +113,6 @@ class ExportWorkspace(W.QWidget):
         self.add('Output', 'mic_cal_mode', 'Calibration mode', ['subtract', 'add'])
         self.add('Output', 'mic_cal_fade_octaves', 'Fade / octaves', (0, 10, 2))
         self.add('Advanced', 'obs_mode', 'Observation field', ['Internal', 'External', 'Full'])
-        self.add('Advanced', 'use_optimized_origins', 'Use optimized origins', bool)
         self.add('Advanced', 'manual_ir_capture_padding', 'Edit capture padding', bool)
         self.add('Advanced', 'ir_capture_padding_samples', 'Padding / samples', (0, 100000, 0))
         note = W.QLabel('Exports evaluate the coefficient file at every native frequency bin and exact physical position. Analysis sphere resolution, smoothing, normalization and probe settings do not change these exports.\n\nOptimized origins and capture-padding correction use the same engine as HALS Stage 5.')
@@ -151,7 +153,7 @@ class ExportWorkspace(W.QWidget):
         self.plotter = QtInteractor(scene, auto_update=False); self.plotter.set_background('#101c28', top='#193344')
         self.plotter.enable_terrain_style(); self.plotter.render_window.SetMultiSamples(0)
         self.zoom = SceneZoom(self); self.plotter.interactor.installEventFilter(self.zoom)
-        scene_layout.addWidget(self.plotter.interactor, 1); self.scene_note = W.QLabel(); self.scene_note.setWordWrap(True); scene_layout.addWidget(self.scene_note)
+        scene_layout.addWidget(self.plotter.interactor, 1); self.scene_note = W.QLabel(); self.scene_note.setWordWrap(False)
         self.plotter.enable_point_picking(callback=self.pick, show_message=False, show_point=False, left_clicking=True, tolerance=.03)
         self.rows[0].addWidget(scene)
         from hals_studio.ui.plotting.export_charts import ResponsePanel, ImpulsePanel
@@ -159,13 +161,22 @@ class ExportWorkspace(W.QWidget):
         self.response_panel.setMinimumWidth(0); self.response_panel.setSizePolicy(W.QSizePolicy.Ignored, W.QSizePolicy.Preferred)
         self.rows[0].addWidget(self.response_panel)
         row = self.response_panel.toolbar
-        row.addWidget(self.response_panel.point_label)
+        navigation_bar = W.QWidget(scene)
+        navigation = W.QHBoxLayout(navigation_bar)
+        navigation.setContentsMargins(0, 0, 0, 0)
+        navigation.setSpacing(6)
+        scene_layout.addWidget(navigation_bar)
+        self.point_label = W.QLabel()
+        self.point_label.setAlignment(C.Qt.AlignLeft | C.Qt.AlignVCenter)
+        self.scene_note.setMinimumWidth(0)
+        self.scene_note.setSizePolicy(W.QSizePolicy.Ignored, W.QSizePolicy.Preferred)
+        navigation.addWidget(self.scene_note, 1)
+        navigation.addWidget(self.point_label, 0, C.Qt.AlignVCenter)
         self.previous = W.QPushButton('‹'); self.previous.setFixedWidth(30)
-        self.previous.clicked.connect(lambda: self.select((self.selected-1)%len(self.layout_data['xyz']))); row.addWidget(self.previous)
-        row.addWidget(W.QLabel('Prev/Next'))
-        self.point_label = self.response_panel.point_label
+        self.previous.clicked.connect(lambda: self.select((self.selected-1)%len(self.layout_data['xyz']))); navigation.addWidget(self.previous)
+        navigation.addWidget(W.QLabel('Prev/Next'), 0, C.Qt.AlignVCenter)
         self.next = W.QPushButton('›'); self.next.setFixedWidth(30)
-        self.next.clicked.connect(lambda: self.select((self.selected+1)%len(self.layout_data['xyz']))); row.addWidget(self.next)
+        self.next.clicked.connect(lambda: self.select((self.selected+1)%len(self.layout_data['xyz']))); navigation.addWidget(self.next)
         reset = W.QPushButton('Reset axes'); reset.clicked.connect(self.response_panel.reset); row.addWidget(reset)
         gear = W.QToolButton(); gear.setText('\u2699'); reset.setFixedHeight(32); gear.setFixedHeight(32); gear.setToolTip('Response plot settings'); gear.clicked.connect(self.response_panel.settings); row.addWidget(gear)
         from hals_studio.ui.plotting.csd_plot import CSDPanel
@@ -193,9 +204,9 @@ class ExportWorkspace(W.QWidget):
         from hals_studio.ui.export_panes import ExportPane
         self.custom_panes = []
         for index, (splitter, position, native, title) in enumerate([
-                (self.rows[0], 1, self.response_panel, 'Export SPL / phase'),
-                (self.rows[1], 0, self.csd_panel, 'Export CSD / wavelet'),
-                (self.rows[1], 1, self.ir_panel, 'Export impulse response')]):
+                (self.rows[0], 1, self.response_panel, 'SPL / phase'),
+                (self.rows[1], 0, self.csd_panel, 'CSD / wavelet'),
+                (self.rows[1], 1, self.ir_panel, 'Impulse response')]):
             native.setParent(None)
             host = ExportPane(self, index, native, title)
             host.setMinimumWidth(0); host.setSizePolicy(W.QSizePolicy.Ignored, W.QSizePolicy.Preferred)
@@ -233,6 +244,7 @@ class ExportWorkspace(W.QWidget):
 
     def apply_config(self, config, refresh_metadata=True):
         self.loading = True; self.config = dict(deepcopy(DEFAULT_EXPORT), **deepcopy(config))
+        self.config['use_optimized_origins'] = True
         self.source.setText(self.config['coeff_path'])
         for key, widget in self.controls.items():
             value = self.config[key]
@@ -260,10 +272,25 @@ class ExportWorkspace(W.QWidget):
                                          f'Reference XYZ: {self.config["offset_x"]:g}, {self.config["offset_y"]:g}, {self.config["offset_z"]:g} mm')
         else: self.project_summary.setText('Standalone coefficients · open a project folder to load cabinet, driver and reference geometry.')
 
+    def update_wav_controls(self):
+        supported = self.config['mode'] != 'CTA-2034'
+        self.controls['generate_ir_files'].setEnabled(supported)
+        generating = supported and self.config['generate_ir_files']
+        for key, enabled in (
+                ('normalize_ir_set', generating),
+                ('ir_target_peak_dbfs', generating and self.config['normalize_ir_set'])):
+            control = self.controls[key]
+            control.setEnabled(enabled)
+            label = self.forms['Output'].labelForField(control)
+            if label is not None:
+                label.setEnabled(enabled)
+
     def change(self, key, value):
         if self.loading: return
         self.config[key] = value
-        if key in ('output_dir', 'frd_prefix', 'generate_ir_files'): return
+        if key in ('output_dir', 'frd_prefix', 'generate_ir_files', 'normalize_ir_set', 'ir_target_peak_dbfs'):
+            self.update_wav_controls()
+            return
         if key == 'preview_smoothing': self.draw_response(); return
         if key in ('show_stage2_origin', 'stage2_origin_frequency_hz', 'dut_depth_x', 'offset_step_mm'):
             for axis in 'xyz': self.controls['offset_'+axis].setSingleStep(self.config['offset_step_mm'])
@@ -286,7 +313,7 @@ class ExportWorkspace(W.QWidget):
         self.forms['Geometry'].setRowVisible(self.controls['dist_mic'], not manual)
         self.forms['Geometry'].setRowVisible(self.manual_frame, manual)
         for key in ('dist_mic', 'zero_theta', 'zero_phi', 'offset_x', 'offset_y', 'offset_z'): self.controls[key].setEnabled(not manual)
-        self.controls['generate_ir_files'].setEnabled(c['mode'] != 'CTA-2034')
+        self.update_wav_controls()
         self.controls['ir_capture_padding_samples'].setEnabled(c['manual_ir_capture_padding'])
         for axis in 'xyz': self.controls['offset_'+axis].setSingleStep(c['offset_step_mm'])
         self.status.setText('Settings changed · response preview pending' if c['coeff_path'] else 'Choose coefficients or import a HALS project.')
@@ -467,11 +494,13 @@ class ExportWorkspace(W.QWidget):
         else: self.draw_response()
 
     def highlight(self):
-        point = self.layout_data['xyz'][self.selected]; radius = max(.2, self.config['dist_mic'])*.023
-        actor = self.plotter.renderer.actors.get('selected')
-        if actor is None:
-            actor = self.plotter.add_mesh(pv.Sphere(radius=1), name='selected', color='#7ae2b1', specular=.9, specular_power=25, reset_camera=False, pickable=False, render=False)
-        actor.SetScale(radius, radius, radius); actor.SetPosition(*point)
+        # Recolour the existing sphere rather than overlaying another marker.
+        actor = self.plotter.renderer.actors.get('points')
+        if actor is not None:
+            mesh = actor.mapper.dataset
+            colours = mesh['base_rgb'].copy()
+            colours[self.selected] = [255, 69, 69]
+            mesh['rgb'] = colours
         self.plotter.render(); name = self.layout_data['names'][self.selected]
         self.point_label.setText(f'{self.selected+1}/{len(self.layout_data["xyz"])} · {name}')
 
@@ -551,11 +580,17 @@ class ExportWorkspace(W.QWidget):
         self.config['plot_panes'] = [pane.state() for pane in self.custom_panes]
 
     def refresh_custom_panes(self):
+        left = self.custom_panes[2 if self.config['mode'] == 'CTA-2034' else 1]
+        if self.rows[1].widget(0) is not left:
+            sizes = self.rows[1].sizes()
+            self.rows[1].insertWidget(0, left)
+            self.rows[1].setSizes(sizes)
         for pane in self.custom_panes: pane.refresh()
         self.sync_plot_setup()
 
     def draw_response(self, *_):
         self.refresh_custom_panes()
+        if self.config['mode'] == 'CTA-2034': return
         if self.result is None or self.dirty: return
         result = self.result; f = result['freqs']
         if 'preview_point' in result: data = result['preview_point']

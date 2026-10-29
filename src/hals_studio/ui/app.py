@@ -143,9 +143,9 @@ class ReconstructionDialog(W.QDialog):
         self.mode = combo(["Internal", "External", "Total"])
         self.fmin, self.fmax = number(20, 1, 100000, " Hz", 0), number(20000, 2, 200000, " Hz", 0)
         self.padding = number(50, 0, 100000, " samples", 0)
-        self.origins = W.QCheckBox("Use frequency-dependent Stage 2 origins")
-        self.origins.setChecked(True)
-        self.offsets = [number(0, -100, 100, " m", 4) for _ in range(3)]
+        self.manual_padding = W.QCheckBox('Edit capture padding')
+        self.padding.setEnabled(False)
+        self.manual_padding.toggled.connect(self.padding.setEnabled)
         with ac.h5py.File(path, "r") as h:
             self.native_freqs = h["freqs"][:]
         available = self.native_freqs[np.isfinite(self.native_freqs) & (self.native_freqs > 0)]
@@ -158,7 +158,7 @@ class ReconstructionDialog(W.QDialog):
         self.fmax.setValue(float(np.ceil(available.max())))
         for title, obj in (("Observation radius", self.radius), ("Angular sampling", self.step), ("Frequency sampling", self.bins),
                            ("Field component", self.mode), ("Lowest frequency", self.fmin), ("Highest frequency", self.fmax),
-                           ("Capture padding to remove", self.padding), ("", self.origins)):
+                           ("", self.manual_padding), ("Capture padding to remove", self.padding)):
             form.addRow(title, obj)
         self.sampling_note = label("", "muted")
         self.sampling_note.setWordWrap(True)
@@ -167,8 +167,6 @@ class ReconstructionDialog(W.QDialog):
         self.fmin.valueChanged.connect(self.update_sampling)
         self.fmax.valueChanged.connect(self.update_sampling)
         self.update_sampling()
-        for axis, obj in zip("XYZ", self.offsets):
-            form.addRow(f"Sphere centre {axis}", obj)
         note = label("Physical time of flight is retained. No microphone calibration or FRD level offset is applied.\nAll bins at 2° can require substantial RAM and reconstruction time.", "muted")
         note.setWordWrap(True)
         form.addRow(note)
@@ -181,8 +179,8 @@ class ReconstructionDialog(W.QDialog):
     def options(self):
         return dict(radius=self.radius.value(), step=[5, 10, 3, 2][self.step.currentIndex()],
                     bins=self.bin_counts[self.bins.currentIndex()], mode=self.mode.currentText(),
-                    fmin=self.fmin.value(), fmax=self.fmax.value(), padding=int(self.padding.value()),
-                    origins=self.origins.isChecked(), offset=[w.value() for w in self.offsets])
+                    fmin=self.fmin.value(), fmax=self.fmax.value(), padding=int(self.padding.value()) if self.manual_padding.isChecked() else 50,
+                    manual_padding=self.manual_padding.isChecked(), origins=True, offset=[0., 0., 0.])
 
     def update_sampling(self):
         try:

@@ -42,20 +42,12 @@ class PlotPane(W.QFrame):
         self.last_render = None
         self.setMinimumSize(230, 180)
         layout = W.QVBoxLayout(self); layout.setContentsMargins(5, 5, 5, 5); layout.setSpacing(4)
-        self.title = W.QPushButton(); self.title.setStyleSheet('text-align:left; color:#54d9e8; border-radius:4px; padding:8px;')
-        self.title.setSizePolicy(W.QSizePolicy.Ignored, W.QSizePolicy.Fixed)
-        self.title.setFixedHeight(32)
-        self.title.clicked.connect(lambda: self.menu(self.title.mapToGlobal(self.title.rect().bottomLeft())))
-        header = W.QHBoxLayout(); header.setContentsMargins(0, 0, 0, 0); header.setSpacing(4)
-        header.addWidget(self.title, 1)
-        self.cursor_label = W.QLabel(); self.cursor_label.setStyleSheet('font-size:11px; padding:0 5px;')
-        self.cursor_label.setFixedWidth(220)
-        self.cursor_label.setAlignment(C.Qt.AlignRight | C.Qt.AlignVCenter)
-        header.addWidget(self.cursor_label)
-        reset = W.QPushButton('Reset axes'); reset.clicked.connect(self.reset_zoom); header.addWidget(reset)
-        self.gear = W.QToolButton(); self.gear.setText('⚙'); self.gear.setToolTip('Plot settings')
-        reset.setFixedHeight(32); self.gear.setFixedHeight(32); self.gear.setAccessibleName('Plot settings'); self.gear.clicked.connect(self.setup); header.addWidget(self.gear)
-        layout.addLayout(header)
+        from hals_studio.ui.plot_header import PlotHeader
+        self.header = PlotHeader(
+            lambda: self.menu(self.title.mapToGlobal(self.title.rect().bottomLeft())),
+            self.reset_zoom, self.setup)
+        self.title, self.cursor_label, self.gear = self.header.title, self.header.readout, self.header.gear
+        layout.addWidget(self.header)
         self.stack = W.QStackedWidget(); layout.addWidget(self.stack)
         self.chart = Chart(); self.chart_frame = W.QWidget(); chart_row = W.QHBoxLayout(self.chart_frame)
         chart_row.setContentsMargins(0, 0, 0, 0); chart_row.setSpacing(0); chart_row.addWidget(self.chart, 1)
@@ -104,8 +96,6 @@ class PlotPane(W.QFrame):
     def menu(self, position):
         self.owner.active_plot = self
         menu = PlotMenu(self)
-        if hasattr(self, 'extra_menu'):
-            self.extra_menu(menu); menu.addSeparator()
         self._magnitude_actions = {}
         exclusive = G.QActionGroup(menu); exclusive.setExclusive(True)
         for category, items in GROUPS.items():
@@ -118,11 +108,6 @@ class PlotPane(W.QFrame):
                     action = sub.addAction(title); action.setCheckable(True)
                     self._magnitude_actions.setdefault(key, []).append(action)
                     action.setChecked(key in selected)
-                    action.triggered.connect(lambda checked=False, k=key: self.toggle_magnitude(k))
-                cea_menu = sub.addMenu('CEA2034 magnitudes')
-                for key, title in GROUPS['CEA2034'].items():
-                    action = cea_menu.addAction(title); action.setCheckable(True); action.setChecked(key in selected)
-                    self._magnitude_actions.setdefault(key, []).append(action)
                     action.triggered.connect(lambda checked=False, k=key: self.toggle_magnitude(k))
                 sub.addAction('Clear magnitudes', self.clear_magnitudes)
                 sub.addSection('Phase')
@@ -215,13 +200,16 @@ class PlotPane(W.QFrame):
             self.config['smoothing'] = 'None'
         self.config['kind'] = kind
         self.config['magnitude_selection'] = None
+        if kind in GROUPS['CEA2034']: self.config['phase_mode'] = 'None'
         if kind in ('phase', 'minimum'): self.config['phase_mode'] = 'Minimum phase' if kind == 'minimum' else 'Total phase'
         self.invalidate(); self.owner.rebuild_pins(); self.owner.schedule()
 
     def toggle_magnitude(self, kind):
         if self.config['kind'] not in MAGNITUDE_KINDS:
             self.config['smoothing'] = 'None'
-        selected = selected_magnitudes(self.config)
+        selected = [key for key in selected_magnitudes(self.config)
+                    if (key in GROUPS['CEA2034']) == (kind in GROUPS['CEA2034'])]
+        if kind in GROUPS['CEA2034']: self.config['phase_mode'] = 'None'
         if kind in selected: selected.remove(kind)
         else:
             selected.append(kind)
@@ -242,6 +230,8 @@ class PlotPane(W.QFrame):
             for action in actions: action.setChecked(kind in selected)
 
     def select_phase(self, mode):
+        if mode != 'None' and self.config['kind'] in GROUPS['CEA2034']:
+            self.config['kind'] = 'probe'; self.config['magnitude_selection'] = ['probe']
         self.config['phase_mode'] = mode
         if self.config['kind'] in MAGNITUDE_KINDS:
             self.config['magnitude_selection'] = selected_magnitudes(self.config)

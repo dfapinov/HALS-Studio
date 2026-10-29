@@ -93,11 +93,12 @@ class FDWView:
         f_trans = m['f_trans']
         f_anchor = m.get('f_lf_anchor', 200.0)
         
-        self.ax1.axvspan(f_trans, fs/2, color='#E0F7FA', alpha=0.5)
-        self.ax1.text(1, 1.02, "Reflection free range",
-                     color='#006064', fontsize=9, fontweight='bold', va='bottom', ha='right',
-                     transform=self.ax1.transAxes,
-                     bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'), zorder=20)
+        if m.get('rft_supplied', True):
+            self.ax1.axvspan(f_trans, fs/2, color='#E0F7FA', alpha=0.5)
+            self.ax1.text(1, 1.02, "Reflection free range",
+                         color='#006064', fontsize=9, fontweight='bold', va='bottom', ha='right',
+                         transform=self.ax1.transAxes,
+                         bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'), zorder=20)
         
         cmap = plt.get_cmap('YlOrRd')
         num_octaves = np.log2(plot_f_max / plot_f_min) if plot_f_max > plot_f_min else 1
@@ -123,7 +124,7 @@ class FDWView:
         if len(valid_centers) > 0: boundaries.extend(valid_centers[1:])
         boundaries.append(plot_f_min)
         
-        for k in range(len(boundaries) - 1):
+        for k in range(len(boundaries) - 1 if m.get('rft_supplied', True) else 0):
             high_bound, low_bound = boundaries[k], boundaries[k+1]
             f_mid = np.sqrt(high_bound * low_bound)
             norm_pos = np.log2(f_trans / f_mid) / num_octaves

@@ -80,6 +80,7 @@ class PlotInteraction(C.QObject):
             stored = self.pane.config.get('polar_rotation' if self.pane.config['kind'] == 'polar' else 'globe_rotation', 0.)
             rotations = dict(stored) if isinstance(stored, dict) else {'horizontal': float(stored), 'vertical': float(stored)}
             for candidate in self.axes:
+                if candidate not in axes_keys: continue
                 center = candidate.transAxes.transform((.5, .5))
                 dx, dy = event.x-center[0], event.y-center[1]
                 radius = min(candidate.bbox.width, candidate.bbox.height)/2

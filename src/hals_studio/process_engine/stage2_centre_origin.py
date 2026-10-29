@@ -426,6 +426,41 @@ def run_simplex_descent_3d(start_point, context, runtime=None
 # 3. 3D LANDSCAPE GENERATOR (WITH ETA)
 # =============================================================================
 
+def estimate_hf_seed(freqs, spectra, keys, geometry, cfg, end_hz, runtime):
+    """One coarse cylinder scan, followed by refinement of its best candidates."""
+    from .origin_scan_region import measurement_cylinder
+    candidates = np.flatnonzero((freqs > 0) & (freqs <= min(float(end_hz), 20000.0)))
+    if not len(candidates):
+        raise ValueError('No positive frequency bin at or below the HF seed scan limit.')
+    index = candidates[-1]
+    frequency = float(freqs[index])
+    scan_cfg = dict(cfg, **measurement_cylinder(geometry[0], geometry[1]))
+    scan_cfg['grid_res_mm'] = 20.0
+    order = get_order_for_frequency(frequency, cfg['manual_order_table'],
+                                    cfg['target_n_max_origins'], cfg['N_grid'])
+    context = ([(frequency, 2 * np.pi * frequency / cfg['speed_of_sound'],
+                 np.array([spectra[key][index] for key in keys]))], *geometry, order, scan_cfg)
+    runtime.print(f'No tweeter seed supplied: scanning measurement cylinder at {frequency:g} Hz, 20 mm spacing.')
+    x, y, z, grid = generate_3d_landscape_volumetric(context, runtime=runtime)
+    finite = np.flatnonzero(np.isfinite(grid.ravel()))
+    if not len(finite):
+        raise ValueError('HF seed scan found no valid origin inside the measurement cylinder.')
+    best = None
+    for flat in finite[np.argsort(grid.ravel()[finite])[:3]]:
+        runtime.check()
+        i, j, k = np.unravel_index(flat, grid.shape)
+        point, _ = run_simplex_descent_3d((x[i], y[j], z[k]), context, runtime=runtime)
+        error = solve_physics_3d(*point, context)
+        if np.isfinite(error) and (best is None or error < best[0]):
+            best = error, point
+    if best is None:
+        raise ValueError('HF seed refinement found no valid origin.')
+    cfg['estimated_tweeter_mm'] = np.asarray(best[1]).tolist()
+    cfg['seed_scan_frequency_hz'] = frequency
+    runtime.print(f'Estimated tweeter seed (mm): {cfg["estimated_tweeter_mm"]}')
+    return best[1]
+
+
 def _worker_landscape_3d(args):
     x, y, z, context = args
     return solve_physics_3d(x, y, z, context)
@@ -446,10 +481,18 @@ def generate_3d_landscape_volumetric(context, runtime=None
     x_vals = np.arange(cfg['x_bounds'][0], cfg['x_bounds'][1] + res, res)
     y_vals = np.arange(cfg['y_bounds'][0], cfg['y_bounds'][1] + res, res)
     z_vals = np.arange(cfg['z_bounds'][0], cfg['z_bounds'][1] + res, res)
+    if 'scan_radius_mm' in cfg:
+        def cylinder_axis(axis):
+            lo, hi = cfg[axis + '_bounds']
+            return np.unique(np.r_[np.arange(lo, hi, res), hi, np.clip(0., lo, hi)])
+        x_vals, y_vals, z_vals = (cylinder_axis(axis) for axis in 'xyz')
     
     X_mesh, Y_mesh, Z_mesh = np.meshgrid(x_vals, y_vals, z_vals, indexing='ij')
-    pixels = [(X_mesh.flat[i], Y_mesh.flat[i], Z_mesh.flat[i], context) for i in range(X_mesh.size)]
-    grid = np.zeros(X_mesh.shape)
+    from .origin_scan_region import inside_scan
+    indices = [i for i in range(X_mesh.size)
+               if inside_scan((X_mesh.flat[i], Y_mesh.flat[i], Z_mesh.flat[i]), cfg)]
+    pixels = [(X_mesh.flat[i], Y_mesh.flat[i], Z_mesh.flat[i], context) for i in indices]
+    grid = np.full(X_mesh.shape, np.inf)
     
     total_pixels = len(pixels)
     runtime.print(f"      -> Computations to process: {total_pixels:,}")
@@ -457,7 +500,7 @@ def generate_3d_landscape_volumetric(context, runtime=None
     from hals_studio.process_engine.process_progress import collect_tasks
     def collect(pool):
         values = runtime.collect(pool, _worker_landscape_3d, pixels, 'Stage 2 grid scan', chunksize=200)
-        grid[:] = np.asarray(values).reshape(grid.shape)
+        grid.flat[indices] = np.asarray(values)
     if cfg.get('use_process_pool', True):
         with shared_pool or get_context('spawn').Pool(grid_workers) as pool:
             collect(pool)
@@ -739,6 +782,12 @@ def run_origin_search(
             raise ValueError("Stage 2 frequency range produced no probe frequency for speed optimization.")
         raise ValueError("Stage 2 frequency range produced no origin search frequencies.")
 
+    automatic_seed = tweeter_coords_mm is None
+    if automatic_seed:
+        tweeter_coords_mm = estimate_hf_seed(f_all, d_dict, keys, (r_arr, th_arr, ph_arr),
+                                            cfg, freq_end_hz, runtime)
+    lf_seed = (0.0, 0.0, 0.0) if automatic_seed else tweeter_coords_mm
+
     if optimize_speed_of_sound:
         speed_probe_bins = select_speed_of_sound_probe_bins(
             f_all,
@@ -829,7 +878,7 @@ def run_origin_search(
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             future_hf = executor.submit(sweeper.run_dynamic_branch, "HF -> LF", sweeper.get_next_hf, tweeter_coords_mm)
-            future_lf = executor.submit(sweeper.run_dynamic_branch, "LF -> HF", sweeper.get_next_lf, tweeter_coords_mm)
+            future_lf = executor.submit(sweeper.run_dynamic_branch, "LF -> HF", sweeper.get_next_lf, lf_seed)
             
             hf_results = future_hf.result()
             lf_results = future_lf.result()

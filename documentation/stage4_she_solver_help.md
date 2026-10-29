@@ -131,3 +131,23 @@ It might seem counter-intuitive to perform sound field separation on data that h
 To ensure a stable coherent reconstruction, it is most robust to fit the full frequency range using the **Dual Basis ($h_n^{(2)}$ and $j_n$)**, performing sound field separation, even if the windowed RFT range appears extremely clean and high in SNR.
 
 In real-world applications, this means your External Field will not drop to theoretical zero in the RFT range; instead, it will sit at a realistic baseline representing the ambient background noise floor of your environment. This provides a more accurate, physically grounded internal source field that remains stable across all propagation distances.
+
+
+### Opening Analysis after the solve
+
+Stage 4 and Analysis automatically use optimized Stage 2 origins when available,
+falling back to the original origins otherwise.
+
+Stage 4 saves the coefficients without reconstructing an Analysis sphere.
+Choose the Analysis workspace or the Analysis button below the Stage 4 results
+when you are ready to inspect them. The first analysis of newly generated
+coefficients opens Analysis Import Settings so you can choose the sphere radius,
+angular sampling, frequency bins and other reconstruction options. Cancelling
+leaves reconstruction unstarted. Returning to an already analysed revision reuses
+its sphere; running Stage 4 again requires a new first-use choice.
+
+Export evaluates the coefficients directly and does not need an Analysis sphere.
+
+The Analysis sphere is always centred at (0, 0, 0). Capture padding defaults to
+50 samples; enable **Edit capture padding** in Analysis Import Settings only
+when you need to change the number of samples removed.

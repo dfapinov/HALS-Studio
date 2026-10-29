@@ -7,7 +7,7 @@ from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
 from PySide6.QtWidgets import QVBoxLayout, QWidget
-from hals_studio.analysis.acoustics import directions, phase_delay, beamwidth
+from hals_studio.analysis.acoustics import directions
 
 BG = "#101c28"
 FG = "#c2d1df"
@@ -201,33 +201,15 @@ def response_directions(sphere, plane, extent, step, symmetric=False, direction=
     return result
 
 
-def draw_polars(chart, sphere, rel, i, dynamic_range):
-    chart.fig.clear()
-    chart.fig.get_layout_engine().set(rect=(0, 0, 1, 1))
-    angles, h, v = sphere.cuts(rel)
-    theta = np.deg2rad(np.r_[angles, angles[0] + 360])
-    side_by_side = chart.width() > chart.height() * 1.6
-    compact = chart.height() < 320 and not side_by_side
-    shared = chart.fig.add_subplot(111, projection="polar") if compact else None
-    for j, (values, title, color) in enumerate(((h, "HORIZONTAL  /  XY", CYAN), (v, "VERTICAL  /  XZ", AMBER))):
-        ax = shared if compact else chart.fig.add_subplot(1 if side_by_side else 2, 2 if side_by_side else 1, j + 1, projection="polar")
-        r = np.clip(np.r_[values[i], values[i, 0]], -dynamic_range, 6) + dynamic_range
-        ax.plot(theta, r, color=color, lw=1.6, label="H" if j == 0 else "V")
-        ax.fill(theta, r, color=color, alpha=.10)
-        ax.set_theta_zero_location("N")
-        ax.set_theta_direction(-1)
-        ax.set_ylim(0, dynamic_range + 3)
-        ticks = np.arange(0, dynamic_range + .1, 12)
-        ax.set_yticks(ticks, [f"{t-dynamic_range:g}" for t in ticks], fontsize=7)
-        ax.set_xticks(np.deg2rad([0, 90, 180, 270]), ["0°", "+90°", "180°", "−90°"], fontsize=8)
-        ax.grid(alpha=.6, linewidth=.5)
-        ax.set_title("POLAR CUTS" if compact else title, fontsize=9, color=FG if compact else color, pad=16)
-    if compact:
-        shared.legend(loc="upper right", fontsize=7, ncol=2, bbox_to_anchor=(1.3, 1.25))
-    chart.done()
 
 
 def draw_zoomable_polars(chart, sphere, rel, i, dynamic_range, pane=None):
+    angles, h, v = sphere.cuts(rel)
+    draw_polar_cuts(chart, {'horizontal': (angles, h), 'vertical': (angles, v)},
+                    i, dynamic_range, pane=pane)
+
+
+def draw_polar_cuts(chart, cuts, i, dynamic_range, pane=None, *, close_curves=True, show_points=False):
     """Polar cuts on Cartesian axes so cursor-centred zoom also pans correctly."""
     from matplotlib.patches import Circle
     from matplotlib.transforms import Affine2D
@@ -235,21 +217,29 @@ def draw_zoomable_polars(chart, sphere, rel, i, dynamic_range, pane=None):
         pane._rotation_axes = {}; pane._rotation_handles = {}
         pane._rotation_handle_artists = {}; pane._polar_transforms = {}
     chart.fig.clear(); chart.fig.set_layout_engine('constrained'); chart.fig.get_layout_engine().set(rect=(.08, .08, .84, .84))
-    angles, h, v = sphere.cuts(rel)
-    theta = np.deg2rad(np.r_[angles, angles[0]+360])
     horizontal = chart.width() > chart.height()*1.3
-    for j, (values, title, color) in enumerate(((h, 'HORIZONTAL / XY', CYAN), (v, 'VERTICAL / XZ', AMBER))):
+    for j, (key, title, color) in enumerate((('horizontal', 'HORIZONTAL / XY', CYAN), ('vertical', 'VERTICAL / XZ', AMBER))):
+        angles, values = cuts[key]
         ax = chart.fig.add_subplot(1 if horizontal else 2, 2 if horizontal else 1, j+1)
-        radius = np.clip(np.r_[values[i], values[i, 0]], -dynamic_range, 6)+dynamic_range
-        ax.plot(radius*np.sin(theta), radius*np.cos(theta), color=color, lw=1.5)
-        ax.fill(radius*np.sin(theta), radius*np.cos(theta), color=color, alpha=.1)
+        if len(angles) < 2:
+            ax.set_axis_off(); ax.set_title(title, color=color, fontsize=9)
+            ax.text(.5, .5, 'No '+key+' sweep data', transform=ax.transAxes, ha='center', va='center')
+            continue
+        # Positive angles follow the top/side views of the 3D field.
+        theta = -np.deg2rad(np.r_[angles, angles[0]+360] if close_curves else angles)
+        samples = np.r_[values[i], values[i, 0]] if close_curves else values[i]
+        radius = np.clip(samples, -dynamic_range, 6)+dynamic_range
+        ax.plot(radius*np.sin(theta), radius*np.cos(theta), color=color, lw=1.5,
+                marker='.' if show_points else None, gid='directivity-trace')
+        if close_curves or angles[-1]-angles[0] >= 359.999:
+            ax.fill(radius*np.sin(theta), radius*np.cos(theta), color=color, alpha=.1)
         for level in np.arange(0, dynamic_range+.01, 12):
             r = dynamic_range-level
             if r > 0:
                 ax.add_patch(Circle((0, 0), r, facecolor='none', edgecolor='#385061', lw=.5))
                 ax.text(.7, r, f'{-level:g}', color='#8ca4b8', fontsize=7, va='top', clip_on=True)
         for angle, text in [(0, '0°'), (90, '+90°'), (180, '180°'), (270, '−90°')]:
-            rad = np.deg2rad(angle)
+            rad = -np.deg2rad(angle)
             ax.plot([0, dynamic_range*np.sin(rad)], [0, dynamic_range*np.cos(rad)], color='#385061', lw=.5)
             ax.text((dynamic_range+4)*np.sin(rad), (dynamic_range+4)*np.cos(rad), text,
                     ha='center', va='center', color='#8ca4b8', fontsize=8, clip_on=True)
@@ -266,106 +256,4 @@ def draw_zoomable_polars(chart, sphere, rel, i, dynamic_range, pane=None):
             add_rotation_handle(pane, ax, rotation)
         ax.set_xlim(-dynamic_range-9, dynamic_range+9); ax.set_ylim(-dynamic_range-9, dynamic_range+9)
         ax.set_aspect('equal', adjustable='box'); ax.set_axis_off(); ax.set_title(title, color=color, fontsize=9)
-    chart.done()
-
-
-def draw_response(chart, sphere, levels, i, selected, offset=0, comparison=None,
-                  mode="Overview", extent=90, step=10, symmetric=False, dynamic_range=36):
-    chart.fig.clear()
-    if "polar" in mode.lower():
-        angles, h, v = sphere.cuts(sphere.relative(levels, "On axis"))
-        ax = chart.fig.add_subplot(111, projection="polar")
-        cut = h if mode.startswith("Horizontal") else v
-        theta = np.deg2rad(np.r_[angles, angles[0]+360])
-        values = np.maximum(np.r_[cut[i], cut[i, 0]], -dynamic_range) + dynamic_range
-        ax.plot(theta, values, color=CYAN, lw=1.5)
-        ax.fill(theta, values, color=CYAN, alpha=.15)
-        ax.set_theta_zero_location("N")
-        ax.set_theta_direction(-1)
-        ax.set_ylim(0, dynamic_range+3)
-        ax.set_thetamin(-extent)
-        ax.set_thetamax(extent)
-        ax.set_yticks(np.linspace(0, dynamic_range, 4), [f"{v:g}" for v in np.linspace(-dynamic_range, 0, 4)])
-        ax.set_title(f"{mode.upper()} · {audio_frequency(sphere.freqs[i])} Hz · on-axis reference", fontsize=9)
-        chart.done()
-        return
-    ax = chart.fig.add_subplot(111)
-    if mode == "Overview":
-        curves = [(sphere.index(az, el), title, color) for az, el, title, color in
-                  [(0, 0, "On axis", CYAN), (30, 0, "H +30°", AMBER), (60, 0, "H +60°", "#a692ff"),
-                   (*selected, "Probe", "#7ae2b1")]]
-    else:
-        family = response_directions(sphere, mode.split()[0], extent, step, symmetric)
-        curves = [(idx, title, colormaps["turbo"](n/max(1, len(family)-1))) for n, (idx, title) in enumerate(family)]
-    for idx, title, color in curves:
-        ax.semilogx(sphere.freqs, levels[:, *idx] + offset, color=CYAN if title == "On axis" else color,
-                    lw=1.8 if title == "On axis" else 1.2, label=title)
-    if comparison:
-        ax.semilogx(comparison.freqs, comparison.levels()[:, *comparison.index()] + offset,
-                    color="#fa7b95", ls="--", lw=1, label="Reference on axis")
-    ax.axvline(sphere.freqs[i], color="white", alpha=.45, lw=.7)
-    style(ax, "RESPONSE TRACES" if mode == "Overview" else mode.upper(), ylabel="Level / dB")
-    top = max(np.max(levels), np.max(comparison.levels()) if comparison else -np.inf) + offset
-    ax.set_ylim(top - 65, top + 5)
-    ax.legend(loc="lower left", ncol=min(8, len(curves)+bool(comparison)), fontsize=7)
-    ax.margins(x=.01)
-    chart.done()
-
-
-def draw_maps(chart, sphere, levels, relative, i, display_range, cmap):
-    chart.fig.clear()
-    angles, h, v = sphere.cuts(relative)
-    for n, (cut, name) in enumerate(((h, "HORIZONTAL DIRECTIVITY"), (v, "VERTICAL DIRECTIVITY"))):
-        ax = chart.fig.add_subplot(2, 2, n + 1)
-        im = ax.pcolormesh(sphere.freqs, angles, cut.T, shading="auto", cmap=cmap, vmin=-display_range, vmax=0, rasterized=True)
-        ax.contour(sphere.freqs, angles, cut.T, levels=[-12, -6], colors=["#ffffff70", "#ffffff"], linewidths=.55)
-        ax.axvline(sphere.freqs[i], color=CYAN, lw=1, ls="--")
-        ax.set_ylim(-180, 180)
-        ax.set_yticks([-180, -90, 0, 90, 180])
-        style(ax, name, ylabel="Angle / degrees")
-        chart.fig.colorbar(im, ax=ax, label="Relative dB", pad=.025, shrink=.85)
-    angles, h, v = sphere.cuts(levels)
-    ax = chart.fig.add_subplot(2, 2, 3)
-    ax.semilogx(sphere.freqs, beamwidth(angles, h), color=CYAN, label="Horizontal")
-    ax.semilogx(sphere.freqs, beamwidth(angles, v), color=AMBER, label="Vertical")
-    ax.set_ylim(0, 360)
-    style(ax, "−6 dB BEAMWIDTH  /  FRONT LOBE", ylabel="Coverage / degrees")
-    ax.legend()
-    ax = chart.fig.add_subplot(2, 2, 4)
-    im = ax.pcolormesh(sphere.azimuth, sphere.elevation, relative[i], shading="auto", cmap=cmap,
-                       vmin=-display_range, vmax=0)
-    ax.set_xticks([-180, -90, 0, 90, 180])
-    ax.set_yticks([-90, -45, 0, 45, 90])
-    style(ax, f"SPHERICAL MAP  /  {sphere.freqs[i]:,.0f} Hz", "Azimuth / degrees", "Elevation / degrees")
-    chart.fig.colorbar(im, ax=ax, label="Relative dB", pad=.025, shrink=.85)
-    chart.done()
-
-
-def draw_analysis(chart, sphere, levels, selected, remove_ms, offset, comparison=None):
-    chart.fig.clear()
-    chart.fig.get_layout_engine().set(rect=(0, .035, 1, .965))
-    idx = sphere.index(*selected)
-    metrics = sphere.metrics(levels)
-    f = sphere.freqs
-    ax = chart.fig.add_subplot(221)
-    for name, label, color in (("on_axis", "On axis", CYAN), ("sphere_average", "Sphere energy average", AMBER)):
-        ax.semilogx(f, metrics[name] + offset, color=color, label=label)
-    ax.semilogx(f, levels[:, *idx] + offset, color=COLORS[3], label="Probe")
-    if comparison:
-        ax.semilogx(comparison.freqs, comparison.levels()[:, *comparison.index()] + offset, "--", color=COLORS[4], label="Reference axis")
-    style(ax, "MAGNITUDE & RADIATED ENERGY", ylabel="dB re HALS unit + offset")
-    ax.legend(fontsize=8)
-    phase, delay = phase_delay(f, sphere.pressure[:, *idx], remove_ms)
-    ax = chart.fig.add_subplot(222)
-    ax.semilogx(f, phase, color=COLORS[2], lw=1.2)
-    style(ax, "PROBE PHASE  /  UNWRAPPED", ylabel="Phase / degrees")
-    ax = chart.fig.add_subplot(223)
-    ax.semilogx(f, delay, color=COLORS[3], lw=1.2)
-    style(ax, "PROBE GROUP DELAY", ylabel="Delay / ms")
-    ax = chart.fig.add_subplot(224)
-    ax.semilogx(f, metrics["directivity_index"], color=AMBER, label="On-axis DI")
-    ax.axhline(0, color=FG, lw=.5)
-    style(ax, "DIRECTIVITY INDEX  /  FULL SPHERE", ylabel="DI / dB")
-    chart.fig.text(.5, .005, "Phase / delay use native complex bins. Sparse frequency sampling can alias phase; reconstruct all bins for delay work.",
-                   color="#91a8bb", ha="center", fontsize=8)
     chart.done()

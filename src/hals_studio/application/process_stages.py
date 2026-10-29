@@ -19,6 +19,8 @@ def prepare_measurements(request, runtime, out, filename, input_name):
     smooth = v["smoothing_oct_res"]
     result = fdwsmooth(
         input_dir=request["ir_folder"],
+        input_filenames=request.get("input_filenames"),
+        rft_supplied=request.get("rft_supplied", True),
         out_dir=str(out),
         output_filename=filename,
         fdw_rft_ms=float(request.get("rft_ms", v.get("fdw_rft_ms", 5.0))),
@@ -110,7 +112,8 @@ def search_origins(request, runtime, out, filename, input_name):
             input_dir_origins=str(out),
             input_filename_origins=filename,
             output_filename_origins=filename,
-            tweeter_coords_mm=tuple(float(v["tweeter_" + k]) for k in "xyz"),
+            tweeter_coords_mm=(tuple(float(v["tweeter_" + k]) for k in "xyz")
+                               if request.get("tweeter_supplied", True) else None),
             octave_resolution=1 / float(v["octave_resolution"]),
             freq_start_hz=float(v["freq_start_hz"]),
             freq_end_hz=float(v["freq_end_hz"]),
@@ -268,7 +271,7 @@ def solve_model(request, runtime, out, filename, input_name):
         noise_floor_max_db=float(v["noise_floor_max_db"]),
         max_lambda=float(v["max_lambda"]) if v["enable_regularization"] else 0.0,
         condition_metrics=True,
-        use_optimized_origins=v["use_optimized_origins"],
+        use_optimized_origins=True,
         save_to_disk=True,
         speed_of_sound=343.0,
         jobs=None,

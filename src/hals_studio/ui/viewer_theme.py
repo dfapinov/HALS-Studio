@@ -147,6 +147,7 @@ def apply_theme(owner, name):
     owner.refresh()
     export = owner.export_workspace
     if export:
-        export.response_panel.key = None; export.ir_panel.key = None; export.draw_response()
+        for pane in export.custom_panes: pane.invalidate()
+        export.draw_response()
         scene_theme(export.plotter); export.plotter.render()
     if getattr(owner,'process_workspace',None):owner.process_workspace.draw()

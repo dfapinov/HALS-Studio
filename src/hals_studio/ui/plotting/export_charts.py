@@ -2,16 +2,20 @@
 from copy import deepcopy
 import numpy as np
 from PySide6 import QtCore as C, QtWidgets as W
-from matplotlib.transforms import ScaledTranslation
-from matplotlib.patches import ConnectionPatch
 from hals_studio.ui.plotting.plots import Chart, style, audio_ticks, audio_frequency
 from matplotlib.ticker import FuncFormatter, MaxNLocator
-from hals_studio.ui.plotting.response_plot import phase_trace
+from hals_studio.ui.plotting.response_plot import phase_trace, response_axis, response_axis_handle, fit_annotation
 from hals_studio.ui.plotting.plot_interaction import PlotInteraction
+from hals_studio.ui.plotting.spl_cursor import SPLCursor, add_frequency_cursor
 from hals_studio.analysis.analysis_metrics import trend_fit
 
-RESPONSE_DEFAULT = dict(phase_height=.45, wrapped=True, fit=False, fit_low=100., fit_high=10000.,
-                        fit_curve='Selected mic', overlays=[], auto_axes=True, fmin=20., fmax=20000., ymin=-100., ymax=10., phase_auto=True, phase_min=-180., phase_max=180.)
+from hals_studio.ui.plotting.plot_settings import DEFAULT as PLOT_DEFAULTS
+
+RESPONSE_DEFAULT = {key: deepcopy(PLOT_DEFAULTS[key]) for key in (
+    'phase_height', 'wrapped', 'fit', 'fit_low', 'fit_high', 'auto_axes', 'fmin', 'fmax',
+    'ymin', 'ymax', 'phase_auto', 'phase_min', 'phase_max')}
+RESPONSE_DEFAULT.update(fit_curve='Selected mic', overlays=[])
+
 
 
 class ResponsePanel(W.QWidget):
@@ -19,8 +23,8 @@ class ResponsePanel(W.QWidget):
         super().__init__(); self.workspace = workspace; self.chart = Chart(); self.last_render = None
         self.config = deepcopy(RESPONSE_DEFAULT); self.background = None; self.key = None; self.artists = []
         self.latest = None; self.fit_result = None
+        self.cursor_frequency = None
         layout = W.QVBoxLayout(self); layout.setContentsMargins(5, 5, 5, 5)
-        self.point_label = W.QLabel()
         toolbar_widget = W.QWidget(); toolbar_widget.setStyleSheet('QPushButton, QToolButton { padding:7px 5px; } QLabel, QCheckBox { font-size:11px; }')
         self.toolbar = W.QHBoxLayout(toolbar_widget); self.toolbar.setContentsMargins(0,0,0,0); self.toolbar.setSpacing(4); layout.addWidget(toolbar_widget)
         self.add_overlay_button = W.QPushButton('Add overlay'); self.add_overlay_button.clicked.connect(self.add_overlay); self.toolbar.addWidget(self.add_overlay_button)
@@ -34,14 +38,35 @@ class ResponsePanel(W.QWidget):
             spin.setValue(self.config[key]); spin.valueChanged.connect(lambda value, key=key: self.set_fit_limit(key, value))
             self.fit_limits[key] = spin; self.toolbar.addWidget(spin)
         self.toolbar.addStretch()
+        self.cursor_label = W.QLabel(); self.cursor_label.setFixedWidth(220); self.toolbar.addWidget(self.cursor_label)
+        self.cursor = SPLCursor(self, self.cursor_label, lambda: self.cursor_frequency)
         layout.addWidget(self.chart, 1)
         self.note = W.QLabel('Select coefficients to preview the microphone response.'); self.note.setStyleSheet('color:#849eb1;font-size:10px;padding:3px;'); layout.addWidget(self.note)
         self.interaction = PlotInteraction(self)
+        self.chart.canvas.mpl_connect('button_press_event', self.select_frequency)
         self.chart.canvas.mpl_connect('draw_event', self.capture)
         self.chart.canvas.mpl_connect('resize_event', self.resize_chart)
         self.chart.canvas.setContextMenuPolicy(C.Qt.CustomContextMenu)
         self.chart.canvas.customContextMenuRequested.connect(self.context)
         self.chart.fig.add_subplot().set_axis_off(); self.chart.done()
+
+    def select_frequency(self, event):
+        if self.latest is None or event.button != 1 or event.inaxes not in (self.ax, self.phase_ax): return
+        if event.xdata is None or self.interaction.on_handle(event): return
+        if any(ax.get_legend() is not None and ax.get_legend().contains(event)[0] for ax in (self.ax, self.phase_ax)): return
+        self.cursor_frequency = float(event.xdata)
+        self.update_cursor()
+        if self.background is not None: self.blit()
+        else: self.chart.canvas.draw_idle()
+
+    def update_cursor(self):
+        self.frequency_marker.set_visible(self.cursor_frequency is not None)
+        if self.cursor_frequency is None: return
+        frequencies = np.asarray(self.latest[0])
+        index = int(np.argmin(abs(np.asarray(frequencies)-self.cursor_frequency)))
+        frequency = frequencies[index]
+        self.frequency_marker.set_xdata([frequency, frequency])
+        self.cursor.readout(float(frequency))
 
     def set_fit_limit(self, key, value):
         self.sync(); self.config[key] = value; self.reset()
@@ -107,30 +132,24 @@ class ResponsePanel(W.QWidget):
         if rebuild:
             self.artists = []; self.background = None; self.interaction.begin(key)
             fig.clear(); fig.set_layout_engine(None)
-            self.ax = fig.add_subplot(); self.phase_ax = fig.add_axes(self.ax.get_position(), sharex=self.ax, frameon=False)
-            self.phase_ax.set_in_layout(False); self.phase_ax.patch.set_visible(False); self.phase_ax.xaxis.set_visible(False)
-            self.phase_ax.yaxis.tick_right(); self.phase_ax.yaxis.set_label_position('right')
-            for spine in self.phase_ax.spines.values(): spine.set_visible(False)
-            self.phase_ax.tick_params(axis='y', colors='#baacf8', labelsize=8)
-            self.phase_ax.set_ylabel('Total phase / °', color='#baacf8', fontsize=8); self.phase_ax.yaxis.set_major_locator(MaxNLocator(5))
+            self.ax = fig.add_subplot()
+            self.phase_ax = response_axis(self.ax, 'Phase / degrees', '#baacf8')
             style(self.ax, '', ylabel='Level / dB + FRD offset')
             self.lines = []
             colors = ['#47d7ec', '#ffba68', '#7ae2b1', '#fa7b95', '#80baff']
             for i, (name, f, mag, px, py) in enumerate(values):
                 color = colors[i % len(colors)]
                 line, = self.ax.plot(f, mag, color=color, lw=1.3, label=name)
-                phase_line, = self.phase_ax.plot(px, py, color='#baacf8' if i == 0 else color, alpha=.8, lw=.85)
+                phase_line, = self.phase_ax.plot(px, py, color='#baacf8' if i == 0 else color, alpha=.8, lw=.85, label=name+' total phase')
                 self.lines.append((line, phase_line)); self.artists.extend([line, phase_line])
             self.ax.legend(fontsize=7, loc='lower left' if c['fit'] else 'upper right')
             self.fit_line, = self.ax.plot([], [], '--', color='#f3e69b', lw=1.6)
             self.fit_text = self.ax.text(.02, .97, '', transform=self.ax.transAxes, va='top', fontsize=8, color='#f3e69b',
                                          bbox=dict(facecolor='#101c28', alpha=.85, edgecolor='none'))
             self.artists.extend([self.fit_line, self.fit_text])
-            a = self.phase_ax.transAxes + ScaledTranslation(5/72, 7/72, fig.dpi_scale_trans)
-            b = self.phase_ax.transAxes + ScaledTranslation(33/72, 7/72, fig.dpi_scale_trans)
-            self.phase_ax.add_artist(ConnectionPatch((1, 1), (1, 1), coordsA=a, coordsB=b, color='#baacf8', linewidth=2.5, clip_on=False))
-            self.phase_ax.text(1, 1, '↕ phase', transform=self.phase_ax.transAxes+ScaledTranslation(5/72, 12/72, fig.dpi_scale_trans),
-                               color='#baacf8', ha='left', va='bottom', fontsize=8, clip_on=False)
+            self.frequency_marker = add_frequency_cursor(self.ax, frequencies[0], visible=False)
+            self.artists.append(self.frequency_marker)
+            response_axis_handle(self.phase_ax, 'Phase')
             self.ax.set_xlim(frequencies[0], frequencies[-1]); self.ax.set_xticks(audio_ticks(frequencies[0], frequencies[-1]))
             self.ax.xaxis.set_major_formatter(FuncFormatter(lambda value, _: audio_frequency(value)))
             self.phase_ax.set_ylim(-180, 180) if c['wrapped'] else self.phase_ax.autoscale_view()
@@ -164,10 +183,11 @@ class ResponsePanel(W.QWidget):
             try:
                 fit = trend_fit(selected[1], selected[2], c['fit_low'], c['fit_high']); self.fit_result = fit
                 self.fit_line.set_data(fit['freqs'], fit['line'])
-                self.fit_text.set_text(f'{selected[0]}: {fit["slope"]:+.2f} dB/oct · ±{fit["deviation"]:.2f} dB max\n'
-                                       f'{audio_frequency(fit["low"])}–{audio_frequency(fit["high"])} Hz · RMS {fit["rms"]:.2f} dB')
+                self.fit_text.set_text(fit_annotation(selected[0], fit))
             except ValueError as exc: self.fit_line.set_visible(False); self.fit_text.set_text(str(exc))
         self.note.setText(label+' · Total phase · drag the purple handle to resize its axis')
+        self.cursor.bind(self.ax, self.phase_ax)
+        self.update_cursor()
         if not needs_draw and self.background is not None: self.blit()
         else: self.background = None; self.chart.done()
 
@@ -198,24 +218,13 @@ class ResponsePanel(W.QWidget):
         low, high = W.QDoubleSpinBox(), W.QDoubleSpinBox()
         for widget, key, label in [(low, 'fit_low', 'Fit from / Hz'), (high, 'fit_high', 'Fit to / Hz')]:
             widget.setRange(.1, 100000); widget.setValue(self.config[key]); form.addRow(label, widget)
-        # Use the Analysis schema and editors so labels, units and limits stay identical.
-        from hals_studio.ui.plotting.plot_settings import SPECS
-        from hals_studio.ui.pane_setup import editor
-        axis_values = {key: self.config[key] for key in ('auto_axes', 'fmin', 'fmax', 'ymin', 'ymax', 'phase_auto', 'phase_min', 'phase_max')}
-        axis_controls = {}
-        def axis_changed(key, value):
-            axis_values[key] = value
-            manual = 'auto_axes' if key in ('fmin', 'fmax', 'ymin', 'ymax') else 'phase_auto' if key in ('phase_min', 'phase_max') else None
-            if manual:
-                axis_values[manual] = False
-                axis_controls[manual].setChecked(False)
-        for key, value in axis_values.items():
-            axis_controls[key] = editor(key, value, lambda value, key=key: axis_changed(key, value))
-            form.addRow(SPECS[key][0], axis_controls[key])
+        from hals_studio.ui.pane_setup import axis_editors, valid_axis_ranges
+        axis_values = axis_editors(form, self.config,
+            ('auto_axes', 'fmin', 'fmax', 'ymin', 'ymax', 'phase_auto', 'phase_min', 'phase_max'))
         actions = W.QDialogButtonBox(W.QDialogButtonBox.Ok | W.QDialogButtonBox.Cancel); form.addRow(actions)
         actions.accepted.connect(dialog.accept); actions.rejected.connect(dialog.reject)
         if dialog.exec() == W.QDialog.Accepted:
-            if axis_values['fmin'] >= axis_values['fmax'] or axis_values['ymin'] >= axis_values['ymax'] or axis_values['phase_min'] >= axis_values['phase_max']:
+            if not valid_axis_ranges(axis_values):
                 W.QMessageBox.warning(self, 'Axis limits', 'Each maximum must exceed its minimum.'); return
             self.config.update(axis_values)
             self.config.update(wrapped=wrapped.isChecked(), fit=fit.isChecked(), fit_low=low.value(), fit_high=high.value(), fit_curve=curve.currentText()); self.reset()
