@@ -25,18 +25,25 @@ try:
     for pane in export.custom_panes:
         pane.select('cli')
         assert pane.stack.currentWidget() is pane.cli
-        pane.select('analysis', 'probe')
+        pane.select('native')
     for pane in export.custom_panes:
         for kind in ('response', 'csd', 'impulse'): pane.select_native(kind)
-        pane.select('analysis', 'probe')
+        pane.select_directivity('polar')
     export.log.appendPlainText('Shared CLI output')
     assert all('Shared CLI output' in pane.cli.toPlainText() for pane in export.custom_panes)
     w.set_sphere(ac.demo()); w.refresh()
     saved = deepcopy(w.session_dict()['export_setup'])
-    assert all(s['mode'] == 'analysis' for s in saved['plot_panes'])
+    assert all(s['mode'] == 'directivity' and s['directivity_kind'] == 'polar' for s in saved['plot_panes'])
     for pane in export.custom_panes: pane.select('native')
     export.apply_config(saved)
-    assert all(p.mode == 'analysis' for p in export.custom_panes)
+    assert all(p.mode == 'directivity' and p.directivity_kind == 'polar' for p in export.custom_panes)
+    # Legacy Analysis panes migrate to each slot's native Export plot.
+    legacy = deepcopy(saved)
+    for state in legacy['plot_panes']:
+        state.update(mode='analysis', kind='probe')
+    export.apply_config(legacy)
+    assert all(p.mode == 'native' for p in export.custom_panes)
+    assert [p.native_kind for p in export.custom_panes] == ['response', 'csd', 'impulse']
     assert export.rows[0].widget(0) is geometry
     # Real project opening path, with no coefficients on disk.
     project = bootstrap.HERE/'artifacts'/'empty-coefficient-project.json'
