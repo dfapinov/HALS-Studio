@@ -20,6 +20,7 @@ class ExportPane(W.QWidget):
         self.cta_options = {}
         self.cta_panel = None
         self.directivity_panel = None
+        self.directivity_options = {}
         self.directivity_kind = 'map_h'
         self.mode = 'native'
         self.empty = W.QLabel('Open coefficients to preview exported data'); self.empty.setAlignment(C.Qt.AlignCenter)
@@ -108,7 +109,7 @@ class ExportPane(W.QWidget):
                 return
             if self.directivity_panel is None:
                 from hals_studio.ui.plotting.export_directivity import ExportDirectivityPanel
-                self.directivity_panel = ExportDirectivityPanel(); self.stack.addWidget(self.directivity_panel)
+                self.directivity_panel = ExportDirectivityPanel(self.directivity_options); self.stack.addWidget(self.directivity_panel)
             self.directivity_panel.update_result(result, self.directivity_kind)
             self.stack.setCurrentWidget(self.directivity_panel)
             return
@@ -136,9 +137,11 @@ class ExportPane(W.QWidget):
         self.selector.setText(('CLI output' if self.mode == 'cli' else self.native_name) + '  \u25be')
 
     def state(self):
-        return dict(mode=self.mode, native_kind=self.native_kind, cta_kind=self.cta_kind, cta_options=deepcopy(self.cta_options), cta_show_info=self.cta_show_info, directivity_kind=self.directivity_kind)
+        return dict(mode=self.mode, native_kind=self.native_kind, cta_kind=self.cta_kind, cta_options=deepcopy(self.cta_options), cta_show_info=self.cta_show_info, directivity_kind=self.directivity_kind, directivity_options=deepcopy(self.directivity_options))
 
     def restore(self, state):
+        self.directivity_options.clear(); self.directivity_options.update(deepcopy(state.get('directivity_options', {})))
+        if self.directivity_panel is not None: self.directivity_panel.result = None
         self.cta_options.clear(); self.cta_options.update(deepcopy(state.get("cta_options", {})))
         if self.cta_panel is not None:
             from hals_studio.ui.plotting.plot_settings import default_config

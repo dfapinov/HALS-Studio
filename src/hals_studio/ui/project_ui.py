@@ -123,48 +123,38 @@ def save_project(owner):
 
 def open_ir_recording(owner, path):
     from hals_studio.application.ir_recovery import scan_ir_folder
-    from hals_studio.application.export_engine import project_files
     names, skipped = scan_ir_folder(path.parent)
     if path.name not in names:
         raise ValueError('Select a WAV with a compatible HALS coordinate filename.')
     root = path.parent.parent
-    try:
-        existing = project_files(root)
-    except ValueError:
-        existing = []
+    name = 'direct_wav_import'
+    number = 2
+    while (root / (name + '_project.json')).exists() or any((root / 'outputs').glob(name + '_*')):
+        name = f'direct_wav_import_{number}'
+        number += 1
+    target = root / (name + '_project.json')
     message = (f'Opening a WAV scans its directory for all compatible measurement WAVs.\n'
                f'Found {len(names)} compatible files; skipped {len(skipped)} incompatible filenames.\n'
                f'Input: {path.parent}\nOutputs: {root / "outputs"}\n\n'
                'Opening the project JSON is preferable because it retains measurement metadata and settings.')
-    if existing:
-        W.QMessageBox.information(owner, 'Open measurement recordings', message +
-                                 '\n\nAn existing project was found and will be used.')
-        open_data_path(owner, root)
-        if not owner.project_path or Path(owner.project_path).parent != root:
-            return
-        owner.set_workspace(2)
-        process = owner.process_workspace
-    else:
-        W.QMessageBox.information(owner, 'Open measurement recordings', message +
-            '\n\nNo RFT was supplied. Stage 1 will use 5 ms for the alpha taper without highlighting a reflection-free range. '
-            'A project JSON will be created after Stage 1 succeeds.')
-        owner.project_path = None
-        owner.set_workspace(2)
-        process = owner.process_workspace
-        name = root.name
-        target = root / (name + '_project.json')
-        owner.project_path = str(target)
-        owner.project_path_field.setText(str(root))
-        pane = ensure_export(owner)
-        pane.apply_config(dict(deepcopy(DEFAULT_EXPORT), project_path=str(target), project_name=name,
-                               output_dir=str(root / 'outputs' / 'response_files'), frd_prefix=name))
-        owner.pending_session = None
-        owner.source_path = None
-        owner.source_options = None
-        owner.set_sphere(None)
-        owner.reset_views()
-        process.adopt_project(force=True, payload=dict(project_name=name,
-            measurement_metadata=dict(rft_supplied=False, tweeter_supplied=False, wav_recovery=True)))
+    W.QMessageBox.information(owner, 'Open measurement recordings', message +
+        '\n\nNo RFT was supplied. Stage 1 will use 5 ms for the alpha taper without highlighting a reflection-free range. '
+        f'A new project, {target.name}, will be created after Stage 1 succeeds. Existing projects are left unchanged.')
+    owner.project_path = None
+    owner.set_workspace(2)
+    process = owner.process_workspace
+    owner.project_path = str(target)
+    owner.project_path_field.setText(str(root))
+    pane = ensure_export(owner)
+    pane.apply_config(dict(deepcopy(DEFAULT_EXPORT), project_path=str(target), project_name=name,
+                           output_dir=str(root / 'outputs' / 'response_files'), frd_prefix=name))
+    owner.pending_session = None
+    owner.source_path = None
+    owner.source_options = None
+    owner.set_sphere(None)
+    owner.reset_views()
+    process.adopt_project(force=True, payload=dict(project_name=name,
+        measurement_metadata=dict(rft_supplied=False, tweeter_supplied=False, wav_recovery=True)))
     process.ir_folder.setText(str(path.parent))
     process.filter_ir_filenames = True
     process.select_stage(1)

@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import json
+from hals_studio.bootstrap import RESOURCES
 from hals_studio.ui.plotting.plot_settings import default_config, TITLES, GROUPS, selected_magnitudes
 
 
@@ -49,23 +50,8 @@ class ViewCollection:
 
 
 def default_views():
-    result = {}
-    for name, kinds in {
-        "Sound field": ["balloon", "probe", "polar", "map_h"],
-        "Directivity": ["cross_sonograms", "map_h", "map_v", "di"],
-        "Globes": ["globe_hv", "cross_sonograms", "polar", "probe"],
-        "CEA2034": ["cea", "reflections", "cea_Sound power DI", "cea_Early reflections DI"],
-    }.items():
-        configs = [default_config(k) for k in kinds]
-        for config in configs:
-            if config["kind"] != "probe":
-                config["phase_mode"] = "None"
-        if name == "Sound field":
-            configs[0]["pins"] = ["normalization", "span", "geometry"]
-        result[name] = dict(
-            version=2, panes=configs, outer=[600, 380], rows=[[700, 800], [700, 800]]
-        )
-    return result
+    """Load a fresh copy of the shipped viewport template."""
+    return json.loads((RESOURCES / 'default_views.json').read_text(encoding='utf-8'))
 
 
 def valid_view(view):

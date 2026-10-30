@@ -19,7 +19,7 @@ SMOOTHING_OCT_RES = FDW_OCT_RES*2       # Default = use FDW_OCT_RES*2 so that sm
 KEEP_RAW_AND_SMOOTHED = False   # Save both files if True
 
 # --- Gain ---
-ENABLE_AUTO_GAIN  = True            # Enable global normalization across all files in the batch.
+ENABLE_AUTO_GAIN  = False            # Enable global normalization across all files in the batch.
 TARGET_PEAK_DB    = -3.0            # Target peak level (dBFS) for the loudest file in the set.
 
 # --- Advanced ---

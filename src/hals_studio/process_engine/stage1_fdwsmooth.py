@@ -148,7 +148,7 @@ def fdwsmooth(
     fdw_f_min=20.0,
     fdw_windows_per_oct=3,
     peak_detect_threshold_db=-12.0,
-    enable_auto_gain=True,
+    enable_auto_gain=False,
     target_peak_db=-3.0,
     keep_raw_and_smoothed=False,
     use_process_pool=True,

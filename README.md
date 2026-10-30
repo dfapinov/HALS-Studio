@@ -307,6 +307,25 @@ boundaries, development checks and remaining refactoring opportunities.
 
 # Project Status
 
+## User settings
+
+Windows settings are stored in `%LOCALAPPDATA%\HALS Studio\settings`:
+
+- `preferences.json`: application preferences, including theme and sidebar sizes.
+- `user-default-views.json`: the viewport template used for new projects and **Reset views**.
+- `factory-default-views.json`: a reference backup of the bundled factory template, refreshed on startup.
+
+Close HALS Studio before editing these JSON files. To restore factory viewport
+defaults, copy `factory-default-views.json` over `user-default-views.json`, or delete
+the user template. **Save as default template** replaces the user template.
+Malformed JSON is copied to an `.invalid.json` backup before falling back to defaults.
+The application always retains its own bundled factory template as a fallback.
+
+Existing registry preferences migrate on first launch when `preferences.json` is
+absent. Subsequent settings changes use JSON files. Upgrades retain settings;
+uninstall removes this settings directory, the processing cache, and legacy
+registry preferences. User projects and exports are retained.
+
 HALS Studio is under active development.
 
 The software is intended as a practical DIY loudspeaker measurement system.

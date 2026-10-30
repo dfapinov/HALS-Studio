@@ -260,21 +260,33 @@ class ImpulsePanel(W.QWidget):
             self.ax.set_xlim(x0, x1); self.ax.set_ylim(y0, y1)
             self.interaction.saved[0] = ((x0, x1), (y0, y1)); self.chart.done()
 
-    def update_ir(self, times, ir, delay, source):
-        key = (source, len(ir), times[-1], delay is not None)
+    def update_ir(self, times, ir, delay, source, *, markers=None):
+        markers = tuple(markers) if markers is not None else (() if delay is None else ((delay, 'FRD t=0'),))
+        key = (source, len(ir), times[-1])
         rebuild = key != self.key
         if rebuild:
             self.chart.fig.clear(); self.chart.fig.set_layout_engine('constrained'); self.ax = self.chart.fig.add_subplot()
             self.line, = self.ax.plot([], [], color='#7ae2b1', lw=.9)
-            self.marker = self.ax.axvline(0, color='#ffba68', ls='--', lw=1)
+            self.markers = []
             style(self.ax, '', xlabel='Time / ms', ylabel='Normalized amplitude'); self.ax.set_ylim(-1.05, 1.05)
             self.interaction.begin(key); self.key = key
         peak = np.max(abs(ir)); self.line.set_data(times*1000, ir/peak if peak else ir)
-        self.marker.set_visible(delay is not None)
-        if delay is not None:
-            self.marker.set_xdata([delay*1000]*2); self.marker.set_label(f'FRD t=0 · {delay*1000:.3f} ms'); self.ax.legend(fontsize=7)
-        end = min(times[-1]*1000, max(20., times[int(np.argmax(abs(ir)))]*1000+10, (delay or 0)*1000+10))
-        if rebuild or not self.interaction.saved: self.ax.set_xlim(0, end)
+        for marker in self.markers:
+            marker.remove()
+        colours = ('#ffba68', '#7bbcff', '#e5a0ed', '#f0dc78')
+        self.markers = [self.ax.axvline(seconds * 1000, color=colours[index % len(colours)],
+                                      ls='--', lw=1, label=f'{label} / {seconds * 1000:.3f} ms')
+                        for index, (seconds, label) in enumerate(markers)]
+        self.marker = self.markers[0] if self.markers else None
+        legend = self.ax.get_legend()
+        if legend is not None:
+            legend.remove()
+        if markers:
+            self.ax.legend(fontsize=7)
+        end = max(min(times[-1]*1000, max(20., times[int(np.argmax(abs(ir)))]*1000+10)),
+                  max((seconds * 1000 + 10 for seconds, _ in markers), default=0))
+        start = min(0., min((seconds * 1000 for seconds, _ in markers), default=0))
+        if rebuild or not self.interaction.saved: self.ax.set_xlim(start, end)
         if rebuild: self.interaction.finish([self.ax])
         elif not self.interaction.saved: self.interaction.full[0] = (self.ax.get_xlim(), self.ax.get_ylim())
         self.chart.done()

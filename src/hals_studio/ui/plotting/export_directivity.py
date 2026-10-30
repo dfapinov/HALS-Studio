@@ -14,9 +14,10 @@ DIRECTIVITY_TITLES = GROUPS['Directivity']
 
 
 class ExportDirectivityPanel(W.QWidget):
-    def __init__(self):
+    def __init__(self, options=None):
         super().__init__()
         self.chart = Chart(); self.config = default_config('map_h'); self.last_render = None
+        self.options = options if options is not None else {}
         self.result = None; self.kind = 'map_h'
         layout = W.QVBoxLayout(self)
         toolbar = W.QHBoxLayout(); layout.addLayout(toolbar)
@@ -28,10 +29,23 @@ class ExportDirectivityPanel(W.QWidget):
         self.span = W.QDoubleSpinBox(); self.span.setRange(6, 120); self.span.setValue(36); self.span.setSuffix(' dB')
         toolbar.addWidget(self.span); toolbar.addStretch()
         reset = W.QPushButton('Reset axes'); toolbar.addWidget(reset)
+        self.settings_button = W.QPushButton('Plot settings'); toolbar.addWidget(self.settings_button)
+        self.settings_button.clicked.connect(self.settings)
         layout.addWidget(self.chart, 1)
         self.note = W.QLabel(''); self.note.setWordWrap(True); layout.addWidget(self.note)
         self.interaction = PlotInteraction(self); reset.clicked.connect(self.interaction.reset)
         self.frequency.valueChanged.connect(self.redraw); self.span.valueChanged.connect(self.redraw)
+
+    def settings(self):
+        dialog = W.QDialog(self); dialog.setWindowTitle('Polar plot settings')
+        layout = W.QVBoxLayout(dialog)
+        dots = W.QCheckBox('Show sampled-angle dots')
+        dots.setChecked(self.options.get('polar_sample_points', True)); layout.addWidget(dots)
+        buttons = W.QDialogButtonBox(W.QDialogButtonBox.Ok | W.QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject); layout.addWidget(buttons)
+        if dialog.exec() == W.QDialog.Accepted:
+            self.options['polar_sample_points'] = dots.isChecked()
+            self.redraw()
 
     def update_result(self, result, kind):
         if self.result is result and self.kind == kind: return
@@ -41,6 +55,7 @@ class ExportDirectivityPanel(W.QWidget):
     def redraw(self, *_):
         if self.result is None: return
         self.frequency.setEnabled(self.kind == 'polar')
+        self.settings_button.setVisible(self.kind == 'polar')
         cuts = export_cuts(self.result); f = self.result['freqs']
         span = self.span.value(); index = int(np.argmin(abs(f-self.frequency.value())))
         self.interaction.begin((id(self.result), self.kind, span, index))
@@ -48,7 +63,7 @@ class ExportDirectivityPanel(W.QWidget):
         fig = self.chart.fig
         if self.kind == 'polar':
             draw_polar_cuts(self.chart, cuts, index, span, pane=self,
-                            close_curves=False, show_points=True)
+                            close_curves=False, show_points=self.options.get('polar_sample_points', True))
             self.interaction.finish([ax for ax in fig.axes if ax in self._rotation_axes])
         elif self.kind == 'globe_hv':
             draw_globe_cuts(self, f, cuts, close_curves=False)

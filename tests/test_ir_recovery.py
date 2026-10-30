@@ -104,14 +104,17 @@ def test_wav_open_stage1_save_and_estimated_tweeter_roundtrip(tmp_path, monkeypa
     signal = np.zeros(1024); signal[49] = 1
     sf.write(folder/name, signal, 48000, subtype='FLOAT')
     try:
+        existing = tmp_path/'capture_project.json'
+        existing.write_text('{"project_name": "capture"}')
         open_data_path(window, folder/name)
+        assert existing.read_text() == '{"project_name": "capture"}'
         pane = window.process_workspace
-        path = tmp_path/(tmp_path.name+'_project.json')
+        path = tmp_path/'direct_wav_import_project.json'
         assert window.project_path == str(path)
         assert not path.exists()
         assert not pane.rft_supplied and not pane.tweeter_supplied
         outputs = tmp_path/'outputs'
-        npz = outputs/(tmp_path.name+'_complex_data.npz')
+        npz = outputs/'direct_wav_import_complex_data.npz'
         fdwsmooth(str(folder), str(outputs), npz.name, 5, 6, 20, False, 12,
                   use_process_pool=False, rft_supplied=False)
         pane.finished(dict(ok=True, stage=1, cache=str(npz)))
@@ -141,10 +144,14 @@ def test_wav_open_stage1_save_and_estimated_tweeter_roundtrip(tmp_path, monkeypa
         assert pane.tweeter_supplied and not pane.rft_supplied
         assert pane.ir_folder.text() == str(folder)
         window.save_project()
-        assert list(tmp_path.glob('*_project.json')) == [path]
+        assert set(tmp_path.glob('*_project.json')) == {existing, path}
+        saved_project = path.read_bytes()
         open_data_path(window, folder/name)
-        assert pane.tweeter_supplied and not pane.rft_supplied
-        assert window.project_path == str(path)
+        assert not pane.tweeter_supplied and not pane.rft_supplied
+        assert window.project_path == str(tmp_path/'direct_wav_import_2_project.json')
+        assert pane.project_name.text() == 'direct_wav_import_2'
+        assert path.read_bytes() == saved_project
+        assert not (tmp_path/'direct_wav_import_2_project.json').exists()
     finally:
         window.close()
         for _ in range(10):app.processEvents()

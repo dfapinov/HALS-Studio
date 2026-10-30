@@ -78,6 +78,23 @@ def _directivity_surface(pane, s, levels, rel, i):
     )
 
 
+def analysis_delay_markers(owner):
+    """Time-zero references for displayed plots that apply phase compensation."""
+    from hals_studio.ui.plotting.plot_settings import GROUPS, setting_keys
+
+    markers = []
+    for plot in owner.panes:
+        c = plot.config
+        kind = c['kind']
+        if plot.isHidden() or kind not in GROUPS['SPL & phase']:
+            continue
+        mode = 'Total phase' if kind == 'phase' else c['phase_mode']
+        if kind == 'minimum' or mode != 'Total phase' or 'delay' not in setting_keys(kind, c):
+            continue
+        markers.append((plot.delay_ms() / 1000, f'Pane {plot.index + 1} t=0'))
+    return tuple(markers)
+
+
 def _impulse(pane, s, levels, rel, i):
     o = pane.owner
     from hals_studio.ui.plotting.csd_plot import analysis_ir
@@ -88,7 +105,8 @@ def _impulse(pane, s, levels, rel, i):
         pane.stack.addWidget(pane.ir_panel)
     try:
         ir, fs, _ = analysis_ir(o, s)
-        pane.ir_panel.update_ir(np.arange(len(ir)) / fs, ir, None, id(s))
+        pane.ir_panel.update_ir(np.arange(len(ir)) / fs, ir, None, id(s),
+                                markers=analysis_delay_markers(o))
         pane.stack.setCurrentWidget(pane.ir_panel)
         pane.note.setText(
             "HALS IR generator ? selected probe ? normalized amplitude ? time from generated IR start"

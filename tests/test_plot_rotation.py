@@ -41,6 +41,41 @@ def test_polar_rotation_handle_rotates_plot_and_survives_redraw():
     np.testing.assert_allclose(pane._polar_transforms[fig.axes[1]].transform([0, 1]), [0, 1], atol=1e-10)
 
 
+@pytest.mark.parametrize('enabled', [False, True])
+@pytest.mark.parametrize('workspace', ['analysis', 'export'])
+def test_sample_angle_dots_follow_pane_option(enabled, workspace):
+    from hals_studio.ui.plotting.export_directivity import ExportDirectivityPanel
+    from unittest.mock import patch
+    fig = Figure(figsize=(9, 5)); canvas = FigureCanvasAgg(fig)
+    chart = SimpleNamespace(fig=fig, canvas=canvas, width=lambda: 900,
+                            height=lambda: 500, done=canvas.draw)
+    angles = np.array([-90., 0., 90.]); values = np.zeros((1, 3))
+    pane = SimpleNamespace(chart=chart, config=default_config('polar'))
+    pane.config['polar_sample_points'] = enabled
+    if workspace == 'analysis':
+        sphere = SimpleNamespace(cuts=lambda _: (angles, values, values))
+        draw_zoomable_polars(chart, sphere, None, 0, 36, pane=pane)
+    else:
+        pane.options = {'polar_sample_points': enabled}
+        pane.result = {'freqs': np.array([1000.])}; pane.kind = 'polar'
+        pane.frequency = Mock(); pane.frequency.value.return_value = 1000.
+        pane.span = Mock(); pane.span.value.return_value = 36.
+        pane.settings_button = Mock(); pane.interaction = Mock(); pane.note = Mock()
+        with patch('hals_studio.ui.plotting.export_directivity.export_cuts',
+                   return_value={key: (angles, values) for key in ('horizontal', 'vertical')}):
+            ExportDirectivityPanel.redraw(pane)
+    traces = [line for ax in fig.axes for line in ax.lines if line.get_gid() == 'directivity-trace']
+    assert len(traces) == 2
+    assert all(line.get_marker() == ('.' if enabled else 'None') for line in traces)
+
+
+def test_factory_template_uses_top_and_right_globe_zero_directions():
+    from hals_studio.ui.view_state import default_views, restore_view
+    for view in default_views().values():
+        for pane in restore_view(view)['panes']:
+            assert pane['globe_rotation'] == {'horizontal': 180.0, 'vertical': 90.0}
+
+
 def test_view_round_trip_preserves_independent_rotations():
     from hals_studio.ui.workspace import Workspace
     panes = [SimpleNamespace(config=default_config(kind), plotter=None, invalidate=Mock())

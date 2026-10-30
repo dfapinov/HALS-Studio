@@ -74,11 +74,9 @@ def test_process_forms_keep_stage_values_and_control_dependencies(window):
     forms.controls[3, "freq_start_hz"].setText("1234")
     assert values[3]["freq_start_hz"] == "1234"
     assert values[2]["freq_start_hz"] == previous
-    gain, peak = forms.controls[1, "enable_auto_gain"], forms.controls[1, "target_peak_db"]
-    for enabled in (True, False):
-        gain.setChecked(enabled)
-        assert values[1]["enable_auto_gain"] is enabled
-        assert peak.isEnabled() is enabled
+    for key in ("enable_auto_gain", "target_peak_db"):
+        assert (1, key) not in forms.controls
+        assert key not in values[1]
     edit = next(
         button
         for button in forms.findChildren(W.QPushButton)
@@ -140,6 +138,43 @@ def test_time_renderer_rejects_sparse_bins_and_recovers_with_native_bins(window,
     pane.render()
     assert pane.stack.currentWidget() is pane.chart_frame
     assert pane.chart.fig.axes[0].lines
+
+
+def test_analysis_ir_tracks_compensated_phase_panes(window):
+    from hals_studio.analysis.acoustics import demo
+
+    sphere = demo()
+    sphere.freqs = np.linspace(100, 20000, len(sphere.freqs))
+    window.set_sphere(sphere)
+    ir, response, second, unused = window.panes
+    ir.set_kind('impulse')
+    response.set_kind('probe')
+    second.set_kind('phase')
+    unused.set_kind('polar')
+    response.config.update(phase_mode='Total phase', delay=3.5)
+    second.config.update(delay=6.)
+    ir.render()
+    panel = ir.ir_panel
+    np.testing.assert_allclose([line.get_xdata()[0] for line in panel.markers], [3.5, 6.])
+    waveform = panel.line.get_ydata().copy()
+    # The IR must update even though only another pane's settings changed.
+    response.change('delay', -2.)
+    ir.render()
+    np.testing.assert_allclose([line.get_xdata()[0] for line in panel.markers], [-2., 6.])
+    assert panel.ax.get_xlim()[0] <= -2.
+    np.testing.assert_array_equal(panel.line.get_ydata(), waveform)
+    response.config['phase_mode'] = 'Minimum phase'
+    second.hide()
+    ir.render()
+    assert not panel.markers
+    assert panel.ax.get_legend() is None
+    # Export uses the same marker implementation and its original FRD label.
+    panel.update_ir(np.arange(100) / 48000, np.ones(100), .004, 'export')
+    assert panel.marker.get_xdata()[0] == 4.
+    assert panel.marker.get_label().startswith('FRD t=0')
+    panel.update_ir(np.arange(100) / 48000, np.ones(100), None, 'export')
+    assert not panel.markers
+    assert panel.ax.get_legend() is None
 
 
 @pytest.mark.parametrize("kind", ["map_h", "map_v"])
@@ -221,6 +256,19 @@ def test_invalid_view_is_rejected_before_use(panes):
         restore_view({"panes": panes})
 
 
+def test_factory_template_has_expected_plots_and_sidebar_controls():
+    views = default_views()
+    assert list(views) == ["Sound field", "Directivity", "Time", "CEA2034"]
+    assert all(valid_view(view) for view in views.values())
+    panes = views["Sound field"]["panes"]
+    assert [pane["kind"] for pane in panes] == ["balloon", "probe", "polar", "sweep_h"]
+    assert panes[0]["pins"] == ["normalization", "reference_sphere", "edges"]
+    assert panes[1]["pins"] == ["phase_mode", "delay", "fit", "fit_low", "fit_high"]
+    assert panes[3]["pins"] == ["extent", "step", "sweep_direction"]
+    panes[0]["pins"].clear()
+    assert default_views()["Sound field"]["panes"][0]["pins"]
+
+
 def test_templates_skip_invalid_entries_and_keep_valid_views():
     import json
 
@@ -238,7 +286,7 @@ def test_view_collection_rename_reorder_and_delete_preserve_other_snapshots():
     collection.rename("Directivity", "Custom")
     assert collection.current == "Sound field"
     collection.reorder(["Custom", "missing", "Sound field", "Custom"])
-    assert list(collection.views) == ["Custom", "Sound field", "Globes", "CEA2034"]
+    assert list(collection.views) == ["Custom", "Sound field", "Time", "CEA2034"]
     target = collection.remove("Sound field")
     assert target == "Custom"
     collection.remember(original["Sound field"])
@@ -658,7 +706,9 @@ def test_cta_and_cursor_rendering_match_analysis(window):
     from hals_studio.process_engine.stage5_extract_pressures import CTA2034_METRIC_NAMES
     sphere = demo(); window.set_sphere(sphere)
     analysis = window.panes[1]
-    analysis.set_kind('cea'); analysis.config['overlays'] = False; analysis.render()
+    analysis.set_kind('cea'); analysis.config['overlays'] = False
+    analysis.config['fit'] = False  # Compare base traces independently of template fit settings.
+    analysis.render()
     metrics = window.get_cea('None')
     result = dict(freqs=sphere.freqs, config={'frd_db_offset': 0.}, metrics={
         key: (metrics[name], np.zeros(len(sphere.freqs))) for key, name in CTA2034_METRIC_NAMES.items()})

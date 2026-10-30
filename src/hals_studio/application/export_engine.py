@@ -18,7 +18,7 @@ import hals_studio.process_engine.stage5_extract_pressures as stage5
 
 DEFAULT_EXPORT = dict(
     coeff_path='', output_dir=str(bootstrap.ROOT/'outputs'/'response_files'), frd_prefix='HALS',
-    mode='Arc sweep', direction='horizontal', range_deg=90, increment_deg=10, dist_mic=1.,
+    mode='Arc sweep', direction='hor_vert', range_deg=180, increment_deg=10, dist_mic=2.,
     zero_theta=90., zero_phi=0., offset_x=0., offset_y=0., offset_z=0., offset_step_mm=10.,
     subtract_tof='Ref Origin', frd_db_offset=0., generate_ir_files=False,
     normalize_ir_set=False, ir_target_peak_dbfs=-6.,

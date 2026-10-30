@@ -379,8 +379,10 @@ class PlotPane(W.QFrame):
             self.note.setText('Open coefficients to view analysis plots')
             self.last_render = None
             return
+        from hals_studio.ui.plotting.analysis_renderers import analysis_delay_markers
+        markers = analysis_delay_markers(o) if c['kind'] == 'impulse' else ()
         key = (id(o.sphere), o.frequency.value(), o.azimuth.value(), o.elevation.value(),
-               repr(c), o.overlay_revision, o.axis)
+               repr(c), o.overlay_revision, o.axis, markers)
         if self.last_render == key: return
         response_plot = c['kind'] in MAGNITUDE_KINDS or c['kind'] in ('phase', 'minimum')
         if (response_plot and self.last_render is not None and
@@ -421,7 +423,7 @@ class PlotPane(W.QFrame):
             from hals_studio.ui.plotting.analysis_renderers import render_chart
             render_chart(self, s, levels, rel, i)
         self.last_render = (id(o.sphere), o.frequency.value(), o.azimuth.value(), o.elevation.value(),
-                            repr(c), o.overlay_revision, o.axis)
+                            repr(c), o.overlay_revision, o.axis, markers)
 
     def balloon(self, s, rel, i):
         from hals_studio.ui.plotting.scene_renderers import balloon

@@ -216,7 +216,8 @@ class FrequencyBrowser3DView:
         plt.rcParams['axes3d.mouserotationstyle'] = 'azel'
         self.fig = plt.figure(figsize=figsize)
         self.ax = self.fig.add_subplot(111, projection='3d')
-        self.fig.subplots_adjust(left=0.05, bottom=0.05, right=0.85, top=0.95) 
+        # Reserve space for the three-line heading independently of 3D axes placement.
+        self.fig.subplots_adjust(left=0.05, bottom=0.05, right=0.85, top=0.84)
         self.cbar_ax = self.fig.add_axes([0.88, 0.2, 0.03, 0.6])
         self.cbar = None
         
@@ -278,7 +279,8 @@ class FrequencyBrowser3DView:
 
         self.ax.legend(loc='upper right', bbox_to_anchor=(1.25, 1.0), fontsize=9)
         fc_str = f"({final_c[0]:.1f}, {final_c[1]:.1f}, {final_c[2]:.1f})" if final_c is not None else "None"
-        self.ax.set_title(f"Frequency: {f:.1f} Hz | Grid Scan Minima: {grid_min_text}\nSearch Final: {fc_str}\nPlane: {plane} @ {actual_val:.1f} mm", fontweight='bold')
+        self.fig.suptitle(f"Frequency: {f:.1f} Hz | Grid Scan Minima: {grid_min_text}\nSearch Final: {fc_str}\nPlane: {plane} @ {actual_val:.1f} mm",
+                          x=0.45, y=0.98, va='top', fontsize=11, fontweight='bold')
         self.fig.canvas.draw_idle()
 
 

@@ -10,16 +10,6 @@
       "default": "200.0",
       "help": "Optional cap (ms) on the maximum window length. Will limit oct res at LF."
     },
-    "enable_auto_gain": {
-      "label": "Enable Auto Gain",
-      "default": false,
-      "help": "Enable global normalization across all files in the batch."
-    },
-    "target_peak_db": {
-      "label": "Target Peak (dB)",
-      "default": "-3.0",
-      "help": "Target peak level (dBFS) for the loudest file in the set."
-    },
     "smoothing_oct_res": {
       "label": "Smoothing Octave Res (1/x)",
       "default": "Auto",

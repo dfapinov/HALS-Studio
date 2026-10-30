@@ -90,6 +90,7 @@ DEFAULT = dict(
     smoothing="None",
     globe_rotation={"horizontal": 180.0, "vertical": 90.0},
     polar_rotation={"horizontal": 0.0, "vertical": 270.0},
+    polar_sample_points=False,
     span=36.0,
     palette="PColor",
     geometry="dB radius",
@@ -183,6 +184,7 @@ SPECS = {
     "phase_colour": ("Colour by phase", bool),
     "orbit": ("Orbit mode", ["Az / El - no roll", "Trackball"]),
     "contours": ("Show Contours", bool),
+    "polar_sample_points": ("Show sampled-angle dots", bool),
     "extent": ("Sweep extent (degrees)", (0.0, 180.0)),
     "sweep_direction": ("Direction", ["+/-", "+", "-"]),
     "step": ("Sweep increment (degrees)", (1.0, 90.0)),
@@ -288,6 +290,8 @@ def setting_keys(kind, config=None):
         ]
     if kind.startswith("map_"):
         common += ["directivity_display", "contours"]
+    if kind == "polar":
+        common += ["polar_sample_points"]
     if kind.startswith("sweep_"):
         common += ["extent", "step", "sweep_direction"]
     if kind in GROUPS["SPL & phase"]:

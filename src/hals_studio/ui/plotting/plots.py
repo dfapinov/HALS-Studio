@@ -206,7 +206,8 @@ def response_directions(sphere, plane, extent, step, symmetric=False, direction=
 def draw_zoomable_polars(chart, sphere, rel, i, dynamic_range, pane=None):
     angles, h, v = sphere.cuts(rel)
     draw_polar_cuts(chart, {'horizontal': (angles, h), 'vertical': (angles, v)},
-                    i, dynamic_range, pane=pane)
+                    i, dynamic_range, pane=pane,
+                    show_points=pane.config.get('polar_sample_points', False) if pane is not None else False)
 
 
 def draw_polar_cuts(chart, cuts, i, dynamic_range, pane=None, *, close_curves=True, show_points=False):

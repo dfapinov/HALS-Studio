@@ -3,7 +3,7 @@
 from PySide6 import QtCore as C, QtWidgets as W
 
 MAIN = {
-    1: ["fdw_oct_res", "fdw_max_cap_ms", "enable_auto_gain", "target_peak_db"],
+    1: ["fdw_oct_res", "fdw_max_cap_ms"],
     2: ["octave_resolution", "freq_start_hz"],
     3: ["freq_end_hz", "freq_start_hz"],
     4: ["target_n_max"],
@@ -135,12 +135,6 @@ class StageForms(W.QStackedWidget):
 
                 control.toggled.connect(growth_controls)
                 growth_controls(control.isChecked())
-        self.controls[1, "enable_auto_gain"].toggled.connect(
-            self.controls[1, "target_peak_db"].setEnabled
-        )
-        self.controls[1, "target_peak_db"].setEnabled(
-            self.controls[1, "enable_auto_gain"].isChecked()
-        )
         for key in ("noise_floor_start_db", "noise_floor_max_db", "max_lambda"):
             control = self.controls[4, key]
             form = control.parentWidget().layout()

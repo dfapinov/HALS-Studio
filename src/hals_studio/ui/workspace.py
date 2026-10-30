@@ -104,7 +104,6 @@ class Workspace(W.QMainWindow):
         self.refresh_timer.timeout.connect(self.refresh)
         self.pool_timer = C.QTimer(self); self.pool_timer.setInterval(400); self.pool_timer.timeout.connect(self.pool_status)
         self.pool_timer.start()
-        self.settings = settings if settings is not None else studio_settings()
         from hals_studio.ui.view_state import ViewCollection
         self.view_collection = ViewCollection(self.template_views())
         self._build_workspace(); self._menus()
@@ -217,7 +216,8 @@ class Workspace(W.QMainWindow):
         self.azimuth.valueChanged.connect(self.schedule); self.elevation.valueChanged.connect(self.schedule)
         self.views_toolbar = W.QWidget(); bar = W.QHBoxLayout(self.views_toolbar); bar.setContentsMargins(0, 0, 0, 0); modebar.addWidget(self.views_toolbar, 1); modebar.addStretch()
         self.view_bar = W.QHBoxLayout(); bar.addLayout(self.view_bar); bar.addSpacing(80)
-        self.reset_views_button = W.QToolButton(); self.reset_views_button.setText('Save Viewport'); self.reset_views_button.setObjectName('resetViewsButton')
+        self.reset_views_button = W.QToolButton(); self.reset_views_button.setText('New Viewport'); self.reset_views_button.setObjectName('resetViewsButton')
+        self.reset_views_button.setToolTip('Create and name a new viewport from the current view, then edit its views.')
         self.reset_views_button.setPopupMode(W.QToolButton.MenuButtonPopup)
         self.reset_views_button.clicked.connect(self.save_viewport)
         menu = W.QMenu(self.reset_views_button); menu.addAction('Reset views', self.reset_views); menu.addAction('Save as default template...', self.save_default_template)
@@ -550,7 +550,7 @@ class Workspace(W.QMainWindow):
         self.rebuild_view_buttons(); self.apply_view(self.views[name]); self.select_view_name(name)
 
     def save_viewport(self):
-        name, ok = W.QInputDialog.getText(self, 'Save Viewport', 'Name for the new view setup:')
+        name, ok = W.QInputDialog.getText(self, 'New Viewport', 'Name for the new viewport:')
         if not ok or not name.strip(): return
         name = name.strip()
         if name in self.views:
@@ -562,7 +562,8 @@ class Workspace(W.QMainWindow):
 
     def save_default_template(self):
         if W.QMessageBox.question(self, 'Save default template',
-                'Replace the default views for new projects with the current views?',
+                'Save the current views as your default template?\n\n'
+                'This changes both the defaults for new projects and the views restored by Reset views.',
                 W.QMessageBox.Yes | W.QMessageBox.No, W.QMessageBox.No) != W.QMessageBox.Yes: return
         self.views[self.current_view] = self.view_dict()
         self.settings.setValue('views_v2', json.dumps(self.views)); self.settings.sync()

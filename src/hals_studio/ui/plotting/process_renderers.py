@@ -109,7 +109,19 @@ def draw_origin_cloud(host, workspace):
     self, p = host, workspace
     r = p.results[p.stage]
     kind = p.view.currentText()
+    camera = None
+    previous = getattr(host, '_origin_cloud_figure', None)
+    if (previous is not None and getattr(host, 'fig', None) is previous
+            and getattr(host, '_origin_cloud_result', None) is r):
+        ax = previous.axes[0]
+        camera = (ax.elev, ax.azim, ax.roll, ax.get_xlim3d(), ax.get_ylim3d(), ax.get_zlim3d())
     rows=r[0];freqs=sorted(rows);xyz=np.array([rows[f]['final_c'] for f in freqs]);view=VIEWS['CloudBrowser3DView'](r[5]);view.update_view(freqs,*xyz.T,max(0,p.sample.currentIndex()))
+    if camera is not None:
+        elev, azim, roll, xlim, ylim, zlim = camera
+        view.ax.view_init(elev=elev, azim=azim, roll=roll)
+        view.ax.set_xlim3d(xlim); view.ax.set_ylim3d(ylim); view.ax.set_zlim3d(zlim)
+    host._origin_cloud_figure = view.fig
+    host._origin_cloud_result = r
     active=max(0,p.sample.currentIndex());point=xyz[active];view.ax.set_title('')
     view.fig.text(.035,.96,f'{freqs[active]:g} Hz\nX {point[0]:.1f} mm\nY {point[1]:.1f} mm\nZ {point[2]:.1f} mm',va='top',fontsize=11)
     from hals_studio.ui.viewer_theme import colour

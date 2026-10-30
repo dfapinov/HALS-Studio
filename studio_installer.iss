@@ -28,6 +28,16 @@ CloseApplications=yes
 [Tasks]
 Name: desktopicon; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
+[Registry]
+; Keep preferences on upgrades, but remove them on uninstall for a clean reinstall.
+Root: HKCU; Subkey: "Software\HALS\Studio"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\HALS"; Flags: uninsdeletekeyifempty
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{localappdata}\HALS Studio\cache"
+Type: filesandordirs; Name: "{localappdata}\HALS Studio\settings"
+Type: dirifempty; Name: "{localappdata}\HALS Studio"
+
 [Files]
 Source: "dist\HALS Studio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
