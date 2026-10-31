@@ -53,7 +53,7 @@ def editor(key, value, callback, options=None):
     return w
 
 
-def axis_editors(form, config, keys):
+def axis_editors(form, config, keys, choices=None):
     """Build axis controls from the shared Analysis schema."""
     values = {key: config[key] for key in keys}
     controls = {}
@@ -66,7 +66,7 @@ def axis_editors(form, config, keys):
             values[automatic] = False
             controls[automatic].setChecked(False)
     for key, value in values.items():
-        controls[key] = editor(key, value, lambda value, key=key: changed(key, value))
+        controls[key] = editor(key, value, lambda value, key=key: changed(key, value), (choices or {}).get(key))
         label = 'DI axis height (fraction)' if key == 'phase_height' and 'di_auto' in values else SPECS[key][0]
         form.addRow(label, controls[key])
     return values
@@ -79,10 +79,10 @@ def valid_axis_ranges(values):
 
 
 class Setup(W.QDialog):
-    def __init__(self, pane):
+    def __init__(self, pane, *, allow_pins=True, allow_delay_estimate=True, disabled_settings=None):
         super().__init__(pane)
-        self.setWindowTitle(f"Pane {pane.index + 1} - {TITLES[pane.config['kind']]} setup")
-        if pane.config.get("min_phase_delay"):
+        self.setWindowTitle(f"{TITLES[pane.config['kind']]} setup")
+        if allow_delay_estimate and pane.config.get("min_phase_delay"):
             pane.delay_ms()
         self.values = deepcopy(pane.config)
         if pane.config["kind"] in ("csd", "wavelet"):
@@ -109,6 +109,9 @@ class Setup(W.QDialog):
         self.size_scroll = scroll
         self.size_body = body
         self.size_pin_mode = pin_mode
+        if not allow_pins:
+            pin_mode.hide()
+            note.setText('Each pane keeps its own plot settings. Disabled controls are managed by the export setup.')
         scroll.setHorizontalScrollBarPolicy(C.Qt.ScrollBarAsNeeded)
         self.pin_checks = {}
         self.controls = {}
@@ -144,7 +147,11 @@ class Setup(W.QDialog):
                 pane.fit_names() if key == "fit_curve" else None,
             )
             self.controls[key] = control
-            if key == "delay":
+            if key in (disabled_settings or {}):
+                control.setEnabled(False)
+                control.setToolTip(disabled_settings[key])
+                caption.setToolTip(disabled_settings[key])
+            if key == "delay" and allow_delay_estimate:
                 group = W.QWidget()
                 row_layout = W.QHBoxLayout(group)
                 row_layout.setContentsMargins(0, 0, 0, 0)

@@ -131,6 +131,47 @@ def draw_spectrogram(ax, frequencies, angles, values, config, *, bounded=False):
     return image
 
 
+def draw_directivity_map(pane, frequencies, angles, values, *, bounded=False, cursor=None):
+    """Render either workspace's prepared frequency/angle data with shared settings."""
+    from matplotlib.ticker import FuncFormatter
+    from hals_studio.ui.plotting.plots import style
+    from hals_studio.ui.plotting.spl_cursor import add_frequency_cursor
+
+    c = pane.config
+    plane = 'Horizontal' if c['kind'] == 'map_h' else 'Vertical'
+    if len(angles) >= 2 and c.get('directivity_display') in ('Waterfall', '3D surface'):
+        from hals_studio.ui.plotting.csd_plot import CSDView
+        if not hasattr(pane, 'csd_view'):
+            pane.csd_view = CSDView(); pane.stack.addWidget(pane.csd_view)
+        pane.stack.setCurrentWidget(pane.csd_view)
+        pane.csd_view.render(None, 1., {**c, 'csd_mode': '3D waterfall',
+            'csd_span': c['span'], '_surface_data': (frequencies, angles, values.T),
+            '_y_label': plane+' angle / degrees'})
+        pane.interaction.finish([])
+        pane.note.setText('Directivity surface - frequency / angle / relative level - drag to orbit, wheel to zoom')
+        return
+
+    pane.stack.setCurrentWidget(getattr(pane, 'chart_frame', pane.chart))
+    fig = pane.chart.fig; fig.clear(); fig.set_layout_engine('constrained')
+    ax = fig.add_subplot()
+    pane.phase_axis = pane.phase_handle = pane.frequency_marker = None
+    if len(angles) < 2:
+        ax.set_axis_off()
+        ax.text(.5, .5, 'No '+plane.lower()+' sweep data', transform=ax.transAxes, ha='center', va='center')
+        pane.interaction.finish([])
+    else:
+        image = draw_spectrogram(ax, frequencies, angles, values, c, bounded=bounded)
+        style(ax, plane, ylabel='Angle / degrees')
+        ax.set_xlim(frequencies[0], frequencies[-1])
+        ax.set_ylim((angles[0], angles[-1]) if bounded else (-180, 180))
+        ax.set_xticks(audio_ticks(*ax.get_xlim()))
+        ax.xaxis.set_major_formatter(FuncFormatter(lambda value, _: audio_frequency(value)))
+        fig.colorbar(image, ax=ax, label='Relative level / dB', pad=.02)
+        if cursor is not None: pane.frequency_marker = add_frequency_cursor(ax, cursor)
+        pane.interaction.finish([ax])
+    pane.chart.done()
+
+
 def draw_globe_cuts(pane, f, cuts, *, close_curves=True):
     c = pane.config
     radius = np.log10(f / f[0])

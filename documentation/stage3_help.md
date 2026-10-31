@@ -47,8 +47,6 @@ For a normal first run:
 2. Leave the advanced settings at their defaults.
 3. Click **Run Stage 3**.
 4. Inspect the three graphs and select the maximum order you want to use.
-5. Click **Use in Stage 4** to transfer the selected maximum order and open the solve settings.
-6. Leave **Optimise order growth before solve** enabled in Stage 4, then run the solve.
 
 The console shows the progress of the order sweep and results.
 
@@ -107,6 +105,8 @@ For each successive pair, such as N5 and N6, Stage 3 reconstructs both internal 
 After reviewing the recommendations, click **Use in Stage 4** to copy the selected maximum order. Growth optimisation runs in Stage 4; see [Stage 4: order growth optimisation](stage4_she_solver_help.md#optimise-order-growth-before-solve).
 
 ## Main Settings
+
+The reflection-free range is determined by Stage 1 windowing and the measurement's Reflection Free Time, not by the DUT's usable frequency range. Where the DUT reaches this range, Stage 3 can assess internal-to-external field separation; if it does not, Stage 3 relies on Directivity Change. Set the upper test limit within the DUT's usable range, as explained below.
 
 ### Upper Test Range
 
@@ -235,3 +235,5 @@ Stage 3 saves one combined results image containing the three graphs and the rec
 **Use in Stage 4** transfers the selected maximum order and opens the Stage 4 settings. Growth optimisation runs in Stage 4 before the full solve.
 
 ---
+
+<!-- help-group: process -->

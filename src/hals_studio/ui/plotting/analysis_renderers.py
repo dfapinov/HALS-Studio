@@ -55,29 +55,6 @@ def render_scene(pane, s, rel, i):
     pane._scene_kind = kind
 
 
-def _directivity_surface(pane, s, levels, rel, i):
-    c = pane.config
-    kind = c["kind"]
-    _ensure_decay_view(pane)
-    angles, h, v = s.cuts(rel)
-    data = h if kind == "map_h" else v
-    pane.stack.setCurrentWidget(pane.csd_view)
-    pane.csd_view.render(
-        None,
-        1.0,
-        {
-            **c,
-            "csd_mode": "3D waterfall",
-            "csd_span": c["span"],
-            "_surface_data": (s.freqs, angles, data.T),
-            "_y_label": ("Horizontal" if kind == "map_h" else "Vertical") + " angle / degrees",
-        },
-    )
-    pane.note.setText(
-        "Directivity surface - frequency / angle / relative level - drag to orbit, wheel to zoom"
-    )
-
-
 def analysis_delay_markers(owner):
     """Time-zero references for displayed plots that apply phase compensation."""
     from hals_studio.ui.plotting.plot_settings import GROUPS, setting_keys
@@ -160,12 +137,5 @@ RENDERERS = {
 
 
 def render_chart(pane, sphere, levels, relative, frequency_index):
-    config = pane.config
-    if config["kind"].startswith("map_") and config.get("directivity_display") in (
-        "3D surface",
-        "Waterfall",
-    ):
-        renderer = _directivity_surface
-    else:
-        renderer = RENDERERS.get(config["kind"], _response)
+    renderer = RENDERERS.get(pane.config["kind"], _response)
     renderer(pane, sphere, levels, relative, frequency_index)

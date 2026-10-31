@@ -60,7 +60,7 @@ For each order above N=4, the optimizer checks its earliest permitted entry and 
 
 If none of the tested frequencies meets the ceiling, the order activates at its deadline anyway. The console reports **delay limit reached - condition target exceeded**, and higher orders continue to be considered. Deadlines beyond the solve range are clamped to its final bin, where several orders can activate together. The optimizer still respects the KR and measurement-grid limits, and checks transition points rather than guaranteeing conditioning throughout the frequency range.
 
-**Use manual order table** is off by default and takes priority when enabled. Check it to use your entered table and bypass optimisation; the optimisation control is disabled while manual mode is selected. Uncheck it to use automatic growth: the optimizer runs if **Optimise order growth before solve** is enabled, otherwise the solver uses pure KR growth. Optimized schedules stay behind the scenes and never replace or edit your manual table. If no valid N=4 reference exists, the optimizer reports this and uses the current KR schedule.
+**Use manual order table** is off by default. Selecting it uses your entered table and turns off **Optimise order growth before solve**. Selecting optimisation turns off manual mode. Both checkboxes remain available so you can switch directly between them; the table editor is available in manual mode. Uncheck both to use pure KR growth. Optimized schedules stay behind the scenes and never replace or edit your manual table. If no valid N=4 reference exists, the optimizer reports this and uses the current KR schedule.
 
 Below: Matrix condition number for Target N Max = 12 using the KR rule.
 
@@ -151,3 +151,5 @@ Export evaluates the coefficients directly and does not need an Analysis sphere.
 The Analysis sphere is always centred at (0, 0, 0). Capture padding defaults to
 50 samples; enable **Edit capture padding** in Analysis Import Settings only
 when you need to change the number of samples removed.
+
+<!-- help-group: process -->

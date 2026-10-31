@@ -112,18 +112,9 @@ def draw_chart(pane, s, levels, rel, i):
     from hals_studio.ui.plotting.plot_settings import GROUPS, selected_magnitudes
     c, o, kind = pane.config, pane.owner, pane.config['kind']
     if kind.startswith('map_'):
-        from hals_studio.ui.plotting.directivity_views import draw_spectrogram
-        fig = pane.chart.fig; fig.clear(); fig.set_layout_engine('constrained')
-        ax = fig.add_subplot()
+        from hals_studio.ui.plotting.directivity_views import draw_directivity_map
         angles, h, v = s.cuts(rel)
-        image = draw_spectrogram(ax, s.freqs, angles, h if kind == 'map_h' else v, c)
-        fig.colorbar(image, ax=ax, label='Relative level / dB', pad=.02)
-        style(ax, '', ylabel='Angle / degrees'); ax.set_ylim(-180, 180)
-        ax.set_xlim(s.freqs[0], s.freqs[-1])
-        ax.set_xticks(audio_ticks(*ax.get_xlim())); ax.xaxis.set_major_formatter(FuncFormatter(lambda value, _: audio_frequency(value)))
-        pane.phase_axis = pane.phase_handle = None
-        pane.frequency_marker = add_frequency_cursor(ax, s.freqs[i])
-        pane.interaction.finish([ax]); pane.chart.done()
+        draw_directivity_map(pane, s.freqs, angles, h if kind == 'map_h' else v, cursor=s.freqs[i])
         return
     curves, ylabel, note = magnitude_curves(pane, s, levels)
     selected = selected_magnitudes(c)
@@ -131,12 +122,26 @@ def draw_chart(pane, s, levels, rel, i):
     if kind in ('phase', 'minimum'): phase_mode = 'Minimum phase' if kind == 'minimum' else 'Total phase'
     if any(name.endswith('DI') for name in curves): phase_mode = 'None'
     phase_traces, overlays = [], []
+    sweep_phase = any(k.startswith('sweep_') for k in selected)
     if phase_mode != 'None':
         delay = pane.delay_ms()
         sample = s.index(*o.axis) if selected == ['reference'] else s.index(o.azimuth.value(), o.elevation.value())
         source = 'Reference' if selected == ['reference'] else 'Probe'
         values = phase_values(s.freqs, s.pressure[:, *sample], phase_mode, c['wrapped'], delay)
         phase_traces.append((source+' '+phase_mode.lower(), s.freqs, values))
+        if sweep_phase:
+            phase_traces = []
+            for selected_kind in selected:
+                if selected_kind.startswith('sweep_'):
+                    plane = 'Horizontal' if selected_kind == 'sweep_h' else 'Vertical'
+                    samples = [(f'{plane[0]} {name}', direction) for direction, name in
+                        response_directions(s, plane, c['extent'], c['step'], c['symmetric'], c.get('sweep_direction'))]
+                elif selected_kind in ('probe', 'reference'):
+                    samples = [('Probe', s.index(o.azimuth.value(), o.elevation.value()))] if selected_kind == 'probe' else [('Reference axis', s.index(*o.axis))]
+                else: samples = []
+                for name, direction in samples:
+                    phase_traces.append((name+' '+phase_mode.lower(), s.freqs,
+                        phase_values(s.freqs, s.pressure[:, *direction], phase_mode, c['wrapped'], delay)))
         phase_note = 'Finite-band minimum-phase estimate; no propagation delay.' if phase_mode == 'Minimum phase' else pane.delay_note
         note = ' - '.join(part for part in (note, phase_note) if part)
     if c['overlays']:
@@ -154,13 +159,25 @@ def draw_chart(pane, s, levels, rel, i):
             if not is_di: values = values+c['offset']+shared_config(o)['frd_db_offset']
             overlays.append((overlay['name'], frequency, values, is_di))
     draw_response_curves(pane, s.freqs, curves, s.freqs[i], ylabel=ylabel, note=note,
-                         phase_mode=phase_mode, phase_traces=phase_traces, overlays=overlays)
+                         phase_mode=phase_mode, phase_traces=phase_traces, overlays=overlays,
+                         phase_follow_selection=sweep_phase)
 
 
 def draw_response_curves(pane, freqs, curves, cursor_frequency, *, ylabel='HALS level / dB + offset',
-                         note='', phase_mode='None', phase_traces=(), overlays=()):
+                         note='', phase_mode='None', phase_traces=(), overlays=(), phase_follow_selection=False):
     """Render prepared curves identically in Analysis and Export, without data-owner access."""
     c = pane.config
+    all_phase_traces = phase_traces
+    if phase_follow_selection and phase_mode != 'None':
+        names = [*curves, *(name for name, _, _, is_di in overlays if not is_di)]
+        selected = pane.cursor.active if pane.cursor.active in names else next(iter(names), None)
+        phase_traces = [trace for trace in phase_traces if trace[0] in
+                        (str(selected)+' total phase', str(selected)+' minimum phase', str(selected)+' phase')]
+        if not phase_traces: phase_mode = 'None'
+    pane.cursor.selection_changed = (lambda: draw_response_curves(
+        pane, freqs, curves, pane.cursor.frequency if pane.cursor.frequency is not None else cursor_frequency,
+        ylabel=ylabel, note=note, phase_mode=c['phase_mode'], phase_traces=all_phase_traces,
+        overlays=overlays, phase_follow_selection=True)) if phase_follow_selection else None
     fig = pane.chart.fig; fig.clear(); fig.set_layout_engine('constrained'); ax = fig.add_subplot()
     pane.phase_axis = pane.phase_handle = None; pane.fit_result = None
     phase_ax = None

@@ -68,14 +68,14 @@
       "help": "Seed coordinate for search (Height)."
     },
     "freq_start_hz": {
-      "label": "Start Frequency (Hz)",
+      "label": "Lower Frequency (Hz)",
       "default": "20.0",
-      "help": "Lower boundary of the acoustic origin search."
+      "help": "Lower boundary of the acoustic origin search. Set to the DUT's usable frequency range."
     },
     "freq_end_hz": {
-      "label": "End Frequency (Hz)",
+      "label": "Upper Frequency (Hz)",
       "default": "20000.0",
-      "help": "Upper boundary of the acoustic origin search."
+      "help": "Upper boundary of the acoustic origin search. Set to the DUT's usable frequency range."
     },
     "target_n_max_origins": {
       "label": "Max Harmonic Order (N)",

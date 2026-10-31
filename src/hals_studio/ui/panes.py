@@ -99,7 +99,7 @@ class PlotPane(W.QFrame):
         self._magnitude_actions = {}
         exclusive = G.QActionGroup(menu); exclusive.setExclusive(True)
         for category, items in GROUPS.items():
-            sub = menu.addMenu(category)
+            sub = menu.addMenu('SPL / Phase' if category == 'SPL & phase' else category)
             if category == 'SPL & phase':
                 sub.addSection('Magnitude')
                 selected = selected_magnitudes(self.config)

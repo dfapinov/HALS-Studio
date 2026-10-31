@@ -723,6 +723,18 @@ class Workspace(W.QMainWindow):
             'Levels are relative to the HALS pressure units, not automatically calibrated SPL. Minimum phase is a finite-band estimate. '
             'Coverage caps mark sampled boundaries, not measured level crossings.')
 
+    def show_documentation(self, filename="", heading=""):
+        from hals_studio.ui.documentation_viewer import DocumentationViewer
+
+        if not hasattr(self, "documentation_viewer") or self.documentation_viewer is None:
+            self.documentation_viewer = DocumentationViewer(self)
+        self.documentation_viewer.refresh_files()
+        self.documentation_viewer.show()
+        if filename:
+            self.documentation_viewer.open_document(filename, heading)
+        self.documentation_viewer.raise_()
+        self.documentation_viewer.activateWindow()
+
     def _jobs_idle(self):
         if self.jobs.closing:
             self._close_ready = True
@@ -796,7 +808,9 @@ class Workspace(W.QMainWindow):
         file.addSeparator()
         file.addAction("Restart workers", self.restart_pool)
         file.addAction("Exit", self.close)
-        self.menuBar().addMenu("Help").addAction("Controls & acoustic conventions", self.help)
+        help_menu = self.menuBar().addMenu("Help")
+        help_menu.addAction("Documentation…", self.show_documentation)
+        help_menu.addAction("Controls & acoustic conventions", self.help)
         G.QShortcut(G.QKeySequence("Space"), self, activated=self.toggle_play)
         G.QShortcut(G.QKeySequence("Right"), self, activated=self.advance)
         G.QShortcut(G.QKeySequence("Left"), self, activated=lambda: self.frequency.setValue(max(0, self.frequency.value() - 1)))

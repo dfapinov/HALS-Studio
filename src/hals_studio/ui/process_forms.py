@@ -2,9 +2,11 @@
 
 from PySide6 import QtCore as C, QtWidgets as W
 
+from hals_studio import bootstrap
+
 MAIN = {
     1: ["fdw_oct_res", "fdw_max_cap_ms"],
-    2: ["octave_resolution", "freq_start_hz"],
+    2: ["freq_start_hz", "freq_end_hz"],
     3: ["freq_end_hz", "freq_start_hz"],
     4: ["target_n_max"],
 }
@@ -13,6 +15,7 @@ MAIN = {
 class StageForms(W.QStackedWidget):
     rft_reset_requested = C.Signal()
     edit_orders_requested = C.Signal()
+    help_requested = C.Signal(str, str)
 
     def __init__(self, schema, values, parent=None):
         super().__init__(parent)
@@ -41,15 +44,14 @@ class StageForms(W.QStackedWidget):
             advancedform = W.QFormLayout(advanced)
             pagebox.addWidget(advanced)
             if stage == 2:
-                note = W.QLabel("Main scan: cylindrical bounds are calculated automatically from the measurement filename coordinates.")
-                note.setWordWrap(True)
-                mainform.addRow(note)
-                grid_group = W.QGroupBox("Full grid re-scan only")
+                seed_group = W.QGroupBox("HF search seed")
+                seedform = W.QFormLayout(seed_group)
+                grid_group = W.QGroupBox()
                 gridform = W.QFormLayout(grid_group)
+                gridform.addRow(W.QLabel("Full Grid Rescan Only"))
                 grid_note = W.QLabel("XYZ bounds default to the measurement extents. Edit them to scan a smaller or larger volume.")
                 grid_note.setWordWrap(True)
                 gridform.addRow(grid_note)
-                advancedform.addRow(grid_group)
             advanced.hide()
             self.advanced[stage] = (toggle, advanced)
 
@@ -94,6 +96,10 @@ class StageForms(W.QStackedWidget):
                     row.addStretch()
                 if not (stage == 2 and key in ("hold_origin_lf", "hold_origin_hf")):
                     target = mainform if key in MAIN[stage] else advancedform
+                    if stage == 2 and key == "tweeter_x":
+                        advancedform.addRow(seed_group)
+                    if stage == 2 and key in ("tweeter_x", "tweeter_y", "tweeter_z"):
+                        target = seedform
                     if stage == 2 and key in ("x_bounds", "y_bounds", "z_bounds", "grid_res_mm"):
                         target = gridform
                         if key.endswith("_bounds"):
@@ -102,6 +108,11 @@ class StageForms(W.QStackedWidget):
                     target.addRow(caption, field)
                 self.controls[stage, key] = control
             if stage == 2:
+                mainform.addRow(self._help_note(
+                    "Set the lower and upper frequencies to the DUT's usable frequency range.",
+                    "stage2_origin_help.md", "upper-frequency",
+                    "Help: Stage 2 upper and lower frequency",
+                ))
                 holds = W.QWidget()
                 holdrow = W.QHBoxLayout(holds)
                 holdrow.setContentsMargins(0, 0, 0, 0)
@@ -111,6 +122,14 @@ class StageForms(W.QStackedWidget):
                     holdrow.addWidget(control)
                 holdrow.addStretch()
                 advancedform.addRow("Hold coordinate outside test range", holds)
+                advancedform.addRow(grid_group)
+            if stage == 3:
+                mainform.addRow(self._help_note(
+                    "The reflection-free range is where Stage 1 windowing has removed room "
+                    "reflections. It is distinct from the DUT's usable frequency range.",
+                    "stage3_help.md", "upper-test-range",
+                    "Help: Stage 3 upper test range",
+                ))
             if stage == 4:
                 control = self.controls[4, "use_manual_table"]
                 caption = advancedform.labelForField(control)
@@ -124,17 +143,18 @@ class StageForms(W.QStackedWidget):
                 edit.clicked.connect(self.edit_orders_requested)
                 advancedform.addRow(edit)
                 optimizer = self.controls[4, "condition_preflight"]
-                optimizer_label = advancedform.labelForField(optimizer)
+                def select_manual(checked, optimizer=optimizer, button=edit):
+                    if checked:
+                        optimizer.setChecked(False)
+                    button.setEnabled(checked)
 
-                def growth_controls(
-                    manual, optimizer=optimizer, label=optimizer_label, button=edit
-                ):
-                    optimizer.setEnabled(not manual)
-                    label.setEnabled(not manual)
-                    button.setEnabled(manual)
+                def select_optimizer(checked, manual=control):
+                    if checked:
+                        manual.setChecked(False)
 
-                control.toggled.connect(growth_controls)
-                growth_controls(control.isChecked())
+                control.toggled.connect(select_manual)
+                optimizer.toggled.connect(select_optimizer)
+                select_manual(control.isChecked())
         for key in ("noise_floor_start_db", "noise_floor_max_db", "max_lambda"):
             control = self.controls[4, key]
             form = control.parentWidget().layout()
@@ -146,6 +166,18 @@ class StageForms(W.QStackedWidget):
 
             self.controls[4, "enable_regularization"].toggled.connect(show_regularization)
             show_regularization(self.controls[4, "enable_regularization"].isChecked())
+
+    def _help_note(self, message, filename, heading, accessible_name):
+        badge_url = C.QUrl.fromLocalFile(str(bootstrap.RESOURCES / "assets" / "help_badge_small.png"))
+        note = W.QLabel(
+            f'{message} <a href="help"><img src="{badge_url.toString()}" '
+            'width="20" height="20" style="vertical-align:middle"></a>'
+        )
+        note.setWordWrap(True)
+        note.setAccessibleName(accessible_name)
+        note.setToolTip(accessible_name)
+        note.linkActivated.connect(lambda _: self.help_requested.emit(filename, heading))
+        return note
 
     def _scan_bound_edited(self, key):
         if not self._setting_scan_bounds:

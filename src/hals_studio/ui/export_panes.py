@@ -38,8 +38,12 @@ class ExportPane(W.QWidget):
         layout.addWidget(self.selector)
         self.stack = W.QStackedWidget(); layout.addWidget(self.stack, 1)
         for widget in (native, self.cli, self.empty, self.cta_info): self.stack.addWidget(widget)
+        self.bind_header(native)
         self.setContextMenuPolicy(C.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(lambda _: self.choose())
+
+    def bind_header(self, panel):
+        panel.header.title.clicked.connect(lambda: self.choose(panel.header.title))
 
     def choose(self, anchor=None):
         anchor = anchor if isinstance(anchor, W.QWidget) else self.selector
@@ -50,15 +54,19 @@ class ExportPane(W.QWidget):
     def add_export_choices(self, menu):
         if self.workspace.config['mode'] != 'CTA-2034':
             directivity = menu.addMenu('Directivity')
-            for kind, title in DIRECTIVITY_TITLES.items():
+            for kind, title in GROUPS['Directivity'].items():
                 directivity.addAction(title, lambda checked=False, k=kind: self.select_directivity(k))
+            sweeps = menu.addMenu('SPL / Phase')
+            sweeps.addAction('Selected Point', lambda: self.select_native('response'))
+            for kind in ('sweep_h', 'sweep_v'):
+                sweeps.addAction(DIRECTIVITY_TITLES[kind], lambda checked=False, k=kind: self.select_directivity(k))
         if self.workspace.config['mode'] == 'CTA-2034':
             for kind, title in GROUPS['CEA2034'].items():
                 menu.addAction(title, lambda checked=False, k=kind: self.select_cta(k))
             menu.addAction('About CTA-2034 sampling', self.select_cta_info)
             menu.addAction('CLI output', lambda: self.select('cli'))
             return
-        for kind, title in [('response', 'SPL / phase'), ('csd', 'CSD / wavelet'), ('impulse', 'Impulse response')]:
+        for kind, title in [('csd', 'CSD / wavelet'), ('impulse', 'Impulse response')]:
             menu.addAction(title, lambda checked=False, k=kind: self.select_native(k))
         menu.addAction('CLI output', lambda: self.select('cli'))
 
@@ -81,8 +89,7 @@ class ExportPane(W.QWidget):
             from hals_studio.ui.plotting.csd_plot import CSDPanel
             widget = ResponsePanel(self.workspace) if kind == 'response' else ImpulsePanel() if kind == 'impulse' else CSDPanel()
             self.native_widgets[kind] = widget; self.stack.addWidget(widget)
-            if kind == 'response':
-                gear = W.QPushButton('Plot settings'); gear.clicked.connect(widget.settings); widget.toolbar.addWidget(gear)
+            self.bind_header(widget)
         self.native_kind = kind; self.native = self.native_widgets[kind]
         self.native_name = {'response': 'SPL / phase', 'csd': 'CSD / wavelet', 'impulse': 'Impulse response'}[kind]
         self.select('native')
@@ -110,8 +117,10 @@ class ExportPane(W.QWidget):
             if self.directivity_panel is None:
                 from hals_studio.ui.plotting.export_directivity import ExportDirectivityPanel
                 self.directivity_panel = ExportDirectivityPanel(self.directivity_options); self.stack.addWidget(self.directivity_panel)
+                self.bind_header(self.directivity_panel)
             self.directivity_panel.update_result(result, self.directivity_kind)
             self.stack.setCurrentWidget(self.directivity_panel)
+            self.selector.hide()
             return
         if self.workspace.config['mode'] == 'CTA-2034' and self.mode != 'cli':
             if self.cta_show_info:
@@ -135,13 +144,23 @@ class ExportPane(W.QWidget):
         widget = self.cli if self.mode == 'cli' else self.native if self.workspace.config.get('coeff_path') else self.empty
         self.stack.setCurrentWidget(widget)
         self.selector.setText(('CLI output' if self.mode == 'cli' else self.native_name) + '  \u25be')
+        if widget is self.native:
+            self.native.header.title.setText(self.native_name.upper() + '  \u25be')
+            self.selector.hide()
 
     def state(self):
         return dict(mode=self.mode, native_kind=self.native_kind, cta_kind=self.cta_kind, cta_options=deepcopy(self.cta_options), cta_show_info=self.cta_show_info, directivity_kind=self.directivity_kind, directivity_options=deepcopy(self.directivity_options))
 
     def restore(self, state):
         self.directivity_options.clear(); self.directivity_options.update(deepcopy(state.get('directivity_options', {})))
-        if self.directivity_panel is not None: self.directivity_panel.result = None
+        if self.directivity_panel is not None:
+            from hals_studio.ui.plotting.plot_settings import default_config
+            self.directivity_options.setdefault('polar_sample_points', True)
+            for key, value in default_config('map_h').items(): self.directivity_options.setdefault(key, value)
+            self.directivity_panel.span.blockSignals(True)
+            self.directivity_panel.span.setValue(self.directivity_options['span'])
+            self.directivity_panel.span.blockSignals(False)
+            self.directivity_panel.result = None
         self.cta_options.clear(); self.cta_options.update(deepcopy(state.get("cta_options", {})))
         if self.cta_panel is not None:
             from hals_studio.ui.plotting.plot_settings import default_config
@@ -167,5 +186,6 @@ class ExportPane(W.QWidget):
         if self.directivity_panel is not None: self.directivity_panel.result = None
 
     def shutdown(self):
+        if self.directivity_panel is not None: self.directivity_panel.shutdown()
         for widget in self.native_widgets.values():
             if widget is not self.workspace.csd_panel and hasattr(widget, 'view'): widget.view.shutdown()

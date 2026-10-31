@@ -13,6 +13,7 @@ class SPLCursor:
         self.pane, self.label = pane, label
         self.frequency_provider = frequency_provider
         self.active = None; self.frequency = None; self.lines = {}; self.phase = {}; self.ax = None
+        self.selection_changed = None
         canvas = pane.chart.canvas
         canvas.mpl_connect('button_press_event', self.press)
 
@@ -33,7 +34,8 @@ class SPLCursor:
                 name = line.get_label()
                 for key in self.lines:
                     source = 'Reference' if key == 'Reference axis' else key
-                    if name in (source+' total phase', source+' minimum phase', source+' phase'):
+                    if name in tuple(label+suffix for label in (source, key)
+                                     for suffix in (' total phase', ' minimum phase', ' phase')):
                         self.phase[key] = line
         if self.active not in self.lines: self.active = next(iter(self.lines), None)
         self.label.setVisible(bool(self.lines))
@@ -66,6 +68,9 @@ class SPLCursor:
             hit = text.contains(event)[0] or (index < len(handles) and handles[index].contains(event)[0])
             if hit and text.get_text() in self.lines:
                 self.active = text.get_text(); self.highlight()
+                if self.selection_changed is not None:
+                    self.selection_changed()
+                    return
                 self.follow_marker()
                 self.pane.chart.canvas.draw_idle(); return
 

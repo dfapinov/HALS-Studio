@@ -124,3 +124,5 @@ Full grid re-scan fields initially use the Cartesian box enclosing that cylinder
 StageForms tracks per-axis manual overrides; process layout state saves those
 overrides so automatic defaults can follow measurement updates without replacing
 user-entered bounds. Filename coordinates already loaded for Stage 1 are reused.
+
+<!-- help-group: hidden -->

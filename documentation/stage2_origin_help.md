@@ -23,7 +23,7 @@ The result is a best-fit mathematical origin, which need not sit exactly on a ph
 
 ## Quick Start
 
-1. Run Stage 2. The default settings are suitable for most complete speakers; check the start frequency for drivers with a restricted range.
+1. Set **Lower Frequency** and **Upper Frequency** to the DUT's usable frequency range, using its measured response to avoid testing frequencies where the output is near the noise floor. Then run Stage 2.
 2. Review the origin paths and fitting errors. For example, where the tweeter dominates the output, the high-frequency origins should usually lie near its physical location.
 
 ## Results - How to interpret
@@ -46,25 +46,25 @@ A 3D coordiante view is also avilible from the **Plot Type** menu, as well as **
 
 ## Main Settings
 
+### Upper Frequency
+
+Set the upper frequency with the device's measured response in mind, around the point where high-frequency output starts roll-off towards the noise floor.
+
+### Lower Frequency
+
+Set the lower frequency around the point where low-frequency output starts roll-off towards the noise floor.
+
+Where driver output is weak, the search may start fitting environmental noise rather than the device. The resulting origins can move far from the device and cause errors in the final results.
+
+![stage2_usable_range](./images/stage2_usable_range.png)
+
+## Advanced Setrtings
+
 ### Octave Resolution
 
 Stage 2 tests frequencies spaced by a fraction of an octave rather than searching every FFT bin. **Octave Resolution (1/x)** sets that spacing: `6` tests at 1/6-octave intervals, while `12` tests at 1/12-octave intervals. Finer spacing means more searches and a longer run.
 
 The resulting X, Y and Z coordinates are interpolated between tested frequencies to provide an origin for every FFT bin within the selected range. This assumes the effective origin changes smoothly enough between samples.
-
-### Start Frequency
-
-Set the lower test boundary with the device's measured response in mind, around the point where its low-frequency output reaches the measurement noise floor. Below that point, the search may start fitting environmental noise rather than the device. The resulting origins can move far from the device and fluctuate between frequencies.
-
-This matters particularly at low frequencies because Stage 4's KR-based order N cap uses microphone distances measured from the selected origin. Large or rapidly changing shifts alter those distances and can make the KR order move up and down rapidly with frequency.
-
-This is usually a small concern for complete speakers, which often work well with the default **20 Hz to 20 kHz** test. A driver with a restricted range may benefit from a narrower search. For example, a tweeter whose response reaches the noise floor below roughly **500 Hz** could use 500 Hz as the starting frequency. Choose the boundary from the measured response.
-
-The **End Frequency** is generally less critical for this issue because the KR cap mainly controls order at low frequencies, this setting is therefore under 'Advanced'. A woofer's origins may jump around where its high-frequency output becomes very weak, but those shifts are usually less consequential for the final solve and reconstruction. You can still lower **End Frequency (Hz)** to exclude that region and reduce the number of search frequencies, making Stage 2 faster.
-
-Reducing the Stage 2 range limits where optimized origins are applied; it does not remove frequency data or shorten the Stage 4 solve range.
-
-Outside the test range, the saved origin shift is zero.
 
 ---
 
@@ -177,3 +177,5 @@ The brute force grid scan is best reserved as a last resort for erroneous result
 
 ### A Note on Reported Results
 Because the origin search is performed using a limited spatial resolution (Order N=4 by default) to maintain high solve speeds, the error percentages reported during this stage may appear higher than those of the final, high-order SHE reconstruction. You should expect to see a reasonably consistent error curve that rises slightly during complex spatial transitions—such as the crossover region—and generally trends upward toward the high frequencies.
+
+<!-- help-group: process -->

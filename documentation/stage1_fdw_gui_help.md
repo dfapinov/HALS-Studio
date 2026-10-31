@@ -263,3 +263,5 @@ A project file normally supplies measurement metadata from the HALS Capture app.
 For debugging and investigation, you can export processed Stage 1 IRs as WAV files. Use **Export IR...** to export the selected measurement, or the button's arrow menu to choose **Export All...**. When both FDW and smoothed curves are available, choose which version to export.
 
 The WAVs use 32-bit floating point and the saved sample rate. They contain the processed Stage 1 data, rather than the original unwindowed recordings. This is useful for comparing the input to the SHE model with its output at the same measurement position.
+
+<!-- help-group: process -->

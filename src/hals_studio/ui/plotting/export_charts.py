@@ -6,6 +6,7 @@ from hals_studio.ui.plotting.plots import Chart, style, audio_ticks, audio_frequ
 from matplotlib.ticker import FuncFormatter, MaxNLocator
 from hals_studio.ui.plotting.response_plot import phase_trace, response_axis, response_axis_handle, fit_annotation
 from hals_studio.ui.plotting.plot_interaction import PlotInteraction
+from hals_studio.ui.plot_header import PlotHeader
 from hals_studio.ui.plotting.spl_cursor import SPLCursor, add_frequency_cursor
 from hals_studio.analysis.analysis_metrics import trend_fit
 
@@ -25,20 +26,8 @@ class ResponsePanel(W.QWidget):
         self.latest = None; self.fit_result = None
         self.cursor_frequency = None
         layout = W.QVBoxLayout(self); layout.setContentsMargins(5, 5, 5, 5)
-        toolbar_widget = W.QWidget(); toolbar_widget.setStyleSheet('QPushButton, QToolButton { padding:7px 5px; } QLabel, QCheckBox { font-size:11px; }')
-        self.toolbar = W.QHBoxLayout(toolbar_widget); self.toolbar.setContentsMargins(0,0,0,0); self.toolbar.setSpacing(4); layout.addWidget(toolbar_widget)
-        self.add_overlay_button = W.QPushButton('Add overlay'); self.add_overlay_button.clicked.connect(self.add_overlay); self.toolbar.addWidget(self.add_overlay_button)
-        button = W.QToolButton(); button.setText('Overlays'); button.clicked.connect(self.overlays); self.toolbar.addWidget(button)
-        self.fit_toggle = W.QCheckBox('Fit line'); self.fit_toggle.toggled.connect(self.toggle_fit); self.toolbar.addWidget(self.fit_toggle); self.toolbar.addSpacing(10)
-        self.fit_limits = {}
-        for key, title in [('fit_low', 'Fit Lower'), ('fit_high', 'Fit Upper')]:
-            self.toolbar.addWidget(W.QLabel(title))
-            spin = W.QDoubleSpinBox(); spin.setRange(.1, 100000); spin.setDecimals(0)
-            spin.setFixedWidth(78); spin.setKeyboardTracking(False); spin.setToolTip(title+' / Hz')
-            spin.setValue(self.config[key]); spin.valueChanged.connect(lambda value, key=key: self.set_fit_limit(key, value))
-            self.fit_limits[key] = spin; self.toolbar.addWidget(spin)
-        self.toolbar.addStretch()
-        self.cursor_label = W.QLabel(); self.cursor_label.setFixedWidth(220); self.toolbar.addWidget(self.cursor_label)
+        self.header = PlotHeader(lambda: None, self.reset, self.settings); layout.insertWidget(0, self.header)
+        self.cursor_label = self.header.readout
         self.cursor = SPLCursor(self, self.cursor_label, lambda: self.cursor_frequency)
         layout.addWidget(self.chart, 1)
         self.note = W.QLabel('Select coefficients to preview the microphone response.'); self.note.setStyleSheet('color:#849eb1;font-size:10px;padding:3px;'); layout.addWidget(self.note)
@@ -68,12 +57,6 @@ class ResponsePanel(W.QWidget):
         self.frequency_marker.set_xdata([frequency, frequency])
         self.cursor.readout(float(frequency))
 
-    def set_fit_limit(self, key, value):
-        self.sync(); self.config[key] = value; self.reset()
-
-    def toggle_fit(self, value):
-        self.sync(); self.config['fit'] = value; self.reset()
-
     def context(self, point):
         menu = W.QMenu(self)
         menu.addAction('Add overlay', self.add_overlay); menu.addAction('Overlays…', self.overlays)
@@ -84,9 +67,6 @@ class ResponsePanel(W.QWidget):
         options = self.workspace.config.setdefault('response_options', deepcopy(RESPONSE_DEFAULT))
         for key, value in RESPONSE_DEFAULT.items(): options.setdefault(key, deepcopy(value))
         self.config = options
-        for key, spin in self.fit_limits.items():
-            spin.blockSignals(True); spin.setValue(options[key]); spin.blockSignals(False)
-        self.fit_toggle.blockSignals(True); self.fit_toggle.setChecked(options['fit']); self.fit_toggle.blockSignals(False)
 
     def reset(self):
         self.key = None; self.interaction.saved.clear()
@@ -212,6 +192,10 @@ class ResponsePanel(W.QWidget):
 
     def settings(self):
         self.sync(); dialog = W.QDialog(self); dialog.setWindowTitle('SPL + total phase settings'); form = W.QFormLayout(dialog)
+        overlays = W.QHBoxLayout()
+        for title, callback in [('Add overlay', self.add_overlay), ('Overlays', self.overlays)]:
+            button = W.QPushButton(title); button.clicked.connect(callback); overlays.addWidget(button)
+        form.addRow(overlays)
         wrapped = W.QCheckBox(); wrapped.setChecked(self.config['wrapped']); form.addRow('Wrapped phase', wrapped)
         fit = W.QCheckBox(); fit.setChecked(self.config['fit']); form.addRow('Fit line', fit)
         curve = W.QComboBox(); curve.addItems(['Selected mic']+[o['name'] for o in self.config['overlays']]); curve.setCurrentText(self.config['fit_curve']); form.addRow('Fit response', curve)
@@ -234,13 +218,8 @@ class ImpulsePanel(W.QWidget):
     def __init__(self, show_toolbar=True):
         super().__init__(); self.config = {}; self.last_render = None; self.chart = Chart(); self.key = None
         layout = W.QVBoxLayout(self); layout.setContentsMargins(5, 5, 5, 5)
-        row = W.QHBoxLayout(); layout.addLayout(row); row.addWidget(W.QLabel('IMPULSE RESPONSE / PROPAGATION TIMING')); row.addStretch()
-        button = W.QPushButton('Reset axes'); button.clicked.connect(lambda: self.interaction.reset()); row.addWidget(button)
-        gear = W.QToolButton(); button.setFixedHeight(32); gear.setFixedHeight(32); gear.setText('\u2699'); gear.clicked.connect(self.settings); row.addWidget(gear)
-        if not show_toolbar:
-            for index in range(row.count()):
-                widget = row.itemAt(index).widget()
-                if widget is not None: widget.hide()
+        self.header = PlotHeader(lambda: None, lambda: self.interaction.reset(), self.settings)
+        self.header.readout.hide(); self.header.setVisible(show_toolbar); layout.addWidget(self.header)
         layout.addWidget(self.chart, 1); self.interaction = PlotInteraction(self)
         self.chart.fig.add_subplot().set_axis_off(); self.chart.done()
 

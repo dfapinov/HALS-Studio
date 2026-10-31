@@ -40,6 +40,7 @@ class ProcessWorkspace(W.QWidget):
         self.rft_reset_button = self.pages.rft_reset_button
         self.pages.rft_reset_requested.connect(self.set_range_from_rft)
         self.pages.edit_orders_requested.connect(self.edit_orders)
+        self.pages.help_requested.connect(self.owner.show_documentation)
         self.order_choice=W.QComboBox();self.order_choice.setSizeAdjustPolicy(W.QComboBox.AdjustToContents);self.order_choice.currentIndexChanged.connect(self.refresh_order_action)
         self.reference_order=W.QComboBox();self.reference_order.setSizeAdjustPolicy(W.QComboBox.AdjustToContents);self.reference_order.currentIndexChanged.connect(self.change_reference)
         actions=W.QHBoxLayout();box.addLayout(actions);self.run_button=W.QPushButton('Run Stage 1');self.run_button.setObjectName('primary');self.run_button.clicked.connect(lambda:self.run());actions.addWidget(self.run_button)
@@ -573,7 +574,7 @@ class ProcessWorkspace(W.QWidget):
         if self.stage!=3 or self.reference_order.currentData() is None:return
         self.run('reference')
     def edit_orders(self):
-        rows=self.table_dialog('Manual harmonic order table',['Upper frequency / Hz','Order N'],[[f'{f:.0f}',n] for f,n in sorted(self.manual_table.items())],True)
+        rows=self.table_dialog('Manual harmonic order table',['Upper frequency / Hz','Order N'],[[f'{f:g}',n] for f,n in sorted((float(f),n) for f,n in self.manual_table.items())],True)
         if rows is not None:
             try:self.manual_table={float(f):int(n) for f,n in rows}
             except ValueError:W.QMessageBox.warning(self,'Order table','Enter numeric frequencies and integer orders.')

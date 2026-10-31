@@ -142,7 +142,35 @@ reference direction, distance and offsets. Shared directions and endpoints can
 make the sweep point count differ from the CTA set's 70 unique positions.
 
 Directivity plots include horizontal/vertical spectrograms, polars and globes.
-They use only evaluated export points, normalized to the export reference point.
+They use only evaluated export points, normalized to the strongest export point
+at each frequency, with a shared reference for both planes. Rotating a full sweep
+changes the angular positions without changing the colour scale. Partial sweeps
+use the strongest point within their sampled coverage.
 A horizontal-only sweep leaves the vertical view empty. Partial sweeps remain
 partial: no Analysis sphere is used to fill missing angles. The polar frequency
 and display span controls belong to the Export plot.
+
+Export's Plot settings button uses the same directivity controls as Analysis:
+Sonogram or Waterfall display, optional on-axis normalization, fractional-octave
+energy smoothing, display span, contours and contour spacing. These settings are
+saved with the pane and affect the preview plots only. On-axis normalization uses
+the export reference direction; peak normalization remains the default.
+Analysis and Export share the normalization, energy smoothing and directivity
+renderers. Analysis supplies reconstructed sphere cuts; Export supplies evaluated
+export points and retains their sampled angular coverage.
+Export plot selectors, readouts, Reset axes and Plot settings share Analysis's
+single-row header. Use the gear button for span, fit and overlay controls.
+
+The SPL / Phase menu offers Selected Point, Horizontal SPL sweep and Vertical SPL sweep. The sweeps
+use the same SPL curve renderer as Analysis, with one absolute-level trace per
+available export direction. Export geometry determines the angles and spacing;
+missing planes remain empty, and the rear direction is shown only once. Plot
+settings share Analysis's smoothing, phase, wrapping, delay, fit and axis controls.
+Double-click a legend trace to select it: both its phase curve and cursor readout
+follow that selection, in Analysis and Export. Export sweep angles and spacing
+remain controlled by Export geometry.
+The Direction setting filters the displayed export traces to positive angles,
+negative angles or both, always retaining the on-axis point when available.
+The shared rear point is labelled +180 or -180 to match the selected side.
+
+<!-- help-group: export -->

@@ -160,7 +160,6 @@ class ExportWorkspace(W.QWidget):
         self.response_panel = ResponsePanel(self); self.chart = self.response_panel.chart
         self.response_panel.setMinimumWidth(0); self.response_panel.setSizePolicy(W.QSizePolicy.Ignored, W.QSizePolicy.Preferred)
         self.rows[0].addWidget(self.response_panel)
-        row = self.response_panel.toolbar
         navigation_bar = W.QWidget(scene)
         navigation = W.QHBoxLayout(navigation_bar)
         navigation.setContentsMargins(0, 0, 0, 0)
@@ -177,8 +176,6 @@ class ExportWorkspace(W.QWidget):
         navigation.addWidget(W.QLabel('Prev/Next'), 0, C.Qt.AlignVCenter)
         self.next = W.QPushButton('›'); self.next.setFixedWidth(30)
         self.next.clicked.connect(lambda: self.select((self.selected+1)%len(self.layout_data['xyz']))); navigation.addWidget(self.next)
-        reset = W.QPushButton('Reset axes'); reset.clicked.connect(self.response_panel.reset); row.addWidget(reset)
-        gear = W.QToolButton(); gear.setText('\u2699'); reset.setFixedHeight(32); gear.setFixedHeight(32); gear.setToolTip('Response plot settings'); gear.clicked.connect(self.response_panel.settings); row.addWidget(gear)
         from hals_studio.ui.plotting.csd_plot import CSDPanel
         self.csd_panel = CSDPanel(); self.rows[1].addWidget(self.csd_panel)
         self.ir_panel = ImpulsePanel(); self.rows[1].addWidget(self.ir_panel)

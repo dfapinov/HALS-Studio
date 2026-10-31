@@ -85,7 +85,8 @@ def test_process_forms_keep_stage_values_and_control_dependencies(window):
     optimizer = forms.controls[4, "condition_preflight"]
     for manual in (True, False):
         forms.controls[4, "use_manual_table"].setChecked(manual)
-        assert optimizer.isEnabled() is not manual
+        assert optimizer.isEnabled()
+        assert not (optimizer.isChecked() and manual)
         assert edit.isEnabled() is manual
     for enabled in (True, False):
         forms.controls[4, "enable_regularization"].setChecked(enabled)
@@ -563,7 +564,7 @@ def test_export_partial_directivity_and_preview_demand(window):
     config = dict(DEFAULT_EXPORT, coeff_path='example.h5', direction='horizontal', range_deg=90)
     layout = geometry(config)
     frequencies = np.array([100., 1000., 10000.])
-    data = {str(i): dict(mag=np.array([60., 65., 70.])-i) for i in range(len(layout['xyz']))}
+    data = {str(i): dict(mag=np.array([60., 65., 70.])-i, phase=np.array([10., 20., 30.])+i) for i in range(len(layout['xyz']))}
     result = dict(config=config, geometry=layout, freqs=frequencies, data=data)
     cuts = export_cuts(result)
     angles, levels = cuts['horizontal']
@@ -576,6 +577,8 @@ def test_export_partial_directivity_and_preview_demand(window):
     assert needs_aggregate_preview(workspace.config)
     panel = pane.directivity_panel
     assert panel is pane.stack.currentWidget()
+    assert pane.selector.isHidden()
+    assert panel.header.title.text().startswith('HORIZONTAL + VERTICAL POLARS')
     trace = next(line for line in panel.chart.fig.axes[0].lines if line.get_gid() == 'directivity-trace')
     assert trace.get_marker() == '.'
     assert len(trace.get_xdata()) == len(angles)
@@ -595,13 +598,24 @@ def test_export_partial_directivity_and_preview_demand(window):
     panel.frequency.setValue(2000.)
     assert panel.config['polar_rotation']['horizontal'] == 30.
     assert not panel.chart.fig.axes[1].axison
-    for kind in ('map_h', 'map_v', 'globe_hv'):
+    for kind in ('map_h', 'map_v', 'globe_hv', 'sweep_h', 'sweep_v'):
         pane.select_directivity(kind)
         panel.chart.canvas.draw()
         if kind == 'globe_hv':
             assert set(panel._rotation_axes.values()) == {'horizontal'}
+        elif kind == 'sweep_h':
+            assert len(panel.magnitude_curves) == len(angles)
+            for curve in panel.magnitude_curves.values():
+                assert any(np.array_equal(curve, row['mag']) for row in data.values())
+            assert panel.header.readout.isHidden() is False
+            assert panel.phase_axis is not None
+        elif kind == 'sweep_v':
+            assert not panel.magnitude_curves
+            assert panel.chart.fig.axes[0].texts[0].get_text() == 'No vertical sweep data'
     workspace.dirty = True
     pane.select_native('response')
+    assert pane.selector.isHidden()
+    assert pane.native.header.title.text().startswith('SPL / PHASE')
     assert not needs_aggregate_preview(workspace.config)
 
 
@@ -780,3 +794,137 @@ def test_import_controls_and_legacy_options_use_automatic_origins(window, tmp_pa
     assert export.config['use_optimized_origins'] is True
     assert 'use_optimized_origins' not in SCHEMA['4']
     dialog.close()
+
+
+@pytest.mark.parametrize('kind', ['map_h', 'map_v'])
+def test_export_spectrogram_settings_use_analysis_controls(window, monkeypatch, kind):
+    from hals_studio.ui.plotting.export_directivity import ExportDirectivityPanel
+    from hals_studio.ui.plotting.plot_settings import setting_keys, SPECS
+    from hals_studio.application.export_engine import DEFAULT_EXPORT, geometry
+    from hals_studio.ui.plotting import csd_plot
+    config = dict(DEFAULT_EXPORT)
+    layout = geometry(config)
+    result = dict(config=config, geometry=layout, freqs=np.array([100., 101., 200.]),
+                  processed=np.ones((3, len(layout['xyz']))))
+    options = {}
+    panel = ExportDirectivityPanel(options)
+    panel.update_result(result, kind)
+    assert not panel.settings_button.isHidden()
+    # Feed identical cuts through the Analysis adapter and compare the actual
+    # plotted values and colour limits with the Export adapter.
+    from types import SimpleNamespace
+    from hals_studio.application.export_directivity import export_cuts
+    from hals_studio.ui.plotting.response_plot import draw_chart
+    cuts = export_cuts(result, panel.config)
+    plane = 'horizontal' if kind == 'map_h' else 'vertical'
+    angles, values = cuts[plane]
+    export_image = panel.chart.fig.axes[0].collections[0]
+    export_values = export_image.get_array().copy()
+    export_limits = export_image.get_clim()
+    panel.owner = SimpleNamespace()
+    sphere = SimpleNamespace(freqs=result['freqs'], cuts=lambda _: (angles, values, values))
+    draw_chart(panel, sphere, None, None, 0)
+    analysis_image = panel.chart.fig.axes[0].collections[0]
+    np.testing.assert_array_equal(analysis_image.get_array(), export_values)
+    assert analysis_image.get_clim() == export_limits
+
+    def accept(dialog):
+        from hals_studio.ui.pane_setup import Setup
+        assert isinstance(dialog, Setup)
+        form = dialog.size_body.layout()
+        labels = [form.itemAtPosition(row, 1).widget().text()
+                  for row in range(form.rowCount())]
+        assert labels == [SPECS[key][0] for key in setting_keys(kind)]
+        for row, key in enumerate(setting_keys(kind)):
+            control = dialog.controls[key]
+            if key == 'directivity_display': control.setCurrentText('Waterfall')
+            elif key == 'smoothing': control.setCurrentText('1/3 octave')
+            elif key == 'span': control.setValue(48)
+            elif key == 'contours': control.setChecked(False)
+            elif key == 'directivity_on_axis': control.setChecked(True)
+        return W.QDialog.Accepted
+
+    class Surface(W.QWidget):
+        def render(self, ir, fs, config): self.rendered = config
+        def shutdown(self): pass
+
+    monkeypatch.setattr(W.QDialog, 'exec', accept)
+    monkeypatch.setattr(csd_plot, 'CSDView', Surface)
+    panel.settings()
+    assert options['smoothing'] == '1/3 octave'
+    assert options['directivity_on_axis']
+    assert not options['contours']
+    assert panel.span.value() == options['span'] == 48
+    assert panel.stack.currentWidget() is panel.csd_view
+    assert panel.csd_view.rendered['_surface_data'][2].shape[1] == 3
+    options['directivity_display'] = 'Sonogram'
+    panel.redraw()
+    assert panel.stack.currentWidget() is panel.chart
+    assert panel.chart.fig.axes[0].collections[0].get_clim() == (-48, 0)
+    restored = ExportDirectivityPanel(dict(options))
+    assert restored.span.value() == 48
+    restored.close(); panel.shutdown(); panel.close()
+
+
+@pytest.mark.parametrize('workspace', ['analysis', 'export'])
+def test_sweep_phase_follows_legend_selection(window, workspace, monkeypatch):
+    from matplotlib.backend_bases import MouseEvent
+    from hals_studio.ui.plotting.response_plot import phase_values
+    if workspace == 'analysis':
+        from hals_studio.analysis.acoustics import demo
+        from hals_studio.ui.plotting.plots import response_directions
+        sphere = demo()
+        phases = np.arange(len(sphere.azimuth))*2.
+        sphere.pressure = abs(sphere.pressure)*np.exp(1j*np.deg2rad(phases))[None, None, :]
+        window.set_sphere(sphere)
+        panel = window.panes[1]; panel.set_kind('sweep_h')
+        panel.config.update(extent=30., step=30., sweep_direction='+', phase_mode='Total phase', wrapped=False, delay=0.)
+        panel.invalidate(); panel.render()
+        samples = response_directions(sphere, 'Horizontal', 30., 30., direction='+')
+        expected = {f'H {name}': phase_values(sphere.freqs, sphere.pressure[:, *idx], 'Total phase', False, 0.)
+                    for idx, name in samples}
+    else:
+        from hals_studio.application.export_engine import DEFAULT_EXPORT, geometry
+        from hals_studio.application.export_directivity import export_cuts
+        from hals_studio.ui.plotting.export_directivity import ExportDirectivityPanel
+        config = dict(DEFAULT_EXPORT, direction='horizontal', range_deg=30, increment_deg=30)
+        layout = geometry(config); f = np.array([100., 1000., 10000.])
+        result = dict(config=config, geometry=layout, freqs=f,
+            data={str(i): dict(mag=np.array([60., 65., 70.])+i, phase=np.array([10., 20., 30.])+i*15)
+                  for i in range(len(layout['xyz']))})
+        panel = ExportDirectivityPanel(dict(phase_mode='Total phase', wrapped=False))
+        panel.update_result(result, 'sweep_h')
+        phases = np.column_stack([row['phase'] for row in result['data'].values()])
+        _, values = export_cuts(result, normalize=False, samples=phases)['horizontal']
+        expected = dict(zip(panel.magnitude_curves, values.T))
+    first, second = list(panel.magnitude_curves)[:2]
+    assert panel.cursor.active == first
+    np.testing.assert_allclose(panel.phase_axis.lines[0].get_ydata(), expected[first], atol=1e-8)
+    panel.chart.canvas.draw()
+    legend = panel.chart.fig.axes[0].get_legend()
+    text = next(text for text in legend.get_texts() if text.get_text() == second)
+    box = text.get_window_extent(panel.chart.canvas.get_renderer())
+    event = MouseEvent('button_press_event', panel.chart.canvas, (box.x0+box.x1)/2, (box.y0+box.y1)/2, button=1, dblclick=True)
+    panel.cursor.press(event)
+    assert panel.cursor.active == second
+    assert len(panel.phase_axis.lines) == 1
+    np.testing.assert_allclose(panel.phase_axis.lines[0].get_ydata(), expected[second], atol=1e-8)
+    assert second in panel.cursor.phase and first not in panel.cursor.phase
+    assert '\N{DEGREE SIGN}' in panel.cursor.label.text()
+    if workspace == 'export':
+        def accept_direction(dialog):
+            from hals_studio.ui.pane_setup import Setup
+            from hals_studio.ui.plotting.plot_settings import setting_keys
+            assert isinstance(dialog, Setup)
+            assert list(dialog.controls) == setting_keys(panel.kind, panel.config)
+            assert not dialog.controls['extent'].isEnabled()
+            assert not dialog.controls['step'].isEnabled()
+            assert dialog.controls['sweep_direction'].isEnabled()
+            dialog.controls['sweep_direction'].setCurrentText('+')
+            return W.QDialog.Accepted
+        monkeypatch.setattr(W.QDialog, 'exec', accept_direction)
+        panel.settings()
+        assert panel.config['sweep_direction'] == '+'
+        assert set(panel.magnitude_curves) == {'H On axis', 'H +30\N{DEGREE SIGN}'}
+        np.testing.assert_allclose(panel.phase_axis.lines[0].get_ydata(), expected[panel.cursor.active], atol=1e-8)
+        panel.close()

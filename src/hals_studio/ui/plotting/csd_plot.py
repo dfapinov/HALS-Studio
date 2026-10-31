@@ -275,10 +275,12 @@ class CSDPanel(W.QWidget):
     def __init__(self):
         super().__init__(); self.config=dict(DEFAULTS); self.latest=None
         layout=W.QVBoxLayout(self); layout.setContentsMargins(5,5,5,5)
-        row=W.QHBoxLayout(); layout.addLayout(row); self.method=W.QComboBox(); self.method.addItems(['CSD','Morlet wavelet']); self.method.currentTextChanged.connect(self.set_method); row.addWidget(self.method); row.addStretch()
-        self.mode=W.QComboBox(); self.mode.addItems(['3D waterfall','Sonogram']); self.mode.currentTextChanged.connect(self.set_mode); row.addWidget(self.mode)
-        button=W.QPushButton('Reset axes'); button.clicked.connect(lambda:self.view.reset()); row.addWidget(button)
-        gear=W.QToolButton(); gear.setText('\u2699'); gear.clicked.connect(self.settings); row.addWidget(gear)
+        from hals_studio.ui.plot_header import PlotHeader
+        self.header = PlotHeader(lambda: None, lambda: self.view.reset(), self.settings)
+        self.header.readout.hide(); layout.addWidget(self.header)
+        row = self.header.layout()
+        self.method=W.QComboBox(); self.method.addItems(['CSD','Morlet wavelet']); self.method.currentTextChanged.connect(self.set_method); row.insertWidget(1, self.method)
+        self.mode=W.QComboBox(); self.mode.addItems(['3D waterfall','Sonogram']); self.mode.currentTextChanged.connect(self.set_mode); row.insertWidget(2, self.mode)
         self.view=CSDView(); self.chart=self.view.chart; layout.addWidget(self.view,1)
         self.note=W.QLabel('HALS Stage 5 IR · time zero at the IR peak'); self.note.setWordWrap(True); layout.addWidget(self.note)
     def set_method(self,method): self.config['csd_method']=method; self.redraw()

@@ -23,6 +23,24 @@ def db(p):
     return 20 * np.log10(np.maximum(np.abs(p), 1e-30))
 
 
+def smooth_energy(freqs, energy, octave):
+    """Average energy in centred fractional-octave bands along frequency."""
+    if not octave:
+        return energy
+    half = 1 / (2 * octave)
+    logf = np.log2(freqs)
+    bounds = np.searchsorted(logf, np.column_stack((logf - half, logf + half)))
+    summed = np.concatenate((np.zeros_like(energy[:1]), np.cumsum(energy, axis=0)))
+    return np.stack([(summed[max(b, a + 1)] - summed[a]) / (max(b, a + 1) - a) for a, b in bounds])
+
+
+def relative_levels(levels, reference=None):
+    """Normalize each frequency to its sampled peak, or an explicit axis trace."""
+    if reference is None:
+        reference = levels.max(axis=tuple(range(1, levels.ndim)))
+    return levels - np.asarray(reference).reshape((-1,) + (1,)*(levels.ndim-1))
+
+
 def directions(elevation, azimuth):
     e, a = np.deg2rad(np.meshgrid(elevation, azimuth, indexing="ij"))
     return np.stack((np.cos(e) * np.cos(a), np.cos(e) * np.sin(a), np.sin(e)), -1)
@@ -72,18 +90,11 @@ class Sphere:
 
     def levels(self, octave=0):
         energy = np.abs(self.pressure) ** 2
-        if octave:
-            # Energy average in a centred fractional-octave band; phase is untouched.
-            half = 1 / (2 * octave)
-            logf = np.log2(self.freqs)
-            bounds = np.searchsorted(logf, np.column_stack((logf - half, logf + half)))
-            summed = np.concatenate((np.zeros_like(energy[:1]), np.cumsum(energy, axis=0)))
-            energy = np.stack([(summed[max(b, a + 1)] - summed[a]) / (max(b, a + 1) - a) for a, b in bounds])
+        energy = smooth_energy(self.freqs, energy, octave)
         return 10 * np.log10(np.maximum(energy, 1e-60))
 
     def relative(self, levels, normalization="Peak"):
-        reference = levels.max(axis=(1, 2)) if normalization == "Peak" else levels[:, *self.index()]
-        return levels - reference[:, None, None]
+        return relative_levels(levels, None if normalization == "Peak" else levels[:, *self.index()])
 
     def metrics(self, levels):
         power = 10 * np.log10(np.maximum(np.sum(10 ** (levels / 10) * self.weights(), axis=(1, 2)), 1e-60))

@@ -1,8 +1,27 @@
+31/10/26
+
+- Fixed the Stage 4 manual order table editor after a project reload, when JSON
+  frequency keys become strings. Manual-table and order-growth optimisation
+  checkboxes now switch directly between modes.
+  
+- Stage 2 now puts Lower and Upper Frequency in Main Settings, with guidance to
+  use the DUT's usable range. Octave Resolution moved to Advanced Settings;
+  tweeter coordinates are grouped as the HF search seed, and grid re-scan bounds
+  have their own box below the other advanced controls. Updated Stage 2 help to
+  stress the importance of both frequency limits.
+  
+- Added a Stage 3 note distinguishing the reflection-free range from the
+  DUT's usable range, with a help link to the upper test range explanation.
+
+- Added a local Markdown help viewer under the Help menu. It fits images to the
+  window, opens PDFs in the system app, and groups documents using footer tags;
+  untagged Markdown goes to Miscellaneous. Settings notes open the relevant
+  help heading through an inline badge.
+
 29/10/26
 
 - Update the workspace CI verification for Export-only pane selection and check
   that legacy Analysis panes restore to native Export defaults.
-- Bump the application package version to 0.5.0.
 - Automatically use optimized origins when available in Analysis, Export and
   Stage 4, falling back to original origins. Remove the corresponding switches.
 - Fix the Analysis sphere centre at zero and gate capture-padding editing behind
