@@ -135,6 +135,20 @@ class ReconstructionDialog(W.QDialog):
         note = label("Evaluate the HALS sound field around +X (front), +Y (left), +Z (up).\nChoose a radius outside the source / scan boundary for outgoing-field analysis.", "muted")
         note.setWordWrap(True)
         form.addRow(note)
+        from hals_studio.analysis.reconstruction_centres import reconstruction_centres
+        from hals_studio.persistence.project_repository import read_project
+        grid = {}
+        project_path = getattr(parent, 'project_path', None)
+        if project_path:
+            grid = read_project(project_path).get('grid_vars', {})
+        export = getattr(parent, 'export_workspace', None)
+        if export is not None and export.config.get('project_path') == project_path:
+            grid = export.config.get('project_geometry', grid)
+        self.centre = W.QComboBox()
+        for title, xyz in reconstruction_centres(grid):
+            self.centre.addItem(title, xyz)
+        form.addRow('Reconstruction centre', self.centre)
+        self.centre.setToolTip('Rebuilds the observation sphere for all Analysis plots around this point.')
         self.radius = number(2, .05, 100, " m", 3)
         self.step = combo(["5° · 2,664 directions", "10° · 684 directions", "3° · 7,320 directions", "2° · 16,380 directions"])
         self.bin_counts = [480, 960, 240, 120, 60, 0]
@@ -177,10 +191,24 @@ class ReconstructionDialog(W.QDialog):
         form.addRow(buttons)
 
     def options(self):
+        offset = self.centre.currentData()
         return dict(radius=self.radius.value(), step=[5, 10, 3, 2][self.step.currentIndex()],
                     bins=self.bin_counts[self.bins.currentIndex()], mode=self.mode.currentText(),
                     fmin=self.fmin.value(), fmax=self.fmax.value(), padding=int(self.padding.value()) if self.manual_padding.isChecked() else 50,
-                    manual_padding=self.manual_padding.isChecked(), origins=True, offset=[0., 0., 0.])
+                    manual_padding=self.manual_padding.isChecked(), origins=True,
+                    offset=offset,
+                    centre_name=self.centre.currentText())
+
+    def restore_centre(self, offset, name=None):
+        xyz = np.asarray(offset, dtype=float)
+        if xyz.shape != (3,) or not np.isfinite(xyz).all():
+            raise ValueError('Reconstruction centre requires three finite coordinates.')
+        for index in range(self.centre.count()):
+            if ((name is None or self.centre.itemText(index) == name)
+                    and np.allclose(self.centre.itemData(index), xyz, rtol=0, atol=1e-9)):
+                self.centre.setCurrentIndex(index)
+                return
+        self.centre.setCurrentIndex(0)
 
     def update_sampling(self):
         try:

@@ -203,7 +203,7 @@ def select_frequencies(freqs, bins=480, fmin=20., fmax=20000.):
 
 def reconstruct(path, step=5, bins=480, radius=2., mode="Internal", fmin=20., fmax=20000.,
                 padding=50, origins=True, offset=(0., 0., 0.), progress: Callable = lambda *_: None,
-                cancelled: Callable = lambda: False, pool=None):
+                cancelled: Callable = lambda: False, pool=None, centre_name=None):
     """Evaluate native frequency batches through the local HALS Stage 5 snapshot.
 
     The GUI supplies a warm process pool; callers without one run serially.
@@ -222,7 +222,10 @@ def reconstruct(path, step=5, bins=480, radius=2., mode="Internal", fmin=20., fm
         raise ValueError("Observation radius must be positive.")
     indices = select_frequencies(all_f, bins, fmin, fmax)
     e, a = grid(step)
-    xyz = directions(e, a).reshape(-1, 3) * radius + np.asarray(offset)
+    offset = np.asarray(offset, dtype=float)
+    if offset.shape != (3,) or not np.isfinite(offset).all():
+        raise ValueError("Reconstruction centre requires three finite coordinates.")
+    xyz = directions(e, a).reshape(-1, 3) * radius + offset
     r, th, ph = cartesian_to_spherical(*xyz.T)
     if np.any(r <= 1e-9):
         raise ValueError("The observation sphere passes through the origin.")
@@ -262,7 +265,7 @@ def reconstruct(path, step=5, bins=480, radius=2., mode="Internal", fmin=20., fm
     return Sphere(all_f[indices], e, a, p, {"name": Path(path).stem.replace("_coefficients", ""),
         "source": str(Path(path).resolve()), "radius_m": radius, "mode": mode, "angular_step": step,
         "speed_of_sound": speed, "padding_samples_removed": padding, "optimized_origins": origins,
-        "offset_m": list(offset), "source_frequency_bins": len(good), "sampled_frequency_bins": len(indices),
+        "offset_m": offset.tolist(), "centre_name": centre_name, "source_frequency_bins": len(good), "sampled_frequency_bins": len(indices),
         "requested_frequency_targets": bins, "engine": "Viewer-local HALS Stage 5 snapshot",
         "workers": pool.workers if pool else 1,
         "phase_note": "HALS capture padding removed; physical propagation delay retained; no mic calibration or FRD offset applied"})

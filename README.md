@@ -109,6 +109,8 @@ Once Stage 4 is complete, the model is ready for **Analysis** and **Export**.
 
 HALS Studio includes a suite of tools for exploring the spatial, frequency and time-domain behaviour of the reconstructed loudspeaker.
 
+Use **File ? Analysis Import Settings ? Reconstruction centre** to build the Analysis sphere around Scanner Origin (0, 0, 0), or an available Tweeter, Reference Origin or named additional waypoint. Named additional points, such as woofer, port or cabinet centre, are also available when defined in project metadata. Empty or incomplete waypoints, critical points and baffle corners are omitted. The selected centre applies to all Analysis plots; the observation radius is measured from that centre. Changing it reconstructs the sampled field without changing the fitted coefficients or acoustic-origin data.
+
 ## 3D Directivity Balloons
 
 Visualise the reconstructed radiation pattern as an interactive **3D directivity balloon**.

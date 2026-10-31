@@ -783,7 +783,7 @@ def test_import_controls_and_legacy_options_use_automatic_origins(window, tmp_pa
     monkeypatch.setattr(window.analysis, 'start_job', lambda *args: requests.append(args))
     window.analysis.open_path(path, dict(origins=False, offset=[1., 2., 3.], padding=75))
     _, kwargs, _, saved = requests[-1]
-    assert kwargs['origins'] is True and kwargs['offset'] == [0., 0., 0.]
+    assert kwargs['origins'] is True and kwargs['offset'] == [1., 2., 3.]
     assert kwargs['padding'] == 75 and saved['manual_padding'] is True
     assert 'manual_padding' not in kwargs
     window.analysis.open_path(path, dict(padding=75, manual_padding=False))

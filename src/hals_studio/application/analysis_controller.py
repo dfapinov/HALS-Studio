@@ -79,7 +79,8 @@ class AnalysisController(C.QObject):
                     return
                 options = dialog.options()
             # Migrate old session options as well as new dialog choices.
-            options = dict(options, origins=True, offset=[0., 0., 0.])
+            options = dict(options, origins=True)
+            options.setdefault('offset', [0., 0., 0.])
             options.setdefault('manual_padding', options.get('padding', 50) != 50)
             if not options['manual_padding']: options['padding'] = 50
             reconstruction = {key: value for key, value in options.items() if key != 'manual_padding'}

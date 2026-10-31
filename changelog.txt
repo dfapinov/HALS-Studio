@@ -1,5 +1,9 @@
 31/10/26
 
+- Added a reconstruction-centre selector to Analysis Import Settings. Build
+  all Analysis plots around Scanner Origin (0, 0, 0), Tweeter, Reference Origin
+  or a named additional points.
+
 - Reverted GUI processing to a fixed default speed of sound of 343 m/s or a
   manual value set in Project metadata. Testing showed that optimising speed
   of sound could slightly reduce total fit error without necessarily improving

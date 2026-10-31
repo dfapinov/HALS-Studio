@@ -325,6 +325,7 @@ class Workspace(W.QMainWindow):
             if options.get('bins') in dialog.bin_counts: dialog.bins.setCurrentIndex(dialog.bin_counts.index(options['bins']))
             if 'mode' in options: dialog.mode.setCurrentText(options['mode'])
             dialog.manual_padding.setChecked(options.get('manual_padding', options.get('padding', 50) != 50))
+            dialog.restore_centre(options.get('offset', [0., 0., 0.]), options.get('centre_name'))
             dialog.update_sampling()
             if dialog.exec() != W.QDialog.Accepted: return
             options = dialog.options()
