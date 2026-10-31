@@ -1,5 +1,19 @@
 31/10/26
 
+- Fixed Export spectrograms turning solid red when the phi reference axis faces
+  a quieter direction. Previously, red (0 dB) represented the SPL at 0°, so
+  louder off-axis angles were clipped to solid red. Red now marks the loudest
+  sampled angle, preserving differences when an off-axis response is louder.
+  On-axis normalization remains available as an option.
+
+- Unified the Analysis and Export plot headers and settings. Plot selectors,
+  readouts, Reset axes and the settings gear share one row. The drop-down
+  selector now fits the current plot title.
+
+- Added Horizontal and Vertical SPL sweeps to Export's SPL / Phase menu alongside
+  Selected Point. They show only available export positions. Double-clicking a
+  legend trace selects its phase curve and cursor readout in both workspaces.
+
 - Fixed the Stage 4 manual order table editor after a project reload, when JSON
   frequency keys become strings. Manual-table and order-growth optimisation
   checkboxes now switch directly between modes.
