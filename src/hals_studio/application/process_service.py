@@ -39,6 +39,11 @@ def run(request, *, runtime=None):
     )
     if stage > 1 and not (out / input_name).is_file():
         raise ValueError("Run Stage 1 first: " + str(out / input_name))
+    from hals_studio.persistence.project_speed import project_speed
+    request['speed'] = project_speed(
+        dict(enable_manual_speed_of_sound=request.get('manual_speed', False),
+             speed_of_sound=request.get('speed', 343.)),
+        out / input_name, out / 'coefficients' / (name + '_coefficients.h5'))
     result = STAGE_RUNNERS[stage](request, runtime, out, filename, input_name)
     if result is None:
         raise ValueError("Processing returned no results; inspect the CLI output")

@@ -51,10 +51,16 @@ def _chunk(func, items):
     return [func(item) for item in items]
 
 
+def default_worker_count():
+    """Conservative physical-core estimate; match the Windows executor limit."""
+    workers = max(1, (os.cpu_count() or 1) // 2)
+    return min(workers, 61) if os.name == 'nt' else workers
+
+
 class SessionPool:
     def __init__(self, workers=None, startup_timeout=180):
         # ProcessPoolExecutor on Windows supports at most 61 workers.
-        default_workers = max(1, (os.cpu_count() or 1) // 2)
+        default_workers = default_worker_count()
         self.workers = workers or default_workers
         if os.name == 'nt':
             self.workers = min(self.workers, 61)

@@ -98,6 +98,13 @@ def load_and_prep_ir(file_path, crop_samples=None):
     return data, fs
 # ─── 2. Parallel Worker ───────────────────────────────────────────────────────
 
+def scan_file_worker(fname, ir_dir, peak_detect_threshold_db):
+    """Read one full IR locally; return only the scalars needed for batch sizing."""
+    data, fs = load_and_prep_ir(os.path.join(ir_dir, fname))
+    peak_idx = get_earliest_significant_peak(data, fs, peak_detect_threshold_db)
+    return fname, fs, peak_idx, float(np.max(np.abs(data)))
+
+
 def process_file_worker(file_info, ir_dir, gain, fs_common, n_fft, freqs, eff_smooth_res, crop_samples,
                         enable_smoothing, fdw_rft_ms, fdw_oct_res, fdw_max_cap_ms,
                         fdw_windows_per_oct, fdw_alpha_hf, fdw_alpha_lf, sliding_hf=False, compare_smoothing=False):
@@ -153,7 +160,7 @@ def fdwsmooth(
     keep_raw_and_smoothed=False,
     use_process_pool=True,
     sliding_hf=False, compare_smoothing=False, workers=None, runtime=None,
-    input_filenames=None, rft_supplied=True
+    input_filenames=None, rft_supplied=True, speed_of_sound=None
 ):
     """
     Main pipeline function that orchestrates the scanning, parallel processing,
@@ -173,102 +180,88 @@ def fdwsmooth(
         runtime.print("No .wav files found.")
         return None
 
-    runtime.print("Scanning files to determine exact maximum crop length and caching peaks...")
-    max_peak, fs_common = 0.0, None
-    global_max_req_samples = 0
-    peaks_cache = {}
-
-    from hals_studio.process_engine.process_progress import Progress, completed_map
-    scanning = runtime.progress("Stage 1 peak scan", len(wav_files))
-    # ---- Pre-scan pass: determine peaks and the global maximum required sample length ----
-    for f in wav_files:
-        file_path = os.path.join(ir_dir, f)
-        data, fs = load_and_prep_ir(file_path, None) 
-        
-        if fs_common is not None and fs != fs_common:
-            raise ValueError("All measurement WAV files must have the same sample rate.")
-        if fs_common is None:
-            fs_common = fs
-            max_window_sec = float(calculate_fdw_durations(fdw_f_min, fdw_oct_res, fdw_rft_ms, fdw_max_cap_ms))
-            max_window_samples = int(max_window_sec * fs_common)
-
-        # Identify the main impulse peak for causal windowing
-        t_peak_idx = get_earliest_significant_peak(data, fs_common, peak_detect_threshold_db)
-        t_peak_sec = t_peak_idx / fs_common
-        peaks_cache[f] = t_peak_sec
-        
-        # Track the largest sample length required to fit the peak + maximum window
-        req_samples = t_peak_idx + max_window_samples
-        global_max_req_samples = max(global_max_req_samples, req_samples)
-        
-        # Keep track of global maximum amplitude for gain normalization
-        max_peak = max(max_peak, np.max(np.abs(data)))
-        scanning.advance()
-    
-    n_fft = next_fast_len(global_max_req_samples)
-    crop_samples = n_fft 
-    freqs = np.fft.rfftfreq(n_fft, d=1/fs_common)
-    
-    runtime.print(f"Global max requirement: {global_max_req_samples} samples.")
-    runtime.print(f"Optimal FFT size (next_fast_len): {n_fft} samples.")
-    
-    # Prepare worker settings
-    gain = (10**(target_peak_db/20.0) / max_peak) if enable_auto_gain and max_peak > 0 else 1.0
-    eff_smooth_res = (2 * fdw_oct_res if smoothing_oct_res is None or
-                      str(smoothing_oct_res).lower() == "auto" or smoothing_oct_res == 0
-                      else float(smoothing_oct_res))
-    from hals_studio.process_engine.session_pool import borrow_pool
     num_workers = int(workers) if workers else (os.cpu_count() or 1)
-    shared_pool = runtime.borrow_pool(num_workers) if use_process_pool else None
-    if shared_pool is not None: num_workers = shared_pool.workers
-    # Retain legacy keyword compatibility; Stage 1 always uses fixed octave smoothing.
-    sliding_hf = False
-    if enable_smoothing and (not np.isfinite(eff_smooth_res) or eff_smooth_res <= 0):
-        raise ValueError("Smoothing resolution must be positive and finite.")
-    
-    runtime.print(f"Configuration: N_fft={n_fft}, Freq Bins={len(freqs)}, Gain={20*np.log10(gain):.2f}dB")
-    backend = "processes" if use_process_pool else "threads"
-    if enable_smoothing: runtime.print(f"Complex smoothing: fixed; 1/{eff_smooth_res:g} octave")
-    runtime.print(f"Parallel Processing: Using {num_workers} {backend}.")
-
-    results_raw, results_smooth, meta = {}, {}, {}
-    
-    worker_task = functools.partial(
-        process_file_worker, 
-        ir_dir=ir_dir, 
-        gain=gain, 
-        fs_common=fs_common, 
-        n_fft=n_fft, 
-        freqs=freqs, 
-        eff_smooth_res=eff_smooth_res,
-        sliding_hf=sliding_hf, compare_smoothing=compare_smoothing,
-        crop_samples=crop_samples,
-        enable_smoothing=enable_smoothing,
-        fdw_rft_ms=fdw_rft_ms,
-        fdw_oct_res=fdw_oct_res,
-        fdw_max_cap_ms=fdw_max_cap_ms,
-        fdw_windows_per_oct=fdw_windows_per_oct,
-        fdw_alpha_hf=fdw_alpha_hf,
-        fdw_alpha_lf=fdw_alpha_lf
-    )
-
-    runtime.print(f"Starting processing of {len(wav_files)} files...")
-    
-    file_infos = [(f, peaks_cache[f]) for f in wav_files]
-    
-    # ---- Parallel processing of individual files ----
+    shared_pool = runtime.borrow_pool(workers) if use_process_pool else None
+    if shared_pool is not None:
+        num_workers = shared_pool.workers
     if use_process_pool:
-        ctx = multiprocessing.get_context('spawn')
-        from hals_studio.process_engine.session_pool import borrow_pool
-        executor_context = shared_pool or ProcessPoolExecutor(max_workers=num_workers, mp_context=ctx)
+        executor_context = shared_pool or ProcessPoolExecutor(
+            max_workers=num_workers, mp_context=multiprocessing.get_context('spawn'))
     else:
         executor_context = ThreadPoolExecutor(max_workers=num_workers)
 
-    processing = runtime.progress("Stage 1 FDW / smoothing", len(file_infos))
+    # Reuse the same workers for both passes, including standalone runs.
     with executor_context as executor:
+        runtime.print("Scanning files to determine exact maximum crop length and caching peaks...")
+        max_peak, fs_common = 0.0, None
+        global_max_req_samples = 0
+        peaks_cache = {}
+
+        scanning = runtime.progress("Stage 1 peak scan", len(wav_files))
+        scan_task = functools.partial(scan_file_worker, ir_dir=ir_dir,
+                                      peak_detect_threshold_db=peak_detect_threshold_db)
+        for f, fs, t_peak_idx, file_peak in runtime.completed(executor, scan_task, wav_files):
+            if fs_common is not None and fs != fs_common:
+                raise ValueError("All measurement WAV files must have the same sample rate.")
+            if fs_common is None:
+                fs_common = fs
+                max_window_sec = float(calculate_fdw_durations(fdw_f_min, fdw_oct_res, fdw_rft_ms, fdw_max_cap_ms))
+                max_window_samples = int(max_window_sec * fs_common)
+            peaks_cache[f] = t_peak_idx / fs_common
+            global_max_req_samples = max(global_max_req_samples, t_peak_idx + max_window_samples)
+            max_peak = max(max_peak, file_peak)
+            scanning.advance()
+
+        n_fft = next_fast_len(global_max_req_samples)
+        crop_samples = n_fft
+        freqs = np.fft.rfftfreq(n_fft, d=1/fs_common)
+
+        runtime.print(f"Global max requirement: {global_max_req_samples} samples.")
+        runtime.print(f"Optimal FFT size (next_fast_len): {n_fft} samples.")
+
+        # Prepare worker settings
+        gain = (10**(target_peak_db/20.0) / max_peak) if enable_auto_gain and max_peak > 0 else 1.0
+        eff_smooth_res = (2 * fdw_oct_res if smoothing_oct_res is None or
+                          str(smoothing_oct_res).lower() == "auto" or smoothing_oct_res == 0
+                          else float(smoothing_oct_res))
+        # Retain legacy keyword compatibility; Stage 1 always uses fixed octave smoothing.
+        sliding_hf = False
+        if enable_smoothing and (not np.isfinite(eff_smooth_res) or eff_smooth_res <= 0):
+            raise ValueError("Smoothing resolution must be positive and finite.")
+
+        runtime.print(f"Configuration: N_fft={n_fft}, Freq Bins={len(freqs)}, Gain={20*np.log10(gain):.2f}dB")
+        backend = "processes" if use_process_pool else "threads"
+        if enable_smoothing: runtime.print(f"Complex smoothing: fixed; 1/{eff_smooth_res:g} octave")
+        runtime.print(f"Parallel Processing: Using {num_workers} {backend}.")
+
+        results_raw, results_smooth, meta = {}, {}, {}
+
+        worker_task = functools.partial(
+            process_file_worker,
+            ir_dir=ir_dir,
+            gain=gain,
+            fs_common=fs_common,
+            n_fft=n_fft,
+            freqs=freqs,
+            eff_smooth_res=eff_smooth_res,
+            sliding_hf=sliding_hf, compare_smoothing=compare_smoothing,
+            crop_samples=crop_samples,
+            enable_smoothing=enable_smoothing,
+            fdw_rft_ms=fdw_rft_ms,
+            fdw_oct_res=fdw_oct_res,
+            fdw_max_cap_ms=fdw_max_cap_ms,
+            fdw_windows_per_oct=fdw_windows_per_oct,
+            fdw_alpha_hf=fdw_alpha_hf,
+            fdw_alpha_lf=fdw_alpha_lf
+        )
+
+        runtime.print(f"Starting processing of {len(wav_files)} files...")
+
+        file_infos = [(f, peaks_cache[f]) for f in wav_files]
+
+        processing = runtime.progress("Stage 1 FDW / smoothing", len(file_infos))
         for fname, H_raw, H_smooth, m in runtime.completed(executor, worker_task, file_infos):
             processing.advance()
-            
             results_raw[fname] = H_raw
             m['rft_supplied'] = bool(rft_supplied)
             meta[fname] = m
@@ -311,6 +304,8 @@ def fdwsmooth(
                 schema.STAGE1_SETTINGS: np.array(runtime_settings, dtype=object),
                 schema.FS: fs_common
             }
+            if speed_of_sound is not None:
+                payload[schema.SPEED_OF_SOUND_MPS] = float(speed_of_sound)
             return payload
 
         if not enable_smoothing:

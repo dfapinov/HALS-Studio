@@ -723,12 +723,14 @@ def run_open_branch_optimizer(
     spl_floor_db: float = -40.0,
     process_pool=None,
     rft_ms: float = 5.0,
-    project_oct_res: float = 12.0, runtime=None
+    project_oct_res: float = 12.0, runtime=None, use_saved_speed=True
 ):
     from hals_studio.process_engine.runtime import EngineRuntime
     runtime = runtime or EngineRuntime()
     runtime.check()
     start_time = time.time()
+    if use_process_pool and process_pool is None:
+        process_pool = runtime.borrow_pool()
     # Legacy keyword arguments remain accepted for callers loading old settings,
     # but Stage 3 now always evaluates SPL at the fixed assessment floor.
     spl_change_enabled = True
@@ -742,7 +744,7 @@ def run_open_branch_optimizer(
     input_path = os.path.join(input_dir_opti, input_filename_opti)
     parsed_data = load_and_parse_npz(input_path)
     saved_speed = parsed_data.get('speed_of_sound_mps')
-    if saved_speed is not None:
+    if use_saved_speed and saved_speed is not None:
         speed_of_sound = float(saved_speed)
         runtime.print(f"Using Stage 2 speed of sound from NPZ: {speed_of_sound:g} m/s")
     f_all = parsed_data['freqs']
@@ -795,15 +797,17 @@ def run_open_branch_optimizer(
             for N, st_db, mx_db, lam in configs:
                 tasks.append((f, Pk, r_k, th_k, ph_k, N, st_db, mx_db, lam, base_norm, speed_of_sound, kr_offset))
         backend = "process" if use_process_pool else "thread"
-        max_workers = None if use_process_pool else _stage3_thread_workers(len(tasks))
-        worker_msg = "" if max_workers is None else f", {max_workers} workers"
+        from hals_studio.process_engine.session_pool import default_worker_count
+        max_workers = (getattr(process_pool, 'workers', default_worker_count())
+                       if use_process_pool else _stage3_thread_workers(len(tasks)))
+        worker_msg = f", {max_workers} workers"
         runtime.print(f"Stage 3 parallel backend: {backend} pool ({len(tasks)} tasks{worker_msg})")
 
         if use_process_pool and process_pool is not None:
             raw_results = runtime.collect(process_pool, _worker, tasks, 'Stage 3 solves')
         elif use_process_pool:
             ctx = multiprocessing.get_context('spawn')
-            with concurrent.futures.ProcessPoolExecutor(max_workers=6, mp_context=ctx) as ex:
+            with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers, mp_context=ctx) as ex:
                 raw_results = runtime.collect(ex, _worker, tasks, 'Stage 3 solves')
         else:
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -923,15 +927,16 @@ def run_open_branch_optimizer(
             evaluation_tasks.append((f, orders, fits, speed_of_sound, origins_mm[k]/1000,
                                      spl_sphere_points, spl_radius_m, spl_floor_db))
         executor = concurrent.futures.ProcessPoolExecutor if use_process_pool else concurrent.futures.ThreadPoolExecutor
-        # Limit evaluation concurrency: each worker builds its own spherical basis.
-        kwargs = {'max_workers': min(4, len(evaluation_tasks), os.cpu_count() or 1)}
+        # Basis temporaries are blocked inside reconstruct_internal_fits;
+        # use the available pool rather than a separate per-stage worker cap.
+        from hals_studio.process_engine.session_pool import default_worker_count
+        available = (getattr(process_pool, 'workers', default_worker_count())
+                     if use_process_pool else _stage3_thread_workers(len(evaluation_tasks)))
+        kwargs = {'max_workers': max(1, min(available, len(evaluation_tasks)))}
         if use_process_pool:
             kwargs['mp_context'] = multiprocessing.get_context('spawn')
         if use_process_pool and process_pool is not None:
-            from hals_studio.process_engine.session_pool import PoolView
-            evaluation_pool = (PoolView(process_pool.owner, kwargs['max_workers'])
-                               if hasattr(process_pool, 'owner') else process_pool)
-            frequency_results = runtime.collect(evaluation_pool, evaluate_frequency_changes, evaluation_tasks,
+            frequency_results = runtime.collect(process_pool, evaluate_frequency_changes, evaluation_tasks,
                                               'Stage 3 directivity')
         else:
             with executor(**kwargs) as ex:

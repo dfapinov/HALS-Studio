@@ -128,7 +128,7 @@ def run_condition_preflight(data, cfg, *, runtime=None):
     origins = data.get('origins_mm') if cfg['use_optimized_origins'] else None
     static = (data['r_arr'], data['th_arr'], data['ph_arr'])
     grid, _ = get_grid_limit(static[1], static[2])
-    speed = float(data.get('speed_of_sound_mps') or cfg.get('speed_of_sound',343.))
+    speed = float(cfg.get('speed_of_sound') or data.get('speed_of_sound_mps') or 343.)
     cfg = dict(cfg, speed_of_sound=speed)
     def coords(i):
         origin = np.zeros(3) if origins is None else origins[indices[i]]/1000.

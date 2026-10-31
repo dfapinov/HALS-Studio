@@ -191,6 +191,9 @@ class ProcessWorkspace(W.QWidget):
         if saved_folder:self.ir_folder.setText(saved_folder)
         self.cache(1).unlink(missing_ok=True)
         npz=folder/'outputs'/f'{self.project_name.text()}_complex_data.npz'
+        from hals_studio.persistence.project_speed import project_speed
+        self.speed.setValue(project_speed(glob, npz,
+            folder/'outputs'/'coefficients'/f'{self.project_name.text()}_coefficients.h5'))
         if npz.is_file():
             self.stage1_settings=process_cache.load_stage1_settings(npz)
             self.reconcile_stage1_settings()

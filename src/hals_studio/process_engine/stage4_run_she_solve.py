@@ -165,7 +165,8 @@ def run_she_solve(
     show_plot: bool = True,
     use_process_pool: bool = True,
     condition_preflight: bool = False,
-    runtime=None
+    runtime=None,
+    use_saved_speed=True
 ) -> Dict:
     from hals_studio.process_engine.runtime import EngineRuntime
     runtime = runtime or EngineRuntime()
@@ -176,8 +177,12 @@ def run_she_solve(
         manual_order_table = {}
     if use_manual_table and not manual_order_table:
         raise ValueError('Use manual order table is enabled, but the table is empty.')
-    if jobs is None:
-        jobs = max(1, cpu_count() // 2)
+    shared_pool = runtime.borrow_pool(jobs) if use_process_pool else None
+    if shared_pool is not None:
+        jobs = shared_pool.workers
+    elif jobs is None:
+        from hals_studio.process_engine.session_pool import default_worker_count
+        jobs = default_worker_count()
 
     input_npz_path = os.path.join(input_dir_she, input_filename_she)
 
@@ -206,7 +211,7 @@ def run_she_solve(
         
         parsed_data = load_and_parse_npz(input_npz_path)
         saved_speed = parsed_data.get('speed_of_sound_mps')
-        if saved_speed is not None:
+        if use_saved_speed and saved_speed is not None:
             speed_of_sound = float(saved_speed)
             logger.info(f"Using Stage 2 speed of sound from NPZ: {speed_of_sound:g} m/s")
         elif speed_of_sound is None:
@@ -303,7 +308,7 @@ def run_she_solve(
 
         if use_process_pool:
             ctx = get_context('spawn')
-            with runtime.borrow_pool(jobs) or ctx.Pool(
+            with shared_pool or ctx.Pool(
                 processes=jobs,
                 initializer=_init_worker,
                 initargs=(log_file_path,)

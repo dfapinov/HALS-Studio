@@ -1,72 +1,48 @@
 31/10/26
 
-- Stage 2 panning now reuses the canvas background during a drag and refreshes
-  axes fully on release, avoiding full-figure redraws for each mouse movement.
+- Reverted GUI processing to a fixed default speed of sound of 343 m/s or a
+  manual value set in Project metadata. Testing showed that optimising speed
+  of sound could slightly reduce total fit error without necessarily improving
+  sound-field separation, so Stage 2 no longer runs that optimisation in the GUI.
+  Existing projects retain their saved speed, including previously optimised
+  values. A manual override applies to future processing passes; existing NPZ
+  and coefficient files keep the speed recorded when their data was generated.
 
-- Stage 1 and 2 canvas tips now show one short message for the current action
-  or cursor position instead of listing every control at once.
+- Added parallel Stage 1 peak scanning using the available worker pool.
 
-- Stage 1 verification plots now show pan, zoom and reset tips in the bottom
-  canvas margin instead of a hover tooltip.
+- Fixed hard-coded worker caps in Stages 2, 3 and 4. These stages now use the
+  full available worker pool.
 
-- Added compact Stage 2 tool tips in the bottom canvas margin for pan, zoom,
-  point selection, drawing and applying manual edits.
+- Added manual origin editing to the Stage 2 Validation graphs. Use the Draw
+  tool to adjust X/Y/Z coordinates and recalculate fit errors.
+  Edits remain a preview until Save Project. Metadata waypoint overlays provide 
+  position references, and clicking an origin point highlights its frequency 
+  across all three graphs with its coordinates and fit error readout.
 
-- Compacted the Stage 2 plot controls: the save reminder sits beside Draw with
-  a gap after the waypoint checkboxes, and selected-point details overlay the
-  upper-left canvas margin instead of taking up a separate row or covering data.
-
-- Click a Stage 2 origin point to highlight its frequency on X, Y and Z and
-  display its fitting error and all three coordinates to two decimal places.
-
-- Stage 2 error labels now show whole percentages, alternating above and below
-  the line. Clicking a sampled point shows its error to two decimal places.
-
-- Simplified Stage 2 Validation: results are always shown in the GUI, waypoint
-  checkboxes carry matching colour dashes, and plot legends are removed. Smaller
-  error labels alternate above and below the line. Draw, Reset axes and Save
-  image now share the same button height.
-
-- Stage 2 manual coordinate edits now remain a preview until Save Project.
-  Draw has a pen icon and clear active state; Validation graphs use the shared
-  middle-drag pan, wheel zoom and Reset axes controls. Removed old-position
-  markers, staggered fit-error labels and completed the advanced-settings help.
-- Fixed checkbox text shifting when checked by keeping indicator borders the
-  same size throughout the app.
-
-- Smoothed the Stage 2 Pen preview by repainting only the dragged line instead
-  of redrawing all three graphs and fit-error labels on every mouse movement.
-
-- Added metadata waypoint overlays and a toggleable Pen tool to Stage 2's main
-  X/Y/Z Validation graphs. Drag a line to adjust sampled origins and recalculate
-  fit errors with the original limited order N. Updated Stage 2 help.
-
-- Fixed Export spectrograms turning solid red when the phi reference axis faces
-  a quieter direction. Previously, red (0 dB) represented the SPL at 0°, so
-  louder off-axis angles were clipped to solid red. Red now marks the loudest
-  sampled angle, preserving differences when an off-axis response is louder.
-  On-axis normalization remains available as an option.
-
-- Unified the Analysis and Export plot headers and settings. Plot selectors,
-  readouts, Reset axes and the settings gear share one row. The drop-down
-  selector now fits the current plot title.
+- Added context-sensitive pan, zoom and reset tips to the Stage 1 and 2 plots,
+  with additional guidance for Stage 2 point selection and manual editing.
 
 - Added Horizontal and Vertical SPL sweeps to Export's SPL / Phase menu alongside
   Selected Point. They show only available export positions. Double-clicking a
   legend trace selects its phase curve and cursor readout in both workspaces.
 
+- Unified the Analysis and Export plot headers and settings. Plot selectors,
+  readouts, Reset axes and the settings gear share one row.
+
+- Fixed Export spectrograms clipping louder off-axis responses to solid red.
+  The colour scale now uses the loudest sampled angle as its 0 dB reference.
+  On-axis normalisation remains available as an option.
+
 - Fixed the Stage 4 manual order table editor after a project reload, when JSON
   frequency keys become strings. Manual-table and order-growth optimisation
   checkboxes now switch directly between modes.
-  
-- Stage 2 now puts Lower and Upper Frequency in Main Settings, with guidance to
-  use the DUT's usable range. Octave Resolution moved to Advanced Settings;
-  tweeter coordinates are grouped as the HF search seed, and grid re-scan bounds
-  have their own box below the other advanced controls. Updated Stage 2 help to
-  stress the importance of both frequency limits.
-  
-- Added a Stage 3 note distinguishing the reflection-free range from the
-  DUT's usable range, with a help link to the upper test range explanation.
+
+- Fixed checkbox text shifting when checked.
+
+- Added clearer Stage 2 settings groups for the DUT's usable frequency range,
+  HF search seed and full-grid re-scan bounds, with updated help explaining the
+  frequency limits. Stage 3 also includes guidance distinguishing the
+  reflection-free range from the DUT's usable range.
 
 - Added a local Markdown help viewer under the Help menu. It fits images to the
   window, opens PDFs in the system app, and groups documents using footer tags;

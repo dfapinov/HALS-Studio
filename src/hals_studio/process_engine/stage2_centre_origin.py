@@ -305,8 +305,8 @@ def run_speed_of_sound_candidate_batch(
     from hals_studio.process_engine.runtime import EngineRuntime
     runtime = runtime or EngineRuntime()
     runtime.check()
-    workers = min(cpu_count(), len(candidates))
-    shared_pool = runtime.borrow_pool(workers) if use_process_pool else None
+    workers = min(cpu_count(), len(candidates) * len(probe_data))
+    shared_pool = runtime.borrow_pool() if use_process_pool else None
     if shared_pool is not None:
         workers = shared_pool.workers
     runtime.print(f"\n{label}: {candidates[0]:g} to {candidates[-1]:g} m/s ({len(candidates)} candidates)")
@@ -471,10 +471,10 @@ def generate_3d_landscape_volumetric(context, runtime=None
     runtime = runtime or EngineRuntime()
     runtime.check()
     cfg = context[-1]
-    # The low/high-frequency search branches can invoke grid scans concurrently.
-    # Split CPU capacity between them so two full-grid pools cannot oversubscribe.
+    # Shared scans use the configured pool capacity; concurrent branches share
+    # the same executor. Keep the standalone per-branch fallback conservative.
     grid_workers = max(1, cpu_count() // 2)
-    shared_pool = runtime.borrow_pool(grid_workers) if cfg.get('use_process_pool', True) else None
+    shared_pool = runtime.borrow_pool() if cfg.get('use_process_pool', True) else None
     if shared_pool is not None:
         grid_workers = shared_pool.workers
     res = cfg['grid_res_mm']
