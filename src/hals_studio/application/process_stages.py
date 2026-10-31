@@ -49,12 +49,11 @@ def search_origins(request, runtime, out, filename, input_name):
     name = request["name"]
     from hals_studio.process_engine.stage2_centre_origin import (
         run_origin_search,
-        export_interpolated_origins,
     )
 
     if request.get("action") in ("save_origins", "rescan"):
         result = process_cache.hydrate_stage2(
-            process_cache.load(request["cache"], 2), out / filename
+            request.get("origin_result") or process_cache.load(request["cache"], 2), out / filename
         )
         for row in result[0].values():
             row.setdefault("original_c", np.array(row["final_c"]).copy())
@@ -165,6 +164,17 @@ def search_origins(request, runtime, out, filename, input_name):
     cfg.update(
         hold_origin_lf=v.get("hold_origin_lf", True), hold_origin_hf=v.get("hold_origin_hf", True)
     )
+    if request.get("preview_only"):
+        return process_cache.compact(2, result)
+    return persist_origin_result(result, v, out, filename, runtime)
+
+
+def persist_origin_result(result, settings, out, filename, runtime=None):
+    """Apply reviewed origins to the measurement NPZ when the project is saved."""
+    from hals_studio.process_engine.stage2_centre_origin import export_interpolated_origins
+    rows, freqs, keys, d, geom, cfg, data = result
+    v = settings
+    cfg.update(hold_origin_lf=v.get('hold_origin_lf', True), hold_origin_hf=v.get('hold_origin_hf', True))
     source = data
     data = FileMapping(source)
     if hasattr(source, "close"):

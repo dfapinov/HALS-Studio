@@ -52,7 +52,10 @@ class ProcessJob(C.QThread):
             )
             request = dict(self.request, workers=self.pool.workers)
             cache = process_service.run(request, runtime=runtime)
-            self.completed.emit(dict(ok=True, stage=request["stage"], cache=cache))
+            if request.get('preview_only'):
+                self.completed.emit(dict(ok=True, stage=request['stage'], result=cache, preview_only=True))
+            else:
+                self.completed.emit(dict(ok=True, stage=request["stage"], cache=cache))
         except ProcessingCancelled:
             self.completed.emit(dict(ok=False, cancelled=True))
         except Exception as exc:

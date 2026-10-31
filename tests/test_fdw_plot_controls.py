@@ -59,16 +59,19 @@ def test_fdw_shared_zoom_pan_and_reset():
     legend = trace_legend(ax)
     host.canvas.draw()
     original = (ax.get_xlim(), ax.get_ylim())
+    assert host.plot_tips.label.get_text() == 'Middle-drag to pan. Wheel to zoom.'
     waveform_limits = (view.ax2.get_xlim(), view.ax2.get_ylim())
     x, y = ax.transAxes.transform((.5, .5))
     def send(name, **kwargs):
         event = MouseEvent(name, host.canvas, x, y, **kwargs)
         host.canvas.callbacks.process(name, event)
     send('scroll_event', button='up', step=1)
+    assert host.plot_tips.label.get_text() == 'Zooming — Reset axes restores the full view.'
     assert np.ptp(np.log(ax.get_xlim())) < np.ptp(np.log(original[0]))
     assert np.ptp(ax.get_ylim()) < np.ptp(original[1])
     zoomed_y = ax.get_ylim()
     send('button_press_event', button=2)
+    assert host.plot_tips.label.get_text() == 'Panning — release the middle button to finish.'
     y += 30
     with patch.object(legend, '_search_position', wraps=legend._search_position) as search:
         send('motion_notify_event', button=2)
@@ -76,6 +79,7 @@ def test_fdw_shared_zoom_pan_and_reset():
         host.canvas.draw()
         assert search.call_count > 0  # Placement remains live before release.
     send('button_release_event', button=2)
+    assert host.plot_tips.label.get_text() == 'Middle-drag to pan. Wheel to zoom.'
     assert not np.allclose(ax.get_ylim(), zoomed_y)
     np.testing.assert_allclose(view.ax3.get_xlim(), ax.get_xlim())
     np.testing.assert_allclose((view.ax2.get_xlim(), view.ax2.get_ylim()), waveform_limits)

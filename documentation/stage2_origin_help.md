@@ -23,8 +23,9 @@ The result is a best-fit mathematical origin, which need not sit exactly on a ph
 
 ## Quick Start
 
-1. Set **Lower Frequency** and **Upper Frequency** to the DUT's usable frequency range, using its measured response to avoid testing frequencies where the output is near the noise floor. Then run Stage 2.
-2. Review the origin paths and fitting errors. For example, where the tweeter dominates the output, the high-frequency origins should usually lie near its physical location.
+1. Set **Lower Frequency** and **Upper Frequency** to the DUT's usable frequency range, using its measured response to avoid testing frequencies where the output is near the noise floor.
+2. Run Stage 2.
+3. Results always appear in the GUI. Review the origin paths and fitting errors. For example, where the tweeter dominates the output, the high-frequency origins should usually lie near its physical location.
 
 ## Results - How to interpret
 
@@ -44,6 +45,24 @@ A 3D coordiante view is also avilible from the **Plot Type** menu, as well as **
 
 ![grid_scan_result](./images/grid_scan_result-2.png)
 
+### Waypoint References
+
+In the main **Validation** view, select individual waypoint checkboxes (such as **Tweeter**, **Port** or **Woofer**) to display their positions on the X, Y and Z graphs. The colour dash beside each checkbox matches its reference lines. These are geometric references; the optimised acoustic origin does not necessarily coincide with them.
+
+### Graphical Editing
+
+Enable **✎ Draw** to edit the origin coordinates graphically. Left-click and drag within an axis graph to draw a straight line. On release, the coordinates snap to the drawn line and the fitting error is recalculated.
+
+Press **Escape**, or release the mouse outside the graph, to cancel. Disable **Draw** when finished.
+
+**Manual edits need Save Project to apply.** Until then, coordinates and recalculated errors are an in-memory preview; the saved measurement data and origin cache remain unchanged. After saving the project, re-run subsequent processing stages to use the modified origins.
+
+Middle-mouse drag pans the X/Y/Z graphs. Use the mouse wheel to zoom at the cursor, or wheel over an axis to zoom just that axis. **Reset axes**, beside **Save image**, restores the full view. Error labels show whole percentages and alternate above and below the line. Click a point on any axis to highlight that frequency on all three graphs. A persistent readout in the upper-left margin of the plot canvas shows the selected frequency, fit error to two decimals, and X, Y and Z coordinates in millimetres. Selection also works with Draw enabled; a click selects while a drag edits.
+
+**When to use:** Graphical editing can help correct suspicious origin movements, particularly when strong reflections or environmental noise have pulled the fitted origin away from the DUT.
+
+Use caution, however. Genuine acoustic effects, such as diffraction or multiple radiating surfaces, can produce unexpected but valid origin positions. Consider the physical behaviour of the DUT before making corrections.
+
 ## Main Settings
 
 ### Upper Frequency
@@ -58,13 +77,42 @@ Where driver output is weak, the search may start fitting environmental noise ra
 
 ![stage2_usable_range](./images/stage2_usable_range.png)
 
-## Advanced Setrtings
+## Advanced Settings
 
 ### Octave Resolution
 
 Stage 2 tests frequencies spaced by a fraction of an octave rather than searching every FFT bin. **Octave Resolution (1/x)** sets that spacing: `6` tests at 1/6-octave intervals, while `12` tests at 1/12-octave intervals. Finer spacing means more searches and a longer run.
 
 The resulting X, Y and Z coordinates are interpolated between tested frequencies to provide an origin for every FFT bin within the selected range. This assumes the effective origin changes smoothly enough between samples.
+
+### HF Search Seed ? Tweeter X, Y and Z
+
+The initial high-frequency search position in Cartesian millimetres: X is depth, Y is width and Z is height. Captured tweeter metadata supplies these coordinates. If no tweeter coordinate is available, Stage 2 estimates a seed using a 20 mm grid inside the measurement cylinder followed by simplex refinement.
+
+### Max Harmonic Order (N)
+
+Caps the spherical-harmonic order used to compare origin fitting errors. The default is N=4; measurement-grid limits may reduce it further. Higher orders take longer and can describe more complex fields. Manual-edit error previews use the settings of the original search, so their errors remain comparable.
+
+### Initial Simplex Step (mm)
+
+Sets the initial size of the Nelder?Mead search simplex. A larger step explores a wider neighbourhood; a smaller step starts more locally around the seed.
+
+### Max Iterations
+
+Limits simplex optimisation steps per frequency. Increasing it gives difficult searches more time to converge, at the cost of a longer run.
+
+### Hold Coordinate Outside Test Range ? LF and HF
+
+LF holds the lowest tested origin below the lower test frequency; HF holds the highest tested origin above the upper test frequency. Both default to on. Turning either off applies zero coordinate shift outside that side of the test range. Coordinates inside the range are still interpolated. Save Project applies these settings when committing manual edits.
+
+### Full Grid Rescan Only ? X, Y and Z Bounds
+
+Sets the minimum and maximum Cartesian coordinates in millimetres for a volumetric rescan of the selected frequency. Bounds default to the measurement extents. Narrowing the volume reduces work; widening it lets you inspect a larger region. These bounds apply to the full grid rescan, while the normal search uses the measurement cylinder.
+
+### Full Grid Rescan Only ? Grid Res (mm)
+
+Sets spacing between points in the rescan volume. Smaller spacing gives a finer error landscape but increases the number of solves sharply in three dimensions. The best grid point seeds a subsequent simplex refinement.
+
 
 ---
 

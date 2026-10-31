@@ -102,6 +102,8 @@ def save_project(owner):
         path = Path(target); payload = read_project(path) if path.exists() else {}
         payload.setdefault('project_name', path.parent.name)
         save_process = process is not None and (process.loaded is None or Path(process.loaded).resolve() == path.resolve())
+        if save_process and process.job and (getattr(process,'origin_edits_pending',False) or getattr(process,'active_request',{}).get('preview_only')):
+            raise ValueError('Wait for coordinate fitting errors to finish before saving the project.')
         if save_process:
             for key,value in owner.process_workspace.project_payload().items():
                 if isinstance(value,dict):payload.setdefault(key,{}).update(value)
@@ -115,6 +117,7 @@ def save_project(owner):
         payload['hals_studio'] = dict(version=1, views=deepcopy(owner.views), current_view=getattr(owner, 'current_view', ''), session=session)
         # Existing HALS processing sections remain intact; viewer state is namespaced.
         write_project(path, payload)
+        if save_process:process.save_pending_origins()
         if save_process: process.loaded = str(path)
         owner.project_path_field.setText(str(path.parent)); pane.metadata_editor.reload()
         owner.statusBar().showMessage('Project saved: '+str(path))

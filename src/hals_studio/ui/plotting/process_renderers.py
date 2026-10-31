@@ -92,6 +92,12 @@ def draw_origin_validation(host, workspace):
     rows=r[0];freqs=sorted(rows);current=np.array([rows[f]['final_c'] for f in freqs]).T;original=np.array([rows[f].get('original_c',rows[f]['final_c']) for f in freqs]).T
     errors=[rows[f]['error'] for f in freqs];old=[rows[f].get('original_error',rows[f]['error']) for f in freqs]
     view=VIEWS['ValidationView']();view.update_view(freqs,current,original,errors,old)
+    waypoints=p.selected_origin_waypoints()
+    if waypoints:
+        from .origin_editing import waypoint_color
+        for index,name,xyz in waypoints:
+            for axis,value in zip((view.ax_x,view.ax_y,view.ax_z),xyz):
+                axis.axhline(value,color=waypoint_color(index),linestyle=':',linewidth=1.3)
     from hals_studio.ui.viewer_theme import NAME
     if NAME=='Dark':
         from matplotlib.colors import to_hex

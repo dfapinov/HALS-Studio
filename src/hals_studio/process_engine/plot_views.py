@@ -355,26 +355,16 @@ class ValidationView:
 
             sax.plot(history_freq, history_search[i], 'b-', alpha=0.5, label='Search Path' if i == 0 else "")
             
-            mod_idx = [j for j in range(len(history_freq)) if not np.allclose(
-                [history_orig[0][j], history_orig[1][j], history_orig[2][j]], 
-                [history_search[0][j], history_search[1][j], history_search[2][j]]
-            )]
-            unmod_idx = [j for j in range(len(history_freq)) if j not in mod_idx]
-            
-            if unmod_idx:
-                sax.plot([history_freq[j] for j in unmod_idx], [history_search[i][j] for j in unmod_idx], 'bo', alpha=0.6, label='Original Result' if i == 0 else "")
-            if mod_idx:
-                sax.plot([history_freq[j] for j in mod_idx], [history_orig[i][j] for j in mod_idx], 'bx', alpha=0.4, label='Previous Result' if i == 0 else "")
-                sax.plot([history_freq[j] for j in mod_idx], [history_search[i][j] for j in mod_idx], 'ro', alpha=0.9, label='New Optimal Result' if i == 0 else "")
-                         
+            sax.plot(history_freq, history_search[i], 'bo', alpha=0.8,
+                     label='Current Result' if i == 0 else '')
             for j, f in enumerate(history_freq):
-                if j in mod_idx:
-                    sax.plot([f, f], [history_orig[i][j], history_search[i][j]], 'r--', alpha=0.5)
-                    sax.text(f, history_orig[i][j], f"{history_err_orig[j]:.2f}%", color='blue', fontsize=8, ha='left', va='top', alpha=0.5)
-                    sax.text(f, history_search[i][j], f"{history_err_search[j]:.2f}%", color='red', fontsize=8, ha='right', va='bottom', alpha=0.9)
-                else:
-                    sax.text(f, history_search[i][j], f"{history_err_search[j]:.2f}%", color='blue', fontsize=8, ha='right', va='bottom', alpha=0.8)
+                offset=7 if j % 2 == 0 else -7
+                sax.annotate(f"{history_err_search[j]:.0f}%",
+                             (f, history_search[i][j]), xytext=(0, offset),
+                             textcoords='offset points', color='blue', fontsize=7,
+                             ha='center', va='bottom' if offset>0 else 'top', alpha=0.85)
 
+            sax.margins(y=0.2)
             sax.set_xscale('log')
             sax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{int(x/1000)}kHz" if x >= 1000 else f"{int(x)}Hz"))
             sax.set_xticks([20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000])
@@ -382,7 +372,6 @@ class ValidationView:
             sax.grid(True, which='both', ls='--', alpha=0.3)
             if i == 0:
                 sax.set_title('Frequency Sweep Validation: Coordinates & Residual Error Labels', fontweight='bold')
-                sax.legend(loc='upper right')
 
         self.ax_z.set_xlabel('Frequency (Hz)')
         self.fig.canvas.draw_idle()

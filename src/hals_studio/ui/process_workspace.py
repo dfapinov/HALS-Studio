@@ -19,6 +19,7 @@ class ProcessWorkspace(W.QWidget):
     def __init__(self,owner):
         super().__init__();self.owner=owner;self.stage=1;self.job=False;self.results={};self.loaded=None;self.host=None;self.buffer='';self.plotter=None;self.stage1_settings={}
         self.rft_supplied=True;self.tweeter_supplied=True;self.filter_ir_filenames=False;self.wav_recovery=False
+        self.origin_edits_pending=False
         self.values={int(i):{k:deepcopy(s['default']) for k,s in fields.items()} for i,fields in SCHEMA.items()}
         self.manual_table={350.:3,500.:4,625.:5,750.:6,875.:7,1500.:8,2100.:9,2800.:10,3500.:11,4100.:12,4600.:13,5000.:14,6000.:15}
         self.toolbar=W.QWidget();row=W.QHBoxLayout(self.toolbar);row.setContentsMargins(0,0,0,0);self.stage_buttons=[]
@@ -67,11 +68,23 @@ class ProcessWorkspace(W.QWidget):
         self.ir_export=W.QToolButton();self.ir_export.setText('Export IR...');self.ir_export.setPopupMode(W.QToolButton.MenuButtonPopup)
         self.ir_export.clicked.connect(lambda:self.export_stage1_ir(False));menu=W.QMenu(self.ir_export)
         menu.addAction('Export All...',lambda:self.export_stage1_ir(True));self.ir_export.setMenu(menu);bar.addWidget(self.ir_export)
-        self.save_image_button=W.QPushButton('Save image');self.save_image_button.clicked.connect(self.save_image);bar.addWidget(self.save_image_button)
+        bar.removeWidget(self.power_reset);bar.addWidget(self.power_reset)
+        self.save_image_button=W.QPushButton('Save image');self.save_image_button.setFixedHeight(32);self.save_image_button.clicked.connect(self.save_image);bar.addWidget(self.save_image_button)
         self.stage2_tools=W.QWidget();s2=W.QHBoxLayout(self.stage2_tools);s2.setContentsMargins(0,0,0,0);rescan=W.QPushButton('Full grid rescan of selected frequency');rescan.clicked.connect(lambda:self.run('rescan'));s2.addWidget(rescan);s2.addWidget(W.QLabel('Frequency'));self.rescan_frequency=W.QComboBox();self.rescan_frequency.setFixedWidth(145);self.rescan_frequency.currentIndexChanged.connect(self.sample.setCurrentIndex);self.sample.currentIndexChanged.connect(self.rescan_frequency.setCurrentIndex);s2.addWidget(self.rescan_frequency);edit=W.QPushButton('Edit coordinate table');edit.clicked.connect(self.edit_origins);s2.addWidget(edit);s2.addStretch();bar.insertWidget(2,self.stage2_tools)
         self.stage3_tools=W.QWidget();s3=W.QHBoxLayout(self.stage3_tools);s3.setContentsMargins(0,0,0,0);s3.addWidget(W.QLabel('Sound power reference'));self.reference_order.setMaximumWidth(200);s3.addWidget(self.reference_order);s3.addStretch();bar.insertWidget(0,self.stage3_tools)
         self.order_choice.hide()
 
+        self.origin_plot_tools=W.QWidget();origin_tools=W.QHBoxLayout(self.origin_plot_tools);origin_tools.setContentsMargins(0,0,0,0)
+        self.origin_waypoint_box=W.QWidget();self.origin_waypoint_layout=W.QHBoxLayout(self.origin_waypoint_box);self.origin_waypoint_layout.setContentsMargins(0,0,0,0)
+        self.origin_waypoint_checks={};self._origin_waypoint_project=None;origin_tools.addWidget(self.origin_waypoint_box)
+        origin_tools.addSpacing(12)
+        self.draw_origin_line=W.QToolButton();self.draw_origin_line.setText('Draw');self.draw_origin_line.setCheckable(True)
+        self.draw_origin_line.setFixedHeight(32)
+        self.draw_origin_line.setIcon(G.QIcon(str(bootstrap.RESOURCES/'assets'/'draw-pen.svg')));self.draw_origin_line.setToolButtonStyle(C.Qt.ToolButtonTextBesideIcon)
+        self.draw_origin_line.setToolTip('Enable Draw: left-drag a straight line on X, Y or Z. Release to preview coordinates and fit errors. Save Project to apply. Esc cancels.')
+        self.draw_origin_line.toggled.connect(self.draw);origin_tools.addWidget(self.draw_origin_line)
+        self.origin_edit_note=W.QLabel('Manual coordinate edits need Save Project to apply.');origin_tools.addWidget(self.origin_edit_note)
+        origin_tools.addStretch();resultbox.addWidget(self.origin_plot_tools)
         self.stack=W.QStackedWidget();resultbox.addWidget(self.stack,1);self.chart=Chart(toolbar=False);self.stack.addWidget(self.chart)
         from hals_studio.ui.plotting.process_results import Results
         self.original_results=Results();self.stack.addWidget(self.original_results)
@@ -80,7 +93,6 @@ class ProcessWorkspace(W.QWidget):
         self.analysis_button=W.QPushButton('Analysis');self.analysis_button.clicked.connect(lambda:self.publish(0));navigation.addWidget(self.analysis_button)
         self.export_button=W.QPushButton('Export');self.export_button.clicked.connect(lambda:self.publish(1));navigation.addWidget(self.export_button)
         resultbox.addWidget(self.stage4_navigation)
-        self.summary=W.QLabel('Open a HALS project or create one to begin.');self.summary.setWordWrap(True);resultbox.addWidget(self.summary)
         result.setMinimumWidth(0);result.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Expanding);self.split.addWidget(result)
         cli=W.QFrame();cli.setFrameShape(W.QFrame.StyledPanel);cl=W.QVBoxLayout(cli);cl.setContentsMargins(5,5,5,5);cr=W.QHBoxLayout();cr.addWidget(W.QLabel('CLI OUTPUT'));cr.addStretch();b=W.QPushButton('Clear');b.clicked.connect(lambda:self.log.clear());cr.addWidget(b);b=W.QPushButton('Save log');b.clicked.connect(self.save_log);cr.addWidget(b);cl.addLayout(cr)
         self.log=CliLog();self.log.setMaximumBlockCount(30000);cl.addWidget(self.log);self.sidebar_split.addWidget(cli)
@@ -117,7 +129,7 @@ class ProcessWorkspace(W.QWidget):
                 from hals_studio.ui.project_ui import ensure_export
                 from hals_studio.ui.project_metadata import MetadataEditor
                 self.metadata_editor=MetadataEditor(ensure_export(self.owner));self.metadata_editor.save_button.clicked.disconnect();self.metadata_editor.save_button.clicked.connect(self.owner.save_project);self.metadata_editor.table.itemChanged.connect(self.metadata_changed);self.left_box.insertWidget(1,self.metadata_editor,1);self.metadata_editor.save_button.hide()
-            self.metadata_editor.reload();self.metadata_editor.show();self.show_splash();self.summary.setText('Double-click coordinates to edit. Save Project writes your changes.');return
+            self.metadata_editor.reload();self.metadata_editor.show();self.show_splash();return
         if hasattr(self,'metadata_editor'):self.metadata_editor.hide()
         self.stage=stage;self.pages.setCurrentIndex(stage-1)
         if stage==4 and self.results.get(4) is None and coeff_path is not None and coeff_path.is_file():
@@ -155,7 +167,7 @@ class ProcessWorkspace(W.QWidget):
         self.tweeter_supplied,self.rft_supplied=metadata_availability(data)
         self.wav_recovery=data.get('measurement_metadata',{}).get('wav_recovery',False)
         self.filter_ir_filenames=data.get('measurement_metadata',{}).get('filter_ir_filenames',self.wav_recovery)
-        self.loaded=path;self.results={};self.stage1_settings={}
+        self.loaded=path;self.results={};self.stage1_settings={};self.origin_edits_pending=False
         self.project_name.setText(data.get('project_name',Path(path).stem.replace('_project','')));self.owner.dataset_label.setText(self.project_name.text())
         self._loading_rft=True
         for stage in range(1,5):
@@ -200,6 +212,16 @@ class ProcessWorkspace(W.QWidget):
     def project_payload(self):
         return dict(input_ir_folder=self.ir_folder.text(),measurement_metadata=dict(rft_supplied=self.rft_supplied,tweeter_supplied=self.tweeter_supplied,wav_recovery=self.wav_recovery,filter_ir_filenames=self.filter_ir_filenames),project_name=self.project_name.text().strip(),**{f'stage{s}_vars':deepcopy(v) for s,v in self.values.items()},stage4_manual_table=self.manual_table,
             global_vars=dict(enable_manual_speed_of_sound=self.manual_speed.isChecked(),speed_of_sound=str(self.speed.value())))
+    def save_pending_origins(self):
+        if not self.origin_edits_pending:return
+        if self.job:raise ValueError('Wait for coordinate fitting errors to finish before saving the project.')
+        from hals_studio.application.process_stages import persist_origin_result
+        output=self.measurement_path()
+        result=process_cache.hydrate_stage2(self.results[2],output)
+        result=persist_origin_result(result,self.values[2],output.parent,output.name)
+        process_cache.save(self.cache(2),2,result)
+        self.results[2]=process_cache.compact(2,result);self.origin_edits_pending=False
+        self.origin_edit_note.setText('Manual coordinate edits need Save Project to apply.')
     def cache(self,stage):
         project=Path(self.owner.project_path)
         return project.parent/'process_cache'/project.stem/f'stage{stage}.pkl'
@@ -212,7 +234,7 @@ class ProcessWorkspace(W.QWidget):
         from hals_studio.application.export_engine import DEFAULT_EXPORT
         ensure_export(self.owner).apply_config(deepcopy(DEFAULT_EXPORT))
         self.owner.source_path=None;self.owner.source_options=None
-        self.owner.project_path=path;self.owner.project_path_field.setText(str(Path(path).parent));self.loaded=path;self.results={};self.stage1_settings={};self.project_name.setText(Path(path).stem.replace('_project',''));self.ir_folder.setText(str(Path(path).parent));self.owner.save_project();self.start_host();self.select_stage(1)
+        self.owner.project_path=path;self.owner.project_path_field.setText(str(Path(path).parent));self.loaded=path;self.results={};self.stage1_settings={};self.origin_edits_pending=False;self.project_name.setText(Path(path).stem.replace('_project',''));self.ir_folder.setText(str(Path(path).parent));self.owner.save_project();self.start_host();self.select_stage(1)
     def browse_ir(self):
         path=W.QFileDialog.getExistingDirectory(self,'Input IR recordings',self.ir_folder.text())
         if path:self.ir_folder.setText(path)
@@ -255,6 +277,8 @@ class ProcessWorkspace(W.QWidget):
                 'No measured RFT was supplied. The suggested lower test frequency uses a 5 ms fallback. '
                 'The current lower test frequency is retained, including any value you entered.')
         request['project_oct_res']=self.stage1_resolution()
+        if self.stage==2 and (action=='save_origins' or (action=='rescan' and self.origin_edits_pending)):
+            request['preview_only']=True;request['origin_result']=self.results[2]
         if edits:request['edits']=edits
         if action=='reference':request['reference']=self.reference_order.currentData()['n']
         if action=='load_origins':request['origin_cache']=self.origin_cache_path
@@ -274,7 +298,7 @@ class ProcessWorkspace(W.QWidget):
         self.host.finished.connect(self._host_completed)
         if hasattr(self.owner,'progress'):
             self.owner.progress.setRange(0,0);self.owner.progress.show();self.owner.statusBar().showMessage(f'Stage {self.stage}: preparing… | ETA estimating…')
-        self.host.start();self.summary.setText(f'Stage {self.stage} running - inspect CLI output below')
+        self.host.start()
     def processing_progress(self,event):
         if not self.job or not hasattr(self.owner,'progress'):return
         self.display_processing_progress(event)
@@ -328,8 +352,13 @@ class ProcessWorkspace(W.QWidget):
         self.job=False;self.run_button.setEnabled(True);self.cancel_button.setEnabled(False)
         self.end_processing_progress('Processing complete' if event['ok'] else 'Processing failed — see CLI output')
         self.refresh_order_action()
-        if not event['ok']:self.summary.setText('Processing failed - see CLI output');return
+        if not event['ok']:return
         stage=int(event['stage'])
+        if event.get('preview_only'):
+            self.results[2]=event['result'];self.origin_edits_pending=True
+            self.origin_edit_note.setText('Unsaved manual coordinate edits — Save Project to apply.')
+            self.draw()
+            return
         if stage==1:
             self.stage1_settings=process_cache.load_stage1_settings(event['cache'])
             self.results[1]=process_cache.load_stage1(event['cache'],self.stage1_plot_settings())
@@ -337,6 +366,7 @@ class ProcessWorkspace(W.QWidget):
             if self.wav_recovery and not Path(self.owner.project_path).exists():
                 self.owner.save_project()
         else:self.results[stage]=process_cache.load(event['cache'],stage)
+        if stage in (1,2):self.origin_edits_pending=False
         if stage==2:self.save_estimated_tweeter()
         if stage in (1, 2):self.refresh_scan_bounds()
         if stage==3 and self.results[3].get('below_rft'):self.set_value(3,'freq_start_hz',self.results[3]['test_band_hz'][0])
@@ -348,7 +378,7 @@ class ProcessWorkspace(W.QWidget):
         if stage==3 and not reference_change:
             self._stage3_pulse_pending=True
             self.draw()
-        self._cli_line='';self.log.appendPlainText(f'Stage {stage} complete. Results saved.');self.summary.setText(f'Stage {stage} completed - {Path(self.owner.project_path).parent / "outputs"}')
+        self._cli_line='';self.log.appendPlainText(f'Stage {stage} complete. Results saved.')
         if stage==4:self.reload_coefficients(force=True)
     def cancel(self, restart=True):
         from hals_studio.application.job_coordinator import jobs_for
@@ -356,7 +386,6 @@ class ProcessWorkspace(W.QWidget):
         if self.host and self.host.isRunning():
             self.host.requestInterruption()
             self.cancel_button.setEnabled(False)
-            self.summary.setText('Cancelling processing...')
             self.end_processing_progress('Cancelling processing...')
             pool = self.owner.pool
             def stopped():
@@ -462,12 +491,34 @@ class ProcessWorkspace(W.QWidget):
         if self.stage==2:
             for i in range(self.sample.count()):self.rescan_frequency.addItem(self.sample.itemText(i),self.sample.itemData(i))
         self.rescan_frequency.blockSignals(False);self.sample.blockSignals(False)
+    def selected_origin_waypoints(self):
+        from hals_studio.ui.plotting.origin_editing import metadata_points, waypoint_color
+        pane=self.owner.export_workspace
+        points=metadata_points(pane.config.get('project_geometry',{}) if pane is not None else {})
+        keys=[(index,name) for index,(name,xyz) in enumerate(points)]
+        project=self.owner.project_path
+        if list(self.origin_waypoint_checks)!=keys or project!=self._origin_waypoint_project:
+            previous={key:check.isChecked() for key,check in self.origin_waypoint_checks.items()} if project==self._origin_waypoint_project else {}
+            while self.origin_waypoint_layout.count():
+                self.origin_waypoint_layout.takeAt(0).widget().deleteLater()
+            self.origin_waypoint_checks={};self._origin_waypoint_project=project
+            for key in keys:
+                check=W.QCheckBox(key[1]);check.setChecked(previous.get(key,False))
+                check.setToolTip('Show this metadata waypoint on the X, Y and Z graphs.')
+                item=W.QWidget();row=W.QHBoxLayout(item);row.setContentsMargins(0,0,0,0);row.setSpacing(4)
+                dash=W.QLabel(f'<span style="color:{waypoint_color(key[0])}">━━</span>');dash.setFixedWidth(22)
+                row.addWidget(check);row.addWidget(dash)
+                check.toggled.connect(self.draw);self.origin_waypoint_layout.addWidget(item);self.origin_waypoint_checks[key]=check
+        return [(index,name,xyz) for index,(name,xyz) in enumerate(points) if self.origin_waypoint_checks[index,name].isChecked()]
+
     def draw(self,*_):
+        self.origin_plot_tools.setVisible(self.stage==2 and self.view.currentText()=='Validation')
+        self.origin_edit_note.setVisible(self.stage==2)
         if self.stage==0:return
         self.last_plot_error=None
         view=self.view.currentText()
         self.power_tools.setVisible(self.stage==4 and view=='Sound Power vs Harmonic Degree')
-        self.power_reset.setVisible(self.stage==1 or (self.stage==4 and view=='Sound Power vs Harmonic Degree'))
+        self.power_reset.setVisible(self.stage in (1,2) or (self.stage==4 and view=='Sound Power vs Harmonic Degree'))
         if view!=getattr(self,'_last_view_kind',None):
             self._last_view_kind=view
             if view in ('Fit error','Spatial error'):
@@ -580,7 +631,7 @@ class ProcessWorkspace(W.QWidget):
             except ValueError:W.QMessageBox.warning(self,'Order table','Enter numeric frequencies and integer orders.')
     def edit_origins(self):
         if 2 not in self.results:return
-        rows=self.table_dialog('Edit acoustic origins - save applies to Stage 1 data',['Frequency / Hz','X / mm','Y / mm','Z / mm'],[[f'{f:.2f}',*[f'{x:.2f}' for x in v['final_c']]] for f,v in sorted(self.results[2][0].items())],False)
+        rows=self.table_dialog('Edit acoustic origins - Save Project to apply',['Frequency / Hz','X / mm','Y / mm','Z / mm'],[[f'{f:.2f}',*[f'{x:.2f}' for x in v['final_c']]] for f,v in sorted(self.results[2][0].items())],False)
         if rows is not None:
             try:self.run('save_origins',[(f,[float(old) if text==f'{old:.2f}' else float(text) for old,text in zip(self.results[2][0][f]['final_c'],row[1:])]) for f,row in zip(sorted(self.results[2][0]),rows)])
             except ValueError:W.QMessageBox.warning(self,'Origins','Enter numeric coordinates.')
@@ -695,11 +746,9 @@ class ProcessWorkspace(W.QWidget):
             self.owner.analysis.prepare_coefficients(path)
             pane.apply_config(dict(pane.config, coeff_path=str(path)), refresh_metadata=False)
             self._published_coeff_stamp = stamp
-            self.summary.setText('Stage 4 complete. Coefficients ready for Analysis or Export.')
             return True
         except Exception as exc:
             self.log.appendPlainText('Could not prepare coefficients: '+str(exc))
-            self.summary.setText('Stage 4 complete; could not prepare coefficients. See CLI output.')
             return False
 
     def publish(self, workspace=0):

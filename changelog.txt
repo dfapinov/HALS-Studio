@@ -1,5 +1,46 @@
 31/10/26
 
+- Stage 2 panning now reuses the canvas background during a drag and refreshes
+  axes fully on release, avoiding full-figure redraws for each mouse movement.
+
+- Stage 1 and 2 canvas tips now show one short message for the current action
+  or cursor position instead of listing every control at once.
+
+- Stage 1 verification plots now show pan, zoom and reset tips in the bottom
+  canvas margin instead of a hover tooltip.
+
+- Added compact Stage 2 tool tips in the bottom canvas margin for pan, zoom,
+  point selection, drawing and applying manual edits.
+
+- Compacted the Stage 2 plot controls: the save reminder sits beside Draw with
+  a gap after the waypoint checkboxes, and selected-point details overlay the
+  upper-left canvas margin instead of taking up a separate row or covering data.
+
+- Click a Stage 2 origin point to highlight its frequency on X, Y and Z and
+  display its fitting error and all three coordinates to two decimal places.
+
+- Stage 2 error labels now show whole percentages, alternating above and below
+  the line. Clicking a sampled point shows its error to two decimal places.
+
+- Simplified Stage 2 Validation: results are always shown in the GUI, waypoint
+  checkboxes carry matching colour dashes, and plot legends are removed. Smaller
+  error labels alternate above and below the line. Draw, Reset axes and Save
+  image now share the same button height.
+
+- Stage 2 manual coordinate edits now remain a preview until Save Project.
+  Draw has a pen icon and clear active state; Validation graphs use the shared
+  middle-drag pan, wheel zoom and Reset axes controls. Removed old-position
+  markers, staggered fit-error labels and completed the advanced-settings help.
+- Fixed checkbox text shifting when checked by keeping indicator borders the
+  same size throughout the app.
+
+- Smoothed the Stage 2 Pen preview by repainting only the dragged line instead
+  of redrawing all three graphs and fit-error labels on every mouse movement.
+
+- Added metadata waypoint overlays and a toggleable Pen tool to Stage 2's main
+  X/Y/Z Validation graphs. Drag a line to adjust sampled origins and recalculate
+  fit errors with the original limited order N. Updated Stage 2 help.
+
 - Fixed Export spectrograms turning solid red when the phi reference axis faces
   a quieter direction. Previously, red (0 dB) represented the SPL at 0°, so
   louder off-axis angles were clipped to solid red. Red now marks the loudest

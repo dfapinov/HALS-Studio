@@ -33,6 +33,7 @@ class PlotInteraction(C.QObject):
         self.pane = pane; self.axes = []; self.full = {}; self.saved = {}; self.signature = None
         self.phase_ax = self.main_ax = None; self.dragging = False; self.positioning = False
         self.pan = None
+        self.pan_preview = None
         self.rotation_drag = None
         canvas = pane.chart.canvas
         canvas.mpl_connect('scroll_event', self.wheel)
@@ -99,6 +100,9 @@ class PlotInteraction(C.QObject):
                 self.pan = (ax, event.x, event.y, ax.get_xlim(), ax.get_ylim())
                 self.pane.chart.fig.set_layout_engine('none')
                 self.pane.chart.canvas.setCursor(C.Qt.ClosedHandCursor)
+                if self.pane.config.get('blit_pan') and self.pane.chart.canvas.supports_blit:
+                    from .pan_preview import PanPreview
+                    self.pan_preview = PanPreview(self.pane.chart.canvas, self.axes)
             return
         if event.button == 1 and self.on_handle(event):
             self.dragging = True
@@ -138,20 +142,29 @@ class PlotInteraction(C.QObject):
             ax.set_xlim(shifted(xlim, (event.x-x)/ax.bbox.width, ax.get_xscale() == 'log', full_x))
             ax.set_ylim(shifted(ylim, (event.y-y)/ax.bbox.height))
             for j, item in enumerate(self.axes): self.saved[j] = (item.get_xlim(), item.get_ylim())
-            self.pane.chart.canvas.draw_idle(); return
+            if self.pan_preview is not None:self.pan_preview.paint()
+            else:self.pane.chart.canvas.draw_idle()
+            return
         if self.dragging and event.y is not None:
             rect = self.main_ax.bbox
             self.pane.config['phase_height'] = float(np.clip((event.y-self.drag_offset-rect.y0)/rect.height, .15, 1.))
             self.layout_phase(); self.pane.chart.canvas.draw_idle()
         elif self.on_handle(event): self.pane.chart.canvas.setCursor(C.Qt.SizeVerCursor)
-        else: self.pane.chart.canvas.unsetCursor()
+        else: self.restore_cursor()
+
+    def restore_cursor(self):
+        cursor = self.pane.config.get('idle_cursor')
+        if cursor is None:self.pane.chart.canvas.unsetCursor()
+        else:self.pane.chart.canvas.setCursor(cursor)
 
     def release(self, event):
         if self.rotation_drag:
             self.rotation_drag = None; self.pane.last_render = None
             self.pane.chart.canvas.unsetCursor()
         if self.pan:
-            self.pan = None; self.pane.chart.canvas.unsetCursor()
+            self.pan = None; self.restore_cursor()
+            if self.pan_preview is not None:
+                self.pan_preview.finish();self.pan_preview=None
         if self.dragging:
             self.dragging = False
             self.pane.last_render = None

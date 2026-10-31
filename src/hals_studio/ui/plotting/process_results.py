@@ -53,6 +53,7 @@ class Results(W.QWidget):
     def __init__(self):
         super().__init__();self.box=W.QVBoxLayout(self);self.box.setContentsMargins(0,0,0,0);self.canvas=None;self.fig=None;self.scroll=None
     def show_figure(self,fig):
+        self.origin_selection=None
         if getattr(self,'interaction',None) is not None:
             self.interaction.deleteLater();self.interaction=None
         while self.box.count():
@@ -71,14 +72,20 @@ class Results(W.QWidget):
                 lo,hi=get();mid=(lo+hi)/2;setter(mid+(lo-mid)*factor,mid+(hi-mid)*factor)
             self.canvas.draw_idle()
         self.canvas.mpl_connect('scroll_event',zoom)
-    def enable_plot_controls(self, axes, kind):
+    def enable_plot_controls(self, axes, kind, saved=None):
         from .plot_interaction import PlotInteraction
         self.chart = self
         self.config = {'kind': kind}
         self.interaction = PlotInteraction(self)
         self.interaction.begin(kind)
         self.interaction.finish(axes)
-        self.canvas.setToolTip('Wheel: zoom at cursor ? Wheel over an axis: zoom that axis\nMiddle drag: pan ? Reset axes: full view')
+        if saved:
+            # Capture all reset bounds before restoring a shared frequency axis.
+            self.interaction.saved=saved
+            for i,ax in enumerate(axes):
+                if i in saved:
+                    ax.set_xlim(saved[i][0]);ax.set_ylim(saved[i][1])
+        self.canvas.setToolTip('')
 
     def draw(self, workspace):
         from hals_studio.ui.plotting.process_renderers import renderer_for
@@ -89,6 +96,31 @@ class Results(W.QWidget):
         if workspace.stage == 4 and kind == 'Fit error':
             for patch in list(view.ax_err.patches):
                 patch.remove()
+        signature=(workspace.owner.project_path, tuple(sorted(workspace.results[2][0]))) if workspace.stage==2 and kind=='Validation' else None
+        saved={}
+        selected=None
+        if signature is not None and signature==getattr(self,'_origin_view_signature',None) and getattr(self,'interaction',None) is not None:
+            saved={i:(ax.get_xlim(),ax.get_ylim()) for i,ax in enumerate(self.interaction.axes)}
+            selected=getattr(getattr(self,'origin_selection',None),'selected_frequency',None)
+        self._origin_view_signature=signature
         self.show_figure(view.fig)
+        if workspace.stage == 2 and kind == 'Validation':
+            from .origin_editing import OriginLineEditor, OriginPointSelection
+            self.enable_plot_controls([view.ax_x, view.ax_y, view.ax_z], 'origin_validation', saved)
+            self.config['blit_pan']=True
+            self.config['idle_cursor']=C.Qt.CrossCursor if workspace.draw_origin_line.isChecked() else C.Qt.ArrowCursor
+            self.origin_editor = OriginLineEditor(self.canvas, [view.ax_x, view.ax_y, view.ax_z], workspace)
+            self.origin_point_details=view.fig.text(.008,.992,'Click a point for details.',
+                ha='left',va='top',fontsize=8,zorder=20,
+                color=view.ax_x.yaxis.label.get_color())
+            self.origin_selection = OriginPointSelection(self.canvas, [view.ax_x, view.ax_y, view.ax_z], workspace.results[2][0],
+                lambda text:self.origin_point_details.set_text(text.replace('% | ','%\n',1)))
+            if selected is not None:self.origin_selection.select(selected)
+            self.canvas.setFocusPolicy(C.Qt.StrongFocus)
+            self.canvas.setCursor(C.Qt.CrossCursor if workspace.draw_origin_line.isChecked() else C.Qt.ArrowCursor)
+            self.canvas.setToolTip('')
         if workspace.stage == 1:
             self.enable_plot_controls([view.ax1], 'fdw')
+        if workspace.stage == 1 or (workspace.stage == 2 and kind == 'Validation'):
+            from .plot_tips import PlotTips
+            self.plot_tips=PlotTips(self, workspace)

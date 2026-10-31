@@ -29,7 +29,8 @@ def run(request, *, runtime=None):
     root = Path(request["folder"])
     name = request["name"]
     out = root / "outputs"
-    out.mkdir(exist_ok=True)
+    if not request.get('preview_only'):
+        out.mkdir(exist_ok=True)
     filename = name + "_complex_data.npz"
     input_name = (
         name + "_complex_data_centered.npz"
@@ -41,6 +42,8 @@ def run(request, *, runtime=None):
     result = STAGE_RUNNERS[stage](request, runtime, out, filename, input_name)
     if result is None:
         raise ValueError("Processing returned no results; inspect the CLI output")
+    if stage == 2 and request.get("preview_only"):
+        return result
     cache = Path(request["cache"])
     if stage == 1:
         cache.unlink(missing_ok=True)

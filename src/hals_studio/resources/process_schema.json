@@ -112,11 +112,6 @@
       "default": "15.0",
       "help": "Resolution of the physical grid slices."
     },
-    "plot_results_origins": {
-      "label": "Show Validation Plot",
-      "default": true,
-      "help": "Launch the interactive Validation UI after search completes."
-    },
     "hold_origin_lf": {
       "label": "LF",
       "default": true,

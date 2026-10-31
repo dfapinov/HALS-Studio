@@ -26,7 +26,7 @@ QGroupBox { border: 1px solid #263848; border-radius: 6px; margin-top: 18px; pad
 QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; color: #9eb5c8; }
 QPushButton, QToolButton { background: #182b3b; border: 1px solid #2a4357; border-radius: 5px; padding: 7px 11px; }
 QPushButton:hover, QToolButton:hover { background: #244359; border-color: #4fa5be; }
-QPushButton:pressed, QPushButton:checked { background: #245d75; color: white; }
+QPushButton:pressed, QPushButton:checked, QToolButton:pressed, QToolButton:checked { background: #245d75; color: white; border-color: #91e5f1; }
 QPushButton:disabled { color: #556b7b; }
 QToolButton#resetViewsButton { padding-right: 29px; }
 QToolButton#resetViewsButton::menu-button { subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border: none; border-left: 1px solid #2a4357; border-top-right-radius: 4px; border-bottom-right-radius: 4px; background: transparent; }
@@ -52,7 +52,7 @@ QProgressBar { border: 1px solid #304454; border-radius: 3px; text-align: center
 QProgressBar::chunk { background: #278ba2; }
 QCheckBox { spacing: 8px; }
 QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid #466074; border-radius: 3px; background: #122434; }
-QCheckBox::indicator:checked { background: #599bda; border: 2px solid #91e5f1; }
+QCheckBox::indicator:checked { background: #599bda; border: 1px solid #91e5f1; }
 QToolTip { color: #dfedf6; background: #1b3345; border: 1px solid #45677e; }
 QMenu { background: #142432; border: 1px solid #355064; }
 QMenu::item { padding: 7px 24px; }
