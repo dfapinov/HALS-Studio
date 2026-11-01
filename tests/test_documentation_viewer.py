@@ -20,48 +20,56 @@ def test_footer_tag_controls_markdown_group(tmp_path):
     assert help_group(tmp_path / "reference.pdf") == "PDFs"
 
 
-def test_markdown_navigation_and_image_width(monkeypatch):
+def test_markdown_navigation_images_and_pdf_handoff(tmp_path, monkeypatch):
     app = W.QApplication.instance() or W.QApplication([])
-    viewer = DocumentationViewer()
-    viewer.show()
-    app.processEvents()
-    assert viewer.browser.font().styleStrategy() & G.QFont.PreferAntialias
-    assert viewer.files.font().styleStrategy() & G.QFont.PreferAntialias
-    assert viewer.browser.document().defaultFont().styleStrategy() & G.QFont.PreferAntialias
-    groups = [viewer.files.topLevelItem(i) for i in range(viewer.files.topLevelItemCount())]
-    assert [group.text(0) for group in groups] == [
-        "Process", "Analysis", "Export", "PDFs", "Miscellaneous",
-    ]
-    assert groups[1].childCount() == 1
-    assert groups[1].child(0).text(0) == "No files yet"
-    assert groups[1].child(0).data(0, C.Qt.UserRole) is None
-    assert [groups[0].child(i).data(0, C.Qt.UserRole) for i in range(groups[0].childCount())] == [
-        "stage1_fdw_gui_help.md", "stage2_origin_help.md", "stage3_help.md",
-        "stage4_she_solver_help.md",
-    ]
-    assert "stage5_export_help.md" in [groups[2].child(i).data(0, C.Qt.UserRole)
-                                        for i in range(groups[2].childCount())]
-    assert [groups[3].child(i).data(0, C.Qt.UserRole) for i in range(groups[3].childCount())] == [
-        "HALS_IR_Validation.pdf", "HALS_Stage5_Geometric_Phase_Validation.pdf",
-    ]
-    assert "grid_gen_help.md" in [groups[4].child(i).data(0, C.Qt.UserRole)
-                                  for i in range(groups[4].childCount())]
-    assert all(group.child(i).data(0, C.Qt.UserRole) != "architecture.md"
-               for group in groups for i in range(group.childCount()))
-    assert viewer.open_document("stage2_origin_help.md", "upper-frequency")
-    app.processEvents()
-    assert viewer.browser.verticalScrollBar().value() > 0
-    assert viewer.browser.document().size().width() <= viewer.browser.viewport().width() + 1
-    viewer.resize(850, 650)
-    app.processEvents()
-    assert viewer.browser.document().size().width() <= viewer.browser.viewport().width() + 1
-    viewer._follow_link(C.QUrl("stage3_help.md#upper-test-range"))
-    assert "Stage 3 Help" in viewer.browser.toPlainText()
-    assert not viewer.open_document("../README.md")
-
-    opened = []
-    monkeypatch.setattr(G.QDesktopServices, "openUrl", lambda url: opened.append(url) or True)
-    assert viewer.open_document("HALS_IR_Validation.pdf")
-    assert opened[0].isLocalFile()
-    assert opened[0].toLocalFile().endswith("HALS_IR_Validation.pdf")
-    viewer.close()
+    directory = tmp_path / 'docs'
+    directory.mkdir()
+    (tmp_path / 'outside.md').write_text('# Outside the help directory', encoding='utf-8')
+    image = G.QImage(2400, 200, G.QImage.Format_RGB32)
+    image.fill(G.QColor('blue'))
+    assert image.save(str(directory / 'wide.png'))
+    (directory / 'guide.md').write_text(
+        '# Guide\n\n![Wide image](wide.png)\n\n' +
+        ('A paragraph before the target heading.\n\n' * 100) +
+        '## Details\n\n[Next topic](next.md#target)\n\n<!-- help-group: process -->\n',
+        encoding='utf-8')
+    (directory / 'next.md').write_text(
+        '# Next topic\n\n## Target\n\nLinked content.\n\n<!-- help-group: analysis -->\n',
+        encoding='utf-8')
+    (directory / 'hidden.md').write_text('# Hidden\n\n<!-- help-group: hidden -->\n',
+                                      encoding='utf-8')
+    # The system app owns PDF rendering; this test checks only the handoff.
+    (directory / 'reference.pdf').touch()
+    viewer = DocumentationViewer(directory=directory)
+    try:
+        viewer.show()
+        app.processEvents()
+        def listed_files():
+            return {group.child(i).data(0, C.Qt.UserRole): group.text(0)
+                    for group in (viewer.files.topLevelItem(j)
+                                  for j in range(viewer.files.topLevelItemCount()))
+                    for i in range(group.childCount())
+                    if group.child(i).data(0, C.Qt.UserRole)}
+        assert listed_files() == {'guide.md': 'Process', 'next.md': 'Analysis',
+                                  'reference.pdf': 'PDFs'}
+        assert viewer.open_document('guide.md', 'details')
+        app.processEvents()
+        assert viewer.browser.verticalScrollBar().value() > 0
+        for width in (850, 650):
+            viewer.resize(width, 650)
+            app.processEvents()
+            assert viewer.browser.document().size().width() <= viewer.browser.viewport().width() + 1
+        viewer.browser.anchorClicked.emit(C.QUrl('next.md#target'))
+        assert 'Linked content.' in viewer.browser.toPlainText()
+        assert not viewer.open_document('../outside.md')
+        assert not viewer.open_document('missing.md')
+        opened = []
+        monkeypatch.setattr(G.QDesktopServices, 'openUrl', lambda url: opened.append(url) or True)
+        assert viewer.open_document('reference.pdf')
+        assert opened == [C.QUrl.fromLocalFile(str(directory / 'reference.pdf'))]
+        # Adding a guide must populate navigation without changing this test.
+        (directory / 'extra.md').write_text('# Extra topic', encoding='utf-8')
+        viewer.refresh_files()
+        assert listed_files()['extra.md'] == 'Miscellaneous'
+    finally:
+        viewer.close()

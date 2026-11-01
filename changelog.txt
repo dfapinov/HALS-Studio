@@ -1,27 +1,35 @@
 01/11/26
 
-- Fixed Analysis delay estimation to use native frequency bins, matching Export's
-  minimum-phase estimate and avoiding excess compensation from reduced sphere
-  sampling. Estimates follow the probe, or the reference axis for reference-only
-  plots. SPL, phase and directivity plots retain the selected sphere resolution.
+- Fixed Stage 2 full grid scans showing a misleading negative residual colour
+  scale.
 
-- Share the native response cache between Analysis IR plots and delay estimation
-  to avoid repeated evaluation at the same position. Source, reconstruction and
-  calibration changes invalidate the cached result.
+- Added an Analysis Settings shortcut to the dataset summary underneath the
+  workspace selection. Now shows Frequencies, Directions, the reconstruction
+  radius and selected origin.
+
+- Added illustrated Analysis help for the workspace, sound field, directivity,
+  time plots and CTA-2034, plus a documentation contents page.
+
+- Kept internal and external sound-power views on the internal field's level
+  range for easier comparison.
+
+- Fixed Analysis delay estimation to use native frequency bins for better
+  estimation accuracy, matching Export's minimum-phase TOF subtraction feature.
+
+- Share the native bin response cache between Analysis IR plots and delay
+  estimation to avoid repeated evaluation at the same position.
 
 31/10/26
 
 - Added a reconstruction-centre selector to Analysis Import Settings. Build
   all Analysis plots around Scanner Origin (0, 0, 0), Tweeter, Reference Origin
-  or a named additional points.
+  or a named additional point.
 
-- Reverted GUI processing to a fixed default speed of sound of 343 m/s or a
-  manual value set in Project metadata. Testing showed that optimising speed
-  of sound could slightly reduce total fit error without necessarily improving
-  sound-field separation, so Stage 2 no longer runs that optimisation in the GUI.
-  Existing projects retain their saved speed, including previously optimised
-  values. A manual override applies to future processing passes; existing NPZ
-  and coefficient files keep the speed recorded when their data was generated.
+- GUI processing uses a default speed of sound of 343 m/s or a manual value
+  set in Project metadata, without automatic speed optimisation. Existing
+  projects retain their saved speed. A manual override applies to future
+  processing passes; existing NPZ and coefficient files retain their recorded
+  speed.
 
 - Added parallel Stage 1 peak scanning using the available worker pool.
 
@@ -30,8 +38,8 @@
 
 - Added manual origin editing to the Stage 2 Validation graphs. Use the Draw
   tool to adjust X/Y/Z coordinates and recalculate fit errors.
-  Edits remain a preview until Save Project. Metadata waypoint overlays provide 
-  position references, and clicking an origin point highlights its frequency 
+  Edits remain a preview until Save Project. Metadata waypoint overlays provide
+  position references, and clicking an origin point highlights its frequency
   across all three graphs with its coordinates and fit error readout.
 
 - Added context-sensitive pan, zoom and reset tips to the Stage 1 and 2 plots,

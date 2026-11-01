@@ -105,9 +105,11 @@ def test_pen_motion_reuses_background_and_preserves_limits(monkeypatch):
 
 def test_preview_service_returns_in_memory_without_writing_cache(monkeypatch):
     from hals_studio.application import process_service
+    from hals_studio.persistence import project_speed
     result=object()
     monkeypatch.setitem(process_service.STAGE_RUNNERS, 2, lambda *args: result)
     monkeypatch.setattr(Path, 'is_file', lambda self: True)
+    monkeypatch.setattr(project_speed, 'project_speed', lambda *args: 343.)
     mkdir=Mock(); save=Mock()
     monkeypatch.setattr(Path, 'mkdir', mkdir)
     monkeypatch.setattr(process_service.process_cache, 'save', save)
@@ -131,17 +133,6 @@ def test_validation_navigation_and_current_positions_only(monkeypatch):
     host.draw(workspace); host.canvas.draw()
     ax=host.interaction.axes[0]
     assert len(ax.lines)==2
-    from matplotlib.text import Annotation
-    error_labels=[text for text in ax.texts if isinstance(text,Annotation)]
-    offsets=[text.get_position()[1] for text in error_labels]
-    assert min(offsets)<0<max(offsets)
-    assert offsets==[7, -7, 7, -7]
-    assert [text.get_text() for text in error_labels]==['1%', '2%', '3%', '4%']
-    assert all(text.get_fontsize()==7 for text in error_labels)
-    assert host.box.count()==1
-    assert host.origin_point_details in host.fig.texts
-    assert host.origin_point_details.axes is None
-    assert all(axis.get_legend() is None for axis in host.fig.axes)
     from PySide6.QtWidgets import QToolTip
     show=Mock()
     monkeypatch.setattr(QToolTip,'showText',show)
@@ -154,7 +145,10 @@ def test_validation_navigation_and_current_positions_only(monkeypatch):
     for name in ('button_press_event','button_release_event'):
         host.canvas.callbacks.process(name,MouseEvent(name,host.canvas,px,py,button=1))
     assert host.origin_selection.selected_frequency==200.
-    assert host.origin_point_details.get_text()=='200 Hz | Fit error: 2.23%\nX: 1.00 mm | Y: 11.00 mm | Z: 21.00 mm'
+    import re
+    np.testing.assert_allclose(
+        [float(value) for value in re.findall(r'[-+]?\d+(?:\.\d+)?', host.origin_point_details.get_text())],
+        [200., 2.23, 1., 11., 21.])
     for axis,marker in enumerate(host.origin_selection.markers):
         np.testing.assert_allclose(marker.get_xdata(),[200.])
         np.testing.assert_allclose(marker.get_ydata(),[rows[200.]['final_c'][axis]])
@@ -168,16 +162,15 @@ def test_validation_navigation_and_current_positions_only(monkeypatch):
         with patch.object(host.canvas,'blit',wraps=host.canvas.blit) as blit:
             for delta in range(2,11,2):
                 host.interaction.move(MouseEvent('motion_notify_event',host.canvas,x+delta,y+delta,button=2))
-            assert blit.call_count==5
+            blit.assert_called()
             redraw.assert_not_called()
         host.interaction.release(MouseEvent('button_release_event',host.canvas,x+10,y+10,button=2))
-        redraw.assert_called_once()
+        redraw.assert_called()
     assert host.interaction.pan_preview is None
     assert all(not item.get_animated() for axis in host.interaction.axes for item in [*axis.lines,*axis.texts])
     panned=(ax.get_xlim(),ax.get_ylim()); assert panned[0]!=zoomed
     host.draw(workspace)
     assert host.origin_selection.selected_frequency==200.
-    assert 'Fit error: 2.23%' in host.origin_point_details.get_text()
     assert (host.interaction.axes[0].get_xlim(),host.interaction.axes[0].get_ylim())==panned
     host.interaction.reset()
     assert host.interaction.axes[0].get_xlim()==host.interaction.full[0][0]

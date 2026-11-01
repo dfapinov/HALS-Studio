@@ -54,6 +54,7 @@ def test_reopened_stage4_spatial_view_without_solving(cached):
     pool = SimpleNamespace(workers=2, state='ready', executor=executor,
                            start=lambda:None, get_executor=lambda cancelled=lambda:False: executor)
     owner = SimpleNamespace(project_path=str(root/'project.json'), pool=pool,
+                            show_documentation=lambda *args: None,
                             settings=C.QSettings(str(root/'settings.ini'), C.QSettings.IniFormat))
     pane = ProcessWorkspace(owner)
     def await_spatial():

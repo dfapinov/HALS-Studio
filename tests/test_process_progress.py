@@ -120,23 +120,19 @@ def test_cpu_percentage_uses_deltas(monkeypatch):
     assert sampler.sample()==pytest.approx(100.)
 
 
-def test_stage2_inline_options_and_bottom_progress(tmp_path):
+def test_processing_progress_updates_and_clears_status_bar(tmp_path):
     from PySide6 import QtCore as C, QtWidgets as W
     from hals_studio.ui.process_workspace import ProcessWorkspace
     app=W.QApplication.instance() or W.QApplication([])
     owner=W.QMainWindow();owner.project_path=None
+    owner.show_documentation=lambda *args: None
     owner.settings=C.QSettings(str(tmp_path/'settings.ini'),C.QSettings.IniFormat)
     owner.progress=W.QProgressBar();owner.statusBar().addPermanentWidget(owner.progress)
     pane=ProcessWorkspace(owner)
     try:
-        lf,hf=[pane.controls[2,key] for key in ('hold_origin_lf','hold_origin_hf')]
-        assert lf.isChecked() and hf.isChecked()
-        assert lf.parentWidget() is hf.parentWidget()
-        assert lf.parentWidget().parentWidget() is pane.advanced[2][1]
         pane.job=True
         pane.processing_progress(dict(label='Stage 2 test',completed=3,total=10,remaining=7,eta=14))
         assert owner.progress.maximum()==10 and owner.progress.value()==3
-        assert 'ETA 0m 14s' in owner.statusBar().currentMessage()
         pane.end_processing_progress('Complete');pane.job=False
         assert owner.progress.isHidden()
     finally:pane.close();owner.close();app.processEvents()

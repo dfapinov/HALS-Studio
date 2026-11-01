@@ -50,7 +50,8 @@ def test_stage3_controls_import_reset_and_manual_persistence(tmp_path):
     from hals_studio.ui.process_workspace import ProcessWorkspace
     app=W.QApplication.instance() or W.QApplication([])
     owner=SimpleNamespace(settings=C.QSettings(str(tmp_path/'ui.ini'), C.QSettings.IniFormat),
-        project_path=None, dataset_label=W.QLabel(), worker=None, export_workspace=None, pool=Mock())
+        project_path=None, dataset_label=W.QLabel(), worker=None, export_workspace=None,
+        pool=Mock(), show_documentation=Mock())
     view=ProcessWorkspace(owner)
     try:
         assert (1, 'fdw_rft_ms') not in view.controls

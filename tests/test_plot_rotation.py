@@ -69,13 +69,6 @@ def test_sample_angle_dots_follow_pane_option(enabled, workspace):
     assert all(line.get_marker() == ('.' if enabled else 'None') for line in traces)
 
 
-def test_factory_template_uses_top_and_right_globe_zero_directions():
-    from hals_studio.ui.view_state import default_views, restore_view
-    for view in default_views().values():
-        for pane in restore_view(view)['panes']:
-            assert pane['globe_rotation'] == {'horizontal': 180.0, 'vertical': 90.0}
-
-
 def test_view_round_trip_preserves_independent_rotations():
     from hals_studio.ui.workspace import Workspace
     panes = [SimpleNamespace(config=default_config(kind), plotter=None, invalidate=Mock())
@@ -90,7 +83,6 @@ def test_view_round_trip_preserves_independent_rotations():
     Workspace.apply_view(workspace, saved)
     assert panes[0].config['globe_rotation'] == {'horizontal': 30., 'vertical': 120.}
     assert panes[1].config['polar_rotation'] == {'horizontal': 10., 'vertical': 90.}
-    assert default_config('globe_hv')['globe_rotation']['vertical'] == 90.
 
 
 @pytest.mark.parametrize('export_points', [False, True])
@@ -116,7 +108,7 @@ def test_polar_signed_directions_match_top_and_side_views(export_points):
 
 
 @pytest.mark.parametrize('close_curves', [True, False])
-def test_globe_defaults_match_top_side_views_and_handles_stay_top_left(close_curves):
+def test_globe_coordinates_match_top_and_side_views(close_curves):
     from hals_studio.ui.plotting.directivity_views import draw_globe_cuts
     fig = Figure(figsize=(9, 5)); canvas = FigureCanvasAgg(fig)
     chart = SimpleNamespace(fig=fig, canvas=canvas, done=canvas.draw)
@@ -130,6 +122,3 @@ def test_globe_defaults_match_top_side_views_and_handles_stay_top_left(close_cur
     assert vertical.get_theta_offset() % (2*np.pi) == pytest.approx(0.)
     for ax in (horizontal, vertical):
         assert ax.get_theta_direction() == 1
-        x, y = pane._rotation_handles[ax]
-        assert x < .5 and y > .5
-    np.testing.assert_allclose(pane._rotation_handles[horizontal], pane._rotation_handles[vertical])

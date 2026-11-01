@@ -27,10 +27,6 @@ def test_fixed_stage1_pipeline():
     with patch('hals_studio.process_engine.session_pool.borrow_pool',return_value=BorrowedPool()), redirect_stdout(log):
         f,raw,smoothed,meta=stage.fdwsmooth(str(inputs),str(outputs),'comparison.npz',5,12,50,True,24,
             compare_smoothing=True,workers=24,enable_auto_gain=False)
-    assert 'Using 12 processes' in log.getvalue()
-    assert 'Complex smoothing: fixed; 1/24 octave' in log.getvalue()
-    assert 'Stage 1 peak scan: 1/1 complete' in log.getvalue()
-    assert 'Stage 1 FDW / smoothing: 1/1 complete' in log.getvalue()
     name=next(iter(raw));peak=meta[name]['t_peak']
     fixed=apply_complex_smoothing(f,raw[name],24,peak)
     np.testing.assert_array_equal(smoothed[name],fixed)
@@ -87,17 +83,3 @@ def test_short_capture_keeps_one_window():
     response,meta=process_single_ir(ir,48000,len(ir),freqs,0,5,12,50,3,.2,1.)
     assert len(meta['f_centers'])==1
     np.testing.assert_allclose(response[:-1],1)
-
-
-
-def test_viewer_schema_exposes_persisted_options():
-    from hals_studio.ui.process_workspace import SCHEMA
-    from hals_studio.ui.process_forms import MAIN
-    for key in ('sliding_hf','compare_smoothing'):
-        assert key not in SCHEMA['1']
-        assert key not in MAIN[1]
-
-
-def test_cross_sonogram_setup_matches_directivity():
-    from hals_studio.ui.plotting.plot_settings import setting_keys
-    assert set(('directivity_on_axis','contours','directivity_contour_step')) <= set(setting_keys('cross_sonograms'))

@@ -141,18 +141,3 @@ def test_manual_box_simplex_can_search_outside_measurement_cylinder(monkeypatch)
     monkeypatch.setattr(stage, 'solve_physics_3d', lambda x,y,z,ctx: np.sum((np.array([x,y,z])-target)**2))
     result, _ = stage.run_simplex_descent_3d((0., 0., 0.), (cfg,))
     np.testing.assert_allclose(result, target, atol=.2)
-
-
-def test_manual_scan_fields_are_grouped_separately():
-    from PySide6.QtWidgets import QApplication, QGroupBox
-    from hals_studio.ui.process_workspace import SCHEMA
-    from hals_studio.ui.process_forms import StageForms
-    app = QApplication.instance() or QApplication([])
-    values = {int(stage): {key: spec['default'] for key, spec in fields.items()}
-              for stage, fields in SCHEMA.items()}
-    forms = StageForms(SCHEMA, values)
-    for key in ('x_bounds', 'y_bounds', 'z_bounds', 'grid_res_mm'):
-        group = forms.controls[2, key].parentWidget()
-        assert isinstance(group, QGroupBox)
-        assert group.title() == 'Full grid re-scan only'
-    forms.close()

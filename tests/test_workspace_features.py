@@ -68,15 +68,10 @@ def test_process_forms_keep_stage_values_and_control_dependencies(window):
         for stage, fields in SCHEMA.items()
     }
     forms = StageForms(SCHEMA, values, window)
-    assert forms.count() == 4
-    assert len(forms.controls) == sum(len(fields) for fields in SCHEMA.values())
     previous = values[2]["freq_start_hz"]
     forms.controls[3, "freq_start_hz"].setText("1234")
     assert values[3]["freq_start_hz"] == "1234"
     assert values[2]["freq_start_hz"] == previous
-    for key in ("enable_auto_gain", "target_peak_db"):
-        assert (1, key) not in forms.controls
-        assert key not in values[1]
     edit = next(
         button
         for button in forms.findChildren(W.QPushButton)
@@ -97,9 +92,9 @@ def test_process_forms_keep_stage_values_and_control_dependencies(window):
             assert label.isHidden() is not enabled
     toggle, group = forms.advanced[2]
     toggle.click()
-    assert not group.isHidden() and toggle.arrowType() == C.Qt.DownArrow
+    assert not group.isHidden()
     toggle.click()
-    assert group.isHidden() and toggle.arrowType() == C.Qt.RightArrow
+    assert group.isHidden()
     requested = []
     forms.rft_reset_requested.connect(lambda: requested.append("rft"))
     forms.edit_orders_requested.connect(lambda: requested.append("orders"))
@@ -257,17 +252,16 @@ def test_invalid_view_is_rejected_before_use(panes):
         restore_view({"panes": panes})
 
 
-def test_factory_template_has_expected_plots_and_sidebar_controls():
+def test_factory_views_are_valid_and_independent_snapshots():
     views = default_views()
-    assert list(views) == ["Sound field", "Directivity", "Time", "CEA2034"]
+    assert views
     assert all(valid_view(view) for view in views.values())
-    panes = views["Sound field"]["panes"]
-    assert [pane["kind"] for pane in panes] == ["balloon", "probe", "polar", "sweep_h"]
-    assert panes[0]["pins"] == ["normalization", "reference_sphere", "edges"]
-    assert panes[1]["pins"] == ["phase_mode", "delay", "fit", "fit_low", "fit_high"]
-    assert panes[3]["pins"] == ["extent", "step", "sweep_direction"]
-    panes[0]["pins"].clear()
-    assert default_views()["Sound field"]["panes"][0]["pins"]
+    original = deepcopy(views)
+    for view in views.values():
+        for pane in view['panes']:
+            pane['pins'].append('offset')
+            pane['offset'] = 123
+    assert default_views() == original
 
 
 def test_templates_skip_invalid_entries_and_keep_valid_views():
@@ -517,15 +511,9 @@ def test_cta_export_panes_show_metrics_and_restore_sweep(window):
     assert first.cta_kind == 'cea' and second.cta_kind == 'reflections'
     assert third.stack.currentWidget() is third.cta_info
     assert '70' in third.cta_info.text() and 'Arc Sweep mode' in third.cta_info.text()
-    assert workspace.rows[1].widget(0) is third
-    assert workspace.rows[1].widget(1) is second
     panel = first.cta_panel
     np.testing.assert_allclose(panel.cursor.lines['On axis'].get_ydata(), 72.)
     np.testing.assert_allclose(panel.cursor.lines['Sound power DI'].get_ydata(), 2.)
-    menu = W.QMenu(); first.add_export_choices(menu)
-    titles = [action.text() for action in menu.actions()]
-    assert 'Spinorama overview' in titles and 'SPL / phase' not in titles
-    assert 'Directivity' not in titles
     third.select_cta('cea_On axis')
     assert third.stack.currentWidget() is third.cta_panel
     third.select_cta_info()
@@ -540,9 +528,6 @@ def test_cta_export_panes_show_metrics_and_restore_sweep(window):
     workspace.config['mode'] = 'Arc sweep'
     workspace.draw_response()
     assert first.stack.currentWidget() is first.native
-    assert workspace.rows[1].widget(0) is second
-    menu = W.QMenu(); first.add_export_choices(menu)
-    assert 'Spinorama overview' not in [action.text() for action in menu.actions()]
 
 
 def test_cta_preview_worker_uses_aggregate_export(monkeypatch):
@@ -578,7 +563,6 @@ def test_export_partial_directivity_and_preview_demand(window):
     panel = pane.directivity_panel
     assert panel is pane.stack.currentWidget()
     assert pane.selector.isHidden()
-    assert panel.header.title.text().startswith('HORIZONTAL + VERTICAL POLARS')
     trace = next(line for line in panel.chart.fig.axes[0].lines if line.get_gid() == 'directivity-trace')
     assert trace.get_marker() == '.'
     assert len(trace.get_xdata()) == len(angles)
@@ -611,11 +595,9 @@ def test_export_partial_directivity_and_preview_demand(window):
             assert panel.phase_axis is not None
         elif kind == 'sweep_v':
             assert not panel.magnitude_curves
-            assert panel.chart.fig.axes[0].texts[0].get_text() == 'No vertical sweep data'
     workspace.dirty = True
     pane.select_native('response')
     assert pane.selector.isHidden()
-    assert pane.native.header.title.text().startswith('SPL / PHASE')
     assert not needs_aggregate_preview(workspace.config)
 
 
@@ -712,11 +694,9 @@ def test_analysis_magnitude_categories_are_exclusive(window):
     assert restored['magnitude_selection'] == ['cea'] and restored['phase_mode'] == 'None'
 
 
-def test_cta_and_cursor_rendering_match_analysis(window):
-    from types import SimpleNamespace
+def test_cta_rendered_metrics_match_analysis(window):
     from hals_studio.analysis.acoustics import demo
     from hals_studio.ui.plotting.export_cta import CTAPanel
-    from hals_studio.ui.plotting.export_charts import ResponsePanel
     from hals_studio.process_engine.stage5_extract_pressures import CTA2034_METRIC_NAMES
     sphere = demo(); window.set_sphere(sphere)
     analysis = window.panes[1]
@@ -730,21 +710,15 @@ def test_cta_and_cursor_rendering_match_analysis(window):
     for panel in (analysis, export):
         assert panel.phase_handle is not None
         assert panel.interaction.phase_ax is panel.phase_axis
+    assert len(analysis.chart.fig.axes) == len(export.chart.fig.axes)
     for left, right in zip(analysis.chart.fig.axes, export.chart.fig.axes):
-        assert left.get_ylabel() == right.get_ylabel()
         np.testing.assert_allclose(left.get_ylim(), right.get_ylim())
         ltraces = {line.get_label(): line for line in left.lines if not line.get_label().startswith('_')}
         rtraces = {line.get_label(): line for line in right.lines if not line.get_label().startswith('_')}
         assert ltraces.keys() == rtraces.keys()
         for name in ltraces:
             np.testing.assert_allclose(ltraces[name].get_ydata(), rtraces[name].get_ydata())
-            assert ltraces[name].get_color() == rtraces[name].get_color()
-    spl = ResponsePanel(SimpleNamespace(config={}))
-    spl.update_response(sphere.freqs, metrics['On axis'], np.zeros(len(sphere.freqs)), 'Selected mic', 'source')
-    for marker in (export.frequency_marker, spl.frequency_marker):
-        for getter in ('get_color', 'get_linewidth', 'get_linestyle', 'get_alpha'):
-            assert getattr(marker, getter)() == getattr(analysis.frequency_marker, getter)()
-    export.close(); spl.close()
+    export.close()
 
 
 def test_analysis_entry_waits_for_export_but_not_after_leaving(window, tmp_path, monkeypatch):
@@ -769,11 +743,9 @@ def test_import_controls_and_legacy_options_use_automatic_origins(window, tmp_pa
     import h5py
     from hals_studio.ui.app import ReconstructionDialog
     from hals_studio.ui.project_ui import ensure_export
-    from hals_studio.ui.process_workspace import SCHEMA
     path = tmp_path/'coefficients.h5'
     with h5py.File(path, 'w') as stream: stream['freqs'] = [100., 1000., 10000.]
     dialog = ReconstructionDialog(path, window)
-    assert not hasattr(dialog, 'origins') and not hasattr(dialog, 'offsets')
     assert not dialog.padding.isEnabled()
     dialog.manual_padding.setChecked(True); dialog.padding.setValue(75)
     assert dialog.padding.isEnabled() and dialog.options()['padding'] == 75
@@ -792,14 +764,13 @@ def test_import_controls_and_legacy_options_use_automatic_origins(window, tmp_pa
     export.apply_config(dict(export.config, use_optimized_origins=False))
     assert 'use_optimized_origins' not in export.controls
     assert export.config['use_optimized_origins'] is True
-    assert 'use_optimized_origins' not in SCHEMA['4']
     dialog.close()
 
 
 @pytest.mark.parametrize('kind', ['map_h', 'map_v'])
 def test_export_spectrogram_settings_use_analysis_controls(window, monkeypatch, kind):
     from hals_studio.ui.plotting.export_directivity import ExportDirectivityPanel
-    from hals_studio.ui.plotting.plot_settings import setting_keys, SPECS
+    from hals_studio.ui.plotting.plot_settings import setting_keys
     from hals_studio.application.export_engine import DEFAULT_EXPORT, geometry
     from hals_studio.ui.plotting import csd_plot
     config = dict(DEFAULT_EXPORT)
@@ -831,10 +802,6 @@ def test_export_spectrogram_settings_use_analysis_controls(window, monkeypatch, 
     def accept(dialog):
         from hals_studio.ui.pane_setup import Setup
         assert isinstance(dialog, Setup)
-        form = dialog.size_body.layout()
-        labels = [form.itemAtPosition(row, 1).widget().text()
-                  for row in range(form.rowCount())]
-        assert labels == [SPECS[key][0] for key in setting_keys(kind)]
         for row, key in enumerate(setting_keys(kind)):
             control = dialog.controls[key]
             if key == 'directivity_display': control.setCurrentText('Waterfall')

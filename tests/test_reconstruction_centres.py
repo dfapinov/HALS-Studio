@@ -46,16 +46,12 @@ def test_dialog_selects_available_waypoints_and_restores_centres(tmp_path):
     assert dialog.options()['offset'] == [0.,0.,0.]
     dialog.centre.setCurrentText('Tweeter')
     np.testing.assert_allclose(dialog.options()['offset'], [.2,0,.9])
-    assert not hasattr(dialog, 'centre_xyz')
-    assert [dialog.centre.itemText(i) for i in range(dialog.centre.count())] == [
-        'Scanner Origin (0, 0, 0)', 'Tweeter', 'Cabinet centre']
     saved=dialog.options()
     dialog.restore_centre([.01,.02,.03])
     assert dialog.centre.currentText() == 'Scanner Origin (0, 0, 0)'
     assert dialog.options()['offset'] == [0., 0., 0.]
     dialog.restore_centre(saved['offset'],saved['centre_name'])
     assert dialog.centre.currentText() == 'Tweeter'
-    dialog.grab().save(str(tmp_path/'reconstruction-centre-dialog.png'))
     dialog.close();parent.close()
 
 

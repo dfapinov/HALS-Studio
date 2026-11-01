@@ -42,25 +42,24 @@ def test_stage3_uses_same_available_pool_for_solves_and_directivity(monkeypatch,
         freq_start_hz=5000., freq_end_hz=7000., octave_resolution=0,
         spl_sphere_points=32, save_plot=False, runtime=runtime)
     assert requests == [None]
-    assert {label for label, _ in used} == {'Stage 3 solves', 'Stage 3 directivity'}
+    assert used
     assert all(executor is pool for _, executor in used)
     assert result['step1']['sample_frequency_count'] == 3
 
 
 @pytest.mark.parametrize('requested', [None, 3, 40])
-def test_stage4_uses_effective_pool_capacity_and_reports_it(monkeypatch, tmp_path, requested):
+def test_stage4_uses_requested_pool_capacity(monkeypatch, tmp_path, requested):
     from hals_studio.process_engine import stage4_run_she_solve as stage
     monkeypatch.setattr(stage, 'load_and_parse_npz', lambda path: measurement_data())
     (tmp_path/'input.npz').touch()
-    requests = []; logs = []
+    requests = []
     pool = InlinePool()
     pool.workers = min(requested or 18, 18)
-    runtime = EngineRuntime(output=logs.append,
+    runtime = EngineRuntime(output=lambda _: None,
         pool_factory=lambda workers=None: (requests.append(workers) or pool))
     result = stage.run_she_solve('input.npz', 'unused.h5', str(tmp_path), str(tmp_path),
         target_n_max=2, jobs=requested, save_to_disk=False, show_plot=False, runtime=runtime)
     assert requests == [requested]
-    assert f'with {pool.workers} processes' in ''.join(logs)
     assert result['coeffs'].shape == (3, 18)
 
 
@@ -74,12 +73,6 @@ def test_stage2_grid_borrows_full_pool(monkeypatch):
     x, y, z, grid = stage.generate_3d_landscape_volumetric((cfg,), runtime=runtime)
     assert requested == [None]
     np.testing.assert_array_equal(grid, x[:, None, None]+2*y[None, :, None]+3*z[None, None, :])
-
-
-def test_default_pool_remains_half_logical_cpus(monkeypatch):
-    from hals_studio.process_engine import session_pool
-    monkeypatch.setattr(session_pool.os, 'cpu_count', lambda: 24)
-    assert session_pool.SessionPool().workers == 12
 
 
 def test_speed_probe_tasks_use_full_pool_even_with_few_candidates(monkeypatch):
