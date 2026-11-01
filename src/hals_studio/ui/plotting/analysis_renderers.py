@@ -33,6 +33,8 @@ def render_scene(pane, s, rel, i):
         pane.set_lighting()
     if kind == "balloon":
         pane.probe_frequency.setText(f"{s.freqs[i]:,.0f} Hz")
+        radius = s.metadata.get('radius_m')
+        pane.reconstruction_radius.setText(f'Radius {radius:.1f} m' if radius is not None else '')
         pane.probe_controls.adjustSize()
         pane.probe_controls.move(
             4, max(4, pane.plotter.interactor.height() - pane.probe_controls.height() - 6)
@@ -40,6 +42,8 @@ def render_scene(pane, s, rel, i):
         pane.probe_controls.show()
         pane.probe_controls.raise_()
         pane.frequency_controls.adjustSize()
+        pane.frequency_controls.resize(max(0, pane.plotter.interactor.width() - 8),
+                                       pane.frequency_controls.height())
         pane.frequency_controls.show()
         pane.frequency_controls.raise_()
         pane.balloon(s, rel, i)

@@ -9,7 +9,10 @@ from hals_studio.ui.plot_header import PlotHeader
 from hals_studio.ui.plotting.plot_settings import GROUPS, default_config
 from hals_studio.ui.plotting.directivity_views import draw_globe_cuts, draw_directivity_map
 
-DIRECTIVITY_TITLES = {**GROUPS['Directivity'], **{key: GROUPS['SPL & phase'][key] for key in ('sweep_h', 'sweep_v')}}
+DIRECTIVITY_TITLES = {
+    **{key: title for key, title in GROUPS['Directivity'].items() if key != 'cross_sonograms'},
+    **{key: GROUPS['SPL & phase'][key] for key in ('sweep_h', 'sweep_v')},
+}
 
 
 

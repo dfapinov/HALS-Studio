@@ -1,3 +1,14 @@
+01/11/26
+
+- Fixed Analysis delay estimation to use native frequency bins, matching Export's
+  minimum-phase estimate and avoiding excess compensation from reduced sphere
+  sampling. Estimates follow the probe, or the reference axis for reference-only
+  plots. SPL, phase and directivity plots retain the selected sphere resolution.
+
+- Share the native response cache between Analysis IR plots and delay estimation
+  to avoid repeated evaluation at the same position. Source, reconstruction and
+  calibration changes invalidate the cached result.
+
 31/10/26
 
 - Added a reconstruction-centre selector to Analysis Import Settings. Build

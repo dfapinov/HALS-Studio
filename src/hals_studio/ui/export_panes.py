@@ -55,6 +55,8 @@ class ExportPane(W.QWidget):
         if self.workspace.config['mode'] != 'CTA-2034':
             directivity = menu.addMenu('Directivity')
             for kind, title in GROUPS['Directivity'].items():
+                if kind not in DIRECTIVITY_TITLES:
+                    continue
                 directivity.addAction(title, lambda checked=False, k=kind: self.select_directivity(k))
             sweeps = menu.addMenu('SPL / Phase')
             sweeps.addAction('Selected Point', lambda: self.select_native('response'))

@@ -180,7 +180,23 @@ class Workspace(W.QMainWindow):
         scroll.setHorizontalScrollBarPolicy(C.Qt.ScrollBarAlwaysOff)
         sidebar = W.QWidget(); self.sidebar = W.QVBoxLayout(sidebar); self.sidebar.setContentsMargins(4, 4, 12, 4); self.sidebar.setSizeConstraint(W.QLayout.SetNoConstraint); sidebar.setMinimumWidth(0); scroll.setWidget(sidebar); self.analysis_split.addWidget(scroll)
         self.dataset_label = label('', 'eyebrow'); self.dataset_label.setWordWrap(True); self.dataset_label.setStyleSheet('font-size:14px;font-weight:600;letter-spacing:0px;color:#52d9ec;'); self.dataset_info = label('', 'muted'); self.dataset_info.setWordWrap(True)
-        self.sidebar.addWidget(self.dataset_label); self.sidebar.addWidget(self.dataset_info)
+        self.analysis_settings_button = button('', self.open_analysis_settings)
+        self.analysis_settings_button.setAccessibleName('Analysis Settings')
+        self.analysis_settings_button.setToolTip('Change analysis reconstruction radius, frequency sampling and field settings')
+        self.analysis_settings_button.setCursor(C.Qt.PointingHandCursor)
+        dataset_layout = W.QVBoxLayout(self.analysis_settings_button)
+        dataset_layout.setContentsMargins(8, 6, 8, 6)
+        dataset_layout.setSizeConstraint(W.QLayout.SetFixedSize)
+        self.analysis_settings_button.setSizePolicy(W.QSizePolicy.Fixed, W.QSizePolicy.Fixed)
+        self.dataset_label.setWordWrap(False)
+        self.dataset_label.setAttribute(C.Qt.WA_TransparentForMouseEvents)
+        self.dataset_label.setStyleSheet(self.dataset_label.styleSheet() + 'background:transparent;')
+        self.dataset_info.setWordWrap(False)
+        self.dataset_info.setAttribute(C.Qt.WA_TransparentForMouseEvents)
+        self.dataset_info.setStyleSheet('background:transparent;')
+        dataset_layout.addWidget(self.dataset_label)
+        dataset_layout.addWidget(self.dataset_info)
+        self.sidebar.addWidget(self.analysis_settings_button, 0, C.Qt.AlignLeft)
         group = W.QGroupBox(); form = W.QVBoxLayout(group); self.sidebar.addWidget(group); form.addWidget(label('FREQUENCY', 'muted'))
         self.frequency_label = label('', 'hero'); form.addWidget(self.frequency_label)
         self.frequency = W.QSlider(C.Qt.Horizontal); self.frequency.valueChanged.connect(self.schedule); form.addWidget(self.frequency)
@@ -308,6 +324,12 @@ class Workspace(W.QMainWindow):
             self.badge.setText('HALS / COMPLEX FIELD')
             self.analysis.activate_coefficients()
 
+    def open_analysis_settings(self):
+        if self.sphere is None:
+            self.open_data()
+        else:
+            self.analysis_import_settings()
+
     def analysis_import_settings(self):
         from hals_studio.ui.app import ReconstructionDialog
         if self.worker and self.worker.isRunning():
@@ -393,14 +415,21 @@ class Workspace(W.QMainWindow):
             return
         self.frequency.blockSignals(True); self.frequency.setRange(0, len(sphere.freqs)-1)
         self.frequency.setValue(int(np.argmin(abs(sphere.freqs-1000)))); self.frequency.blockSignals(False)
-        self.dataset_label.setText(Path(self.project_path).stem.replace('_project','') if self.project_path else sphere.name.upper())
-        self.dataset_info.setText(f'{len(sphere.freqs):,} frequencies · {len(sphere.elevation)*len(sphere.azimuth):,} directions\n'
-                                 f'{sphere.freqs[0]:,.1f}–{sphere.freqs[-1]:,.1f} Hz')
+        self.dataset_label.setText(Path(self.project_path).stem.replace('_project','') if self.project_path else sphere.name)
+        radius = sphere.metadata.get('radius_m')
+        origin = sphere.metadata.get('centre_name')
+        if not origin:
+            offset = sphere.metadata.get('offset_m', [0., 0., 0.])
+            origin = ('Scanner Origin' if np.allclose(offset, 0) else
+                      '(' + ', '.join(f'{value:g}' for value in offset) + ') m')
+        self.dataset_info.setText(f'• Frequencies {len(sphere.freqs):,}\n'
+                                 f'• Directions {len(sphere.elevation)*len(sphere.azimuth):,}'
+                                 + (f'\n• Radius {radius:.1f} m' if radius is not None else '')
+                                 + f'\n• Origin {origin}')
         self.badge.setText('SYNTHETIC DEMO' if sphere.metadata.get('demo') else 'HALS / COMPLEX FIELD')
         self.axis = (0., 0.); self.axis_source = None
         source = sphere.metadata.get('source') or self.source_path
         if source and not sphere.metadata.get('demo'):
-            self.dataset_info.setText(Path(source).name + '\n' + self.dataset_info.text())
             self.dataset_info.setToolTip(str(source))
         else:
             self.dataset_info.setToolTip('')

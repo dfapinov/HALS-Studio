@@ -5,7 +5,6 @@ from copy import deepcopy
 GROUPS = {
     "3D field": {
         "balloon": "Balloon / colour sphere",
-        "cross_sonograms": "Intersecting H/V sonograms",
     },
     "Time / decay": {
         "impulse": "Impulse response",
@@ -13,8 +12,9 @@ GROUPS = {
         "wavelet": "Morlet wavelet",
     },
     "Directivity": {
-        "map_h": "Horizontal spectrogram",
-        "map_v": "Vertical spectrogram",
+        "map_h": "Horizontal sonogram",
+        "map_v": "Vertical sonogram",
+        "cross_sonograms": "Intersecting H/V sonograms",
         "polar": "Horizontal + vertical polars",
         "globe_hv": "Horizontal + vertical globes",
     },

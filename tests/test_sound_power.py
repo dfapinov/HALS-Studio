@@ -50,6 +50,81 @@ def test_saved_stage4_plot(tmp_path):
     np.testing.assert_allclose(10**(ax.lines[0].get_ydata()/10), degree_sum)
 
 
+@pytest.mark.parametrize('external_scale', [.01, 100.])
+def test_external_plot_uses_internal_plot_range(tmp_path, external_scale):
+    import h5py
+    path = tmp_path/'coefficients.h5'
+    coeffs = np.ones((3, 8), complex)
+    coeffs[:, 1::2] *= external_scale
+    with h5py.File(path, 'w') as source:
+        source['freqs'] = [100., 200., 1000.]
+        source['N_used'] = [0, 1, 1]
+        source['coeffs'] = coeffs
+        source['speed_of_sound_mps'] = 315.
+    internal = sound_power_figure(path).axes[0]
+    external = sound_power_figure(path, field='External field').axes[0]
+    assert external.get_xlim() == internal.get_xlim()
+    assert external.get_ylim() == internal.get_ylim()
+    # Internal peak is about -6 dB, so its range must remain -100 to 0 dB
+    # regardless of whether the external field is 40 dB quieter or louder.
+    assert internal.get_ylim() == (-100., 0.)
+    np.testing.assert_allclose(external.lines[0].get_ydata(),
+                               internal.lines[0].get_ydata() + 20*np.log10(external_scale))
+
+
+def test_field_switch_preserves_axes_and_reset_preserves_checkboxes(tmp_path, monkeypatch):
+    import h5py
+    from types import SimpleNamespace
+    monkeypatch.setenv('QT_QPA_PLATFORM', 'offscreen')
+    from PySide6 import QtWidgets as W
+    from hals_studio.ui.plotting.process_results import Results
+    from hals_studio.ui.plotting.process_renderers import draw_sound_power
+
+    app = W.QApplication.instance() or W.QApplication([])
+    path = tmp_path/'coefficients.h5'
+    with h5py.File(path, 'w') as source:
+        source['freqs'] = [100., 200., 1000.]
+        source['N_used'] = [1, 1, 1]
+        source['coeffs'] = np.ones((3, 8), complex)
+    selector = W.QComboBox()
+    selector.addItems(['Internal field', 'External field'])
+    workspace = SimpleNamespace(stage=4, results={4: {}}, power_field=selector,
+        coefficient_path=lambda: path,
+        view=SimpleNamespace(currentText=lambda: 'Sound Power vs Harmonic Degree'))
+    host = Results()
+    try:
+        draw_sound_power(host, workspace)
+        full = host.interaction.full[0]
+        host.fig.axes[0].set_xlim(150., 800.)
+        host.fig.axes[0].set_ylim(-75., -25.)
+        host.power_hidden.add(2)
+        for field in ('External field', 'Internal field'):
+            selector.setCurrentText(field)
+            draw_sound_power(host, workspace)
+            ax = host.fig.axes[0]
+            assert ax.get_xlim() == (150., 800.)
+            assert ax.get_ylim() == (-75., -25.)
+            assert host.interaction.full[0] == full
+            assert not ax.lines[2].get_visible()
+        legend = host.power_legend
+        host.canvas.draw()
+        anchor = legend.legend.get_bbox_to_anchor().transformed(ax.transAxes.inverted()).bounds
+        host.interaction.reset()
+        host.canvas.draw()
+        assert ax.get_xlim() == full[0]
+        assert ax.get_ylim() == full[1]
+        np.testing.assert_allclose(
+            legend.legend.get_bbox_to_anchor().transformed(ax.transAxes.inverted()).bounds,
+            anchor, atol=1e-12)
+        assert all(box in legend.legend.findobj() for box in legend.boxes)
+        assert not ax.lines[2].get_visible()
+        selector.setCurrentText('External field')
+        draw_sound_power(host, workspace)
+        assert host.fig.axes[0].get_ylim() == full[1]
+    finally:
+        host.close()
+
+
 @pytest.mark.parametrize('field, offset', [('Internal field', 0), ('External field', 1)])
 def test_field_selection_and_degree_totals(field, offset):
     # Exclude the other field and unused padding, even when they contain NaNs.

@@ -141,7 +141,7 @@ available in this mode. To inspect those directions individually, use Arc sweep,
 reference direction, distance and offsets. Shared directions and endpoints can
 make the sweep point count differ from the CTA set's 70 unique positions.
 
-Directivity plots include horizontal/vertical spectrograms, polars and globes.
+Directivity plots include horizontal/vertical sonograms, polars and globes.
 They use only evaluated export points, normalized to the strongest export point
 at each frequency, with a shared reference for both planes. Rotating a full sweep
 changes the angular positions without changing the colour scale. Partial sweeps

@@ -1,6 +1,4 @@
 """CSD from HALS-generated IRs, shared by Analysis and Stage 5."""
-from pathlib import Path
-from copy import deepcopy
 import numpy as np
 import pyvista as pv
 from pyvistaqt import QtInteractor
@@ -149,25 +147,11 @@ def wavelet_map(ir, fs, config):
 
 def analysis_ir(owner, sphere):
     """Evaluate native bins at the probe; use the unchanged HALS preview/IR core."""
-    source = sphere.metadata.get('source') or owner.source_path
-    if source and Path(source).suffix.lower() in ('.h5', '.hdf5') and Path(source).is_file():
-        from hals_studio.application.export_preview import PreviewCache
-        from hals_studio.application.export_engine import DEFAULT_EXPORT
-        if not hasattr(owner, '_csd_preview'): owner._csd_preview = PreviewCache()
-        az, el = np.deg2rad([owner.azimuth.value(), owner.elevation.value()])
-        radius = sphere.metadata.get('radius_m', 2.)
-        point = radius*np.array([np.cos(el)*np.cos(az), np.cos(el)*np.sin(az), np.sin(el)])+np.asarray(sphere.metadata.get('offset_m', [0,0,0]))
-        r = np.linalg.norm(point); coord = [float(np.degrees(np.arccos(point[2]/r))), float(np.degrees(np.arctan2(point[1], point[0]))), float(r)]
-        config = dict(deepcopy(DEFAULT_EXPORT), coeff_path=str(source), mode='Manual coordinates', manual_coords=[coord], subtract_tof='Off',
-                      obs_mode=sphere.metadata.get('mode','Internal'), use_optimized_origins=sphere.metadata.get('optimized_origins',True),
-                      manual_ir_capture_padding=True, ir_capture_padding_samples=sphere.metadata.get('padding_samples_removed',50))
-        from hals_studio.ui.mic_calibration import config as mic_config
-        config.update(mic_config(owner))
-        key = (str(source), Path(source).stat().st_mtime_ns, repr(config))
-        if key != getattr(owner, '_csd_ir_key', None):
-            result = owner._csd_preview.run(config, 0, owner.pool, lambda *_:None, lambda:False)
-            owner._csd_ir = (result['preview_ir'], 1/np.diff(result['preview_ir_times'][:2])[0]); owner._csd_ir_key = key
-        return *owner._csd_ir, 'HALS Stage 5 IR · native frequency bins · time zero at IR peak'
+    from hals_studio.application.analysis_native import native_response
+    result = native_response(owner, sphere)
+    if result is not None:
+        sample_rate = 1 / np.diff(result['preview_ir_times'][:2])[0]
+        return result['preview_ir'], sample_rate, 'HALS Stage 5 IR ? native frequency bins ? time zero at IR peak'
     # Imported full-bin sphere exports may also be used, never interpolate sparse bins.
     if not np.allclose(np.diff(sphere.freqs), np.diff(sphere.freqs)[0], rtol=.001):
         raise ValueError('Impulse-response analysis requires native frequency bins. Open the project/coefficient file to evaluate a Stage 5 IR.')

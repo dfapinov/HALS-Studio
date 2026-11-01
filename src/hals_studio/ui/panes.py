@@ -4,7 +4,7 @@ import pyvista as pv
 from pyvistaqt import QtInteractor
 from PySide6 import QtCore as C, QtGui as G, QtWidgets as W
 from hals_studio.analysis.analysis_metrics import contour_levels
-from hals_studio.process_engine.stage5_pressure_utils import get_min_phase_delay
+from hals_studio.application.analysis_delay import estimated_delay_ms
 from hals_studio.ui.plotting.plot_interaction import PlotInteraction
 from hals_studio.ui.plotting.plots import Chart
 
@@ -63,6 +63,11 @@ class PlotPane(W.QFrame):
         self.sweep_button=W.QPushButton('\u25b8 Sweep'); self.sweep_button.setCheckable(True); self.sweep_button.setFixedWidth(70)
         self.sweep_button.clicked.connect(lambda:owner.play.click()); owner.play.toggled.connect(self.sweep_button.setChecked); owner.play.toggled.connect(lambda active:self.sweep_button.setText('\u2161 Pause' if active else '\u25b8 Sweep')); frequency_row.addWidget(self.sweep_button)
         next_button=W.QPushButton('\u203a'); next_button.setFixedWidth(54); next_button.clicked.connect(owner.advance); frequency_row.addWidget(next_button)
+        frequency_row.addStretch()
+        self.reconstruction_radius = W.QLabel()
+        self.reconstruction_radius.setAlignment(C.Qt.AlignRight | C.Qt.AlignVCenter)
+        self.reconstruction_radius.setToolTip('Analysis reconstruction radius')
+        frequency_row.addWidget(self.reconstruction_radius)
         self.frequency_controls.hide()
 
         self.probe_editors = []
@@ -256,11 +261,7 @@ class PlotPane(W.QFrame):
         return ['First curve', *curves]
 
     def estimated_delay_ms(self):
-        o = self.owner
-        if o.sphere is None: return 0.
-        pressure = o.sphere.pressure[:, *o.sphere.index(*o.axis)]
-        speed = float(o.sphere.metadata.get('speed_of_sound', 343.))
-        return get_min_phase_delay(pressure, o.sphere.freqs, speed)/speed*1000
+        return estimated_delay_ms(self.owner, reference=selected_magnitudes(self.config) == ['reference'])
 
     def fill_estimated_delay(self, field, values):
         try: delay = self.estimated_delay_ms()

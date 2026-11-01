@@ -244,9 +244,15 @@ def draw_sound_power(host, workspace):
     r = p.results[p.stage]
     kind = p.view.currentText()
     from hals_studio.analysis.sound_power import sound_power_figure, PowerLegend
-    self.show_figure(sound_power_figure(p.coefficient_path(),p.power_field.currentText()))
-    self.enable_plot_controls(self.fig.axes, 'sound_power')
     path=str(p.coefficient_path())
+    saved = {}
+    if (getattr(self, 'power_legend_path', None) == path
+            and getattr(self, 'config', {}).get('kind') == 'sound_power'
+            and getattr(self, 'interaction', None) is not None):
+        saved = {i: (ax.get_xlim(), ax.get_ylim())
+                 for i, ax in enumerate(self.interaction.axes)}
+    self.show_figure(sound_power_figure(p.coefficient_path(),p.power_field.currentText()))
+    self.enable_plot_controls(self.fig.axes, 'sound_power', saved)
     if getattr(self,'power_legend_path',None)!=path:self.power_hidden=set();self.power_legend_path=path
     self.power_legend=PowerLegend(self.fig,self.power_hidden)
     self.canvas.setToolTip('Legend checkbox: show/hide trace · Shift-click legend: show only that trace\nWheel: zoom at cursor · Wheel over an axis: zoom that axis · Middle drag: pan · Reset axes: full view')

@@ -118,8 +118,11 @@ def sound_power_figure(path, field='Internal field'):
     data = load_she_h5(path)
     freqs = np.asarray(data['freqs'])
     speed = data.get('speed_of_sound_mps')
-    power = degree_power(freqs, data['coeffs'], data['N_used'],
-                         343.0 if speed is None else float(speed), field=field)
+    speed = 343.0 if speed is None else float(speed)
+    internal_power = degree_power(freqs, data['coeffs'], data['N_used'], speed,
+                                  field='Internal field')
+    power = (internal_power if field == 'Internal field' else
+             degree_power(freqs, data['coeffs'], data['N_used'], speed, field=field))
     valid = np.isfinite(freqs) & (freqs > 0)
     freqs, power = freqs[valid], power[valid]
     if not len(freqs):
@@ -139,7 +142,8 @@ def sound_power_figure(path, field='Internal field'):
                 linewidth=1.1, label=f'N={degree}')
     ax.set(title=f'Sound Power vs Harmonic Degree — {field}', xlabel='Frequency (Hz)',
            ylabel='Sound power (relative dB)' if field=='Internal field' else 'Modal power (relative dB)')
-    total_levels = levels(power.sum(axis=1))
+    # Keep both field views on the internal field's measurement-level range.
+    total_levels = levels(internal_power[valid].sum(axis=1))
     finite = total_levels[np.isfinite(total_levels)]
     if len(finite):
         top = 10*np.ceil((finite.max()+3)/10)

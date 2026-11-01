@@ -201,7 +201,7 @@ class PlotInteraction(C.QObject):
         for i, ax in enumerate(self.axes):
             ax.set_xlim(self.full[i][0]); ax.set_ylim(self.full[i][1])
             legend = ax.get_legend()
-            if legend is not None:
+            if legend is not None and self.pane.config.get('kind') != 'sound_power':
                 legend.set_bbox_to_anchor(None)
                 legend.set_loc('best')
         self.pane.chart.canvas.draw_idle()
