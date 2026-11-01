@@ -4,6 +4,22 @@ import pytest
 from hals_studio.process_engine import stage2_centre_origin as stage
 
 
+@pytest.mark.parametrize('cylindrical', [False, True])
+def test_grid_box_evaluates_corners_unless_seed_scan_requests_cylinder(monkeypatch, cylindrical):
+    cfg = dict(x_bounds=(-10., 10.), y_bounds=(-10., 10.), z_bounds=(0., 13.),
+               scan_radius_mm=10., grid_res_mm=10., use_process_pool=False)
+    monkeypatch.setattr(stage, 'solve_physics_3d', lambda x, y, z, ctx: 7.24)
+    x, y, z, grid = stage.generate_3d_landscape_volumetric((cfg,), cylindrical=cylindrical)
+    np.testing.assert_array_equal(x, [-10., 0., 10.])
+    np.testing.assert_array_equal(y, [-10., 0., 10.])
+    np.testing.assert_array_equal(z, [0., 10., 13.])
+    if cylindrical:
+        assert np.all(np.isinf(grid[0, 0, :]))
+        assert np.all(np.isfinite(grid[1, 1, :]))
+    else:
+        assert np.all(grid == 7.24)
+
+
 @pytest.mark.parametrize('spacing', [0.5, 1., 20.])
 def test_dense_speed_probes_are_bounded_and_keep_native_indices(spacing, monkeypatch):
     freqs = np.arange(0., 20000. + spacing, spacing)

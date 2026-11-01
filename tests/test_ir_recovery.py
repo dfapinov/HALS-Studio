@@ -70,7 +70,8 @@ def test_hf_seed_scans_cylinder_at_capped_bin_and_refines(monkeypatch):
     from hals_studio.process_engine import stage2_centre_origin as stage
     from hals_studio.process_engine.runtime import EngineRuntime
     seen = []
-    def scan(context, runtime):
+    def scan(context, runtime, *, cylindrical=False):
+        assert cylindrical
         seen.append(context)
         return np.array([0, 20]), np.array([0]), np.array([0]), np.array([[[3]], [[1]]])
     monkeypatch.setattr(stage, 'generate_3d_landscape_volumetric', scan)

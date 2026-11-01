@@ -441,7 +441,8 @@ def estimate_hf_seed(freqs, spectra, keys, geometry, cfg, end_hz, runtime):
     context = ([(frequency, 2 * np.pi * frequency / cfg['speed_of_sound'],
                  np.array([spectra[key][index] for key in keys]))], *geometry, order, scan_cfg)
     runtime.print(f'No tweeter seed supplied: scanning measurement cylinder at {frequency:g} Hz, 20 mm spacing.')
-    x, y, z, grid = generate_3d_landscape_volumetric(context, runtime=runtime)
+    x, y, z, grid = generate_3d_landscape_volumetric(
+        context, runtime=runtime, cylindrical=True)
     finite = np.flatnonzero(np.isfinite(grid.ravel()))
     if not len(finite):
         raise ValueError('HF seed scan found no valid origin inside the measurement cylinder.')
@@ -465,8 +466,9 @@ def _worker_landscape_3d(args):
     x, y, z, context = args
     return solve_physics_3d(x, y, z, context)
 
-def generate_3d_landscape_volumetric(context, runtime=None
+def generate_3d_landscape_volumetric(context, runtime=None, *, cylindrical=False
 ):
+    """Evaluate an editable XYZ box; only the automatic HF seed uses a cylinder."""
     from hals_studio.process_engine.runtime import EngineRuntime
     runtime = runtime or EngineRuntime()
     runtime.check()
@@ -478,10 +480,11 @@ def generate_3d_landscape_volumetric(context, runtime=None
     if shared_pool is not None:
         grid_workers = shared_pool.workers
     res = cfg['grid_res_mm']
-    x_vals = np.arange(cfg['x_bounds'][0], cfg['x_bounds'][1] + res, res)
-    y_vals = np.arange(cfg['y_bounds'][0], cfg['y_bounds'][1] + res, res)
-    z_vals = np.arange(cfg['z_bounds'][0], cfg['z_bounds'][1] + res, res)
-    if 'scan_radius_mm' in cfg:
+    def box_axis(axis):
+        lo, hi = cfg[axis + '_bounds']
+        return np.unique(np.r_[np.arange(lo, hi, res), hi])
+    x_vals, y_vals, z_vals = (box_axis(axis) for axis in 'xyz')
+    if cylindrical:
         def cylinder_axis(axis):
             lo, hi = cfg[axis + '_bounds']
             return np.unique(np.r_[np.arange(lo, hi, res), hi, np.clip(0., lo, hi)])
@@ -489,8 +492,9 @@ def generate_3d_landscape_volumetric(context, runtime=None
     
     X_mesh, Y_mesh, Z_mesh = np.meshgrid(x_vals, y_vals, z_vals, indexing='ij')
     from .origin_scan_region import inside_scan
-    indices = [i for i in range(X_mesh.size)
-               if inside_scan((X_mesh.flat[i], Y_mesh.flat[i], Z_mesh.flat[i]), cfg)]
+    indices = ([i for i in range(X_mesh.size)
+                if inside_scan((X_mesh.flat[i], Y_mesh.flat[i], Z_mesh.flat[i]), cfg)]
+               if cylindrical else list(range(X_mesh.size)))
     pixels = [(X_mesh.flat[i], Y_mesh.flat[i], Z_mesh.flat[i], context) for i in indices]
     grid = np.full(X_mesh.shape, np.inf)
     

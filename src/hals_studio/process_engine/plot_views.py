@@ -236,8 +236,14 @@ class FrequencyBrowser3DView:
         for line in self.ax.lines: line.remove()
             
         actual_val = val
-        if grid_3d is not None:
-            vmin, vmax = grid_3d.min(), grid_3d.max()
+        finite_values = (grid_3d[np.isfinite(grid_3d)]
+                         if grid_3d is not None else np.array([]))
+        if finite_values.size:
+            self.cbar_ax.set_visible(True)
+            vmin, vmax = finite_values.min(), finite_values.max()
+            # Avoid Matplotlib expanding a constant zero range below zero.
+            if vmin == vmax:
+                vmin, vmax = 0.0, max(float(vmax), 1.0)
             norm = plt.Normalize(vmin=vmin, vmax=vmax)
             sm = plt.cm.ScalarMappable(cmap='viridis', norm=norm)
             sm.set_array([])
@@ -261,18 +267,22 @@ class FrequencyBrowser3DView:
                 X_grid, Y_grid = np.meshgrid(xv, yv, indexing='ij')
                 Z_grid = np.full_like(X_grid, actual_val)
 
-            colors = plt.cm.viridis(norm(slice_2d))
-            self.ax.plot_surface(X_grid, Y_grid, Z_grid, facecolors=colors, rstride=1, cstride=1, shade=False, alpha=0.85)
+            # Outside the scan region the grid contains infinity, not residuals.
+            colors = plt.cm.viridis(norm(np.ma.masked_invalid(slice_2d)))
+            colors[..., 3] *= 0.85
+            self.ax.plot_surface(X_grid, Y_grid, Z_grid, facecolors=colors, rstride=1, cstride=1, shade=False)
             
             if self.cbar is None: self.cbar = self.fig.colorbar(sm, cax=self.cbar_ax)
             else: self.cbar.update_normal(sm)
             self.cbar.set_label('Residual Error (%)')
-            grid_min_text = f"{np.min(grid_3d):.2f}%"
+            grid_min_text = f"{finite_values.min():.2f}%"
         else:
-            grid_min_text = "N/A (Bypassed)"
+            grid_min_text = ("N/A (Bypassed)" if grid_3d is None
+                             else "N/A (No finite residuals)")
             if self.cbar is not None:
-                self.cbar.remove()
+                self.cbar_ax.clear()
                 self.cbar = None
+            self.cbar_ax.set_visible(False)
 
         if final_c is not None:
             self.ax.scatter(final_c[0], final_c[1], final_c[2], c='yellow', marker='D', s=100, edgecolors='black', label='Simplex Final')
