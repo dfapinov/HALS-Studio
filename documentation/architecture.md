@@ -97,32 +97,5 @@ and 46 captured arrays were identical. Regression tests exercise form signal
 routing, manual-order/regularization controls, sparse-bin error recovery,
 surface/chart switching and reuse of the 3D scene between plot types.
 
-## Remaining improvement opportunities
-
-The named UI extractions are complete: view collection, plot settings/dialogs,
-export job lifecycle, export scene drawing, Process stage forms and Analysis
-renderer selection. The remaining workspace code primarily assembles widgets
-and coordinates their interaction. Keep future changes within these boundaries
-and extend regression coverage when changing signal order or render caching.
-
-Large numerical routines have deliberately retained their algorithmic structure;
-orchestration and runtime dependencies were extracted around them. Avoid splitting
-those routines merely to reduce line counts.
-
-`misc` holds standalone diagnostics and historical reproductions, not application
-dependencies. Keep production changes and automated tests in the package and
-`tests`, respectively. Ruff currently checks undefined names; broad formatting
-or additional lint rules should be adopted separately from behavioral changes.
-
-Stage 2 normal origin searches derive a cylinder from the parsed NPZ filename
-coordinates (outer radius and minimum/maximum Z). `origin_scan_region.py` owns
-these constraints and projects initial simplex vertices into the volume.
-Manual XYZ bounds and grid resolution belong to the full grid re-scan only;
-re-scans explicitly discard the cylinder constraint before refinement.
-
-Full grid re-scan fields initially use the Cartesian box enclosing that cylinder.
-StageForms tracks per-axis manual overrides; process layout state saves those
-overrides so automatic defaults can follow measurement updates without replacing
-user-entered bounds. Filename coordinates already loaded for Stage 1 are reused.
 
 <!-- help-group: hidden -->
