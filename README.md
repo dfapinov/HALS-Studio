@@ -266,7 +266,7 @@ Analysis and Export tools become available once suitable processed project/model
 
 The README provides an overview of the HALS workflow and its main capabilities.
 
-Detailed documentation for the individual processing stages and the underlying acoustic methods can be found in the [`documentation`](documentation/) directory.
+**[Browse the documentation and help contents](documentation/README.md)** to choose a guide for processing, analysis, export, validation reports or utilities.
 
 > **Note:** HALS Studio is developing rapidly, and some of the more detailed documentation may occasionally lag behind the latest implementation. Where there is a discrepancy, the current application behaviour should be considered authoritative.
 

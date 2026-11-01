@@ -32,15 +32,15 @@ The green handle moves to the new direction. The blue **Probe** response follows
 
 Return the probe to 0° / 0°, then click near 1 kHz and 2 kHz in Probe SPL. The yellow pointer marks the frequency cursor. These captures use the same side-view camera, normalization, colour range and response axes.
 
-![ELAC balloon and SPL cursor at the native bin nearest 1 kHz: 999 Hz.](docu_images/analysis/frequency-1khz.png)
+![ELAC balloon and SPL cursor at the native bin nearest 1 kHz: 999 Hz.](docu_images/analysis/frequency-1khz-2.png)
 
-![ELAC balloon and SPL cursor at the native bin nearest 2 kHz: 2013 Hz, exposing vertical lobing.](docu_images/analysis/frequency-2khz.png)
+![ELAC balloon and SPL cursor at the native bin nearest 2 kHz: 2013 Hz, exposing vertical lobing.](docu_images/analysis/frequency-2khz-2.png)
 
 Near 2 kHz, the vertical lobes and intervening cancellations are much clearer in this side view of the tweeter/woofer crossover region. The SPL curve stays the same because the probe has not moved: only the cursor and the frequency shown by the balloon change. The labels show the actual native bins, **999 Hz** and **2,013 Hz**, rather than exactly 1,000 and 2,000 Hz.
 
 Now keep the frequency cursor at **2,013 Hz** and move the probe into the upper vertical null: set **Probe azimuth** to **0°** and **Elevation** to **+40°**. The highlighted green handle identifies that direction on the balloon.
 
-![ELAC at 2013 Hz with the probe at azimuth 0 degrees and elevation plus 40 degrees: the highlighted vertical null corresponds to a notch near 2 kHz in Probe SPL.](docu_images/analysis/frequency-2khz-null.png)
+![ELAC at 2013 Hz with the probe at azimuth 0 degrees and elevation plus 40 degrees: the highlighted vertical null corresponds to a notch near 2 kHz in Probe SPL.](docu_images/analysis/frequency-2khz-null-2.png)
 
 The blue Probe SPL curve now develops a pronounced **notch near 2 kHz**, called out at the frequency cursor. The balloon shape stays the same because the selected frequency has not changed; the handle and the frequency response change because the probe direction has moved. This completes the link: find a frequency feature in SPL, inspect its spatial directivity, then probe a lobe or null to see its effect across the full frequency response.
 
@@ -66,14 +66,17 @@ Probe SPL follows the selected probe direction. **Reference axis SPL** instead f
 
 ### Estimate and compensate phase delay
 
-Total phase includes propagation delay. At a few metres, this produces many wraps even when the loudspeaker's own phase behaviour is relatively simple.
+Total phase includes propagation delay. At a few metres, this produces many wraps even when the loudspeaker's own phase behaviour is relatively simple. The linear phase slope caused by this delay can be estimated and removed from the phase plot.
 
-1. For reliable estimation and unwrapping, use **All native bins · phase / delay** in import settings.
-2. Open the Probe SPL gear and choose **Total phase**.
-3. Beside **Delay compensation (ms)**, click **Estimate**. You can pin this control and its Estimate button to the sidebar.
-4. Inspect the result, then adjust the delay manually if needed. Turn off **Wrap phase at +/-180 degrees** to inspect the continuous phase trend.
+By default, this option is available in the pinned settings toolbar for the **Probe SPL** pane. If it is not visible there, open the pane's gear button to find it.
 
-Estimate fills the delay value using the **reference-axis excess group-delay estimate**, using the same helper as Stage 5. It is based on the reference direction, even when the probe is elsewhere. Positive compensation removes the corresponding delay from displayed total phase; it does not change SPL magnitude or remove propagation time from the underlying field.
+1. Ensure you are viewing **Total phase**, not **Minimum phase**.
+2. Beside **Delay compensation (ms)**, click **Estimate**. You can pin this control and its Estimate button to the sidebar.
+3. Inspect the result, then adjust the delay manually if needed. Turn off **Wrap phase at +/-180 degrees** to inspect the continuous phase trend.
+
+![Probe SPL sidebar settings with Delay compensation and the Estimate button highlighted.](docu_images/analysis/delay-estimate-button.png)
+
+**Estimate** fills the delay value using the **excess group-delay estimate**, calculated with the same method as the Export workspace's **TOF (time of flight)** subtraction setting. Compensation removes the corresponding delay from **displayed total phase**; it does not change other time-based plot types, such as CSD.
 
 ### See the delay reference move on the impulse response
 
@@ -91,15 +94,20 @@ Removing time of flight does **not necessarily produce the flattest phase slope*
 
 There is no universally agreed visual position for the “correct” **t=0** marker on a loudspeaker impulse response. Different conventions place it at the first sound arrival (where the response lifts off the zero line), partway up the main peak, at the peak itself, or at a position that brings total phase closest to a calculated minimum-phase response over a chosen band. These choices answer somewhat different questions; HALS's **Estimate** is a starting reference, rather than a declaration that one visible IR feature must be time zero.
 
-For measurements you intend to compare, the key is a **consistent delay compensation and time reference**. For responses acquired on a common timing reference, apply the same compensation to preserve their relative timing and phase. Independently adjusting every response until its phase looks flattest can erase real differences between directions or drivers. If acquisition distances or timing references differ, account for those differences explicitly and document the convention used.
+For measurements you intend to compare, the key is a **consistent delay compensation and time reference**. For responses acquired on a common timing reference, apply the same compensation to preserve their relative timing and phase. Independently adjusting every response until its phase looks flattest can erase real differences between directions or drivers. If analysis distances differ, account for those differences explicitly.
 
 ### Set up the phase axis
 
-- **Wrap phase at +/-180 degrees** keeps phase in a compact range, with jumps at the wrap boundaries. Disable it to inspect the unwrapped phase trend; use sufficiently dense native frequency bins so that unwrapping can follow the changes between samples.
-- Drag the **purple handle at the top of the right-hand phase axis** to give phase more or less vertical space. The same adjustment is available as **Phase axis height (fraction)** in settings. It changes the axis height within the pane, not the delay compensation.
-- **Automatic phase limits** fits the phase range. For a fixed comparison scale or a wider unwrapped view, enter **Phase minimum (degrees)** and **Phase maximum (degrees)** in the pane settings. Entering these limits disables automatic phase limits. Choose a range broad enough to contain the unwrapped response, and use the same limits across comparisons.
+The SPL and phase curves share a frequency axis, but phase has its own scale on the right. **Wrap phase at +/-180 degrees** keeps phase in a compact range, with jumps at the wrap boundaries.
 
-The estimate works with the frequencies currently loaded into Analysis. Sparse log sampling can make both estimation and phase unwrapping misleading. The workspace overview screenshots use log-target sampling for spatial exploration; do not read their high-frequency wrapped phase as a dense-bin diagnostic. A delay can also need manual adjustment for the question you are investigating.
+Drag the **purple handle at the top of the right-hand phase axis** upward to give phase more vertical space.
+
+![Probe SPL with wrapped total phase and a callout identifying the purple phase-axis drag handle.](docu_images/analysis/phase-handle-1.png)
+
+Next, disable **Wrap phase at +/-180 degrees** to inspect the continuous phase trend. With **Automatic phase limits** enabled, the range fits the unwrapped response, as shown below.
+![Probe SPL Settings, deselect Wrap Phase ](docu_images/analysis/phase-unwrap-menu.png)
+
+![Probe SPL with unwrapped total phase, an expanded phase area and automatic phase limits covering approximately minus 800 to 0 degrees.](docu_images/analysis/phase-unwrap.png)
 
 **Minimum phase** is a finite-band estimate derived from magnitude. It is useful for comparison with total phase, but it is not the measured total phase with an exact delay removed, and it cannot describe every excess-phase feature.
 
