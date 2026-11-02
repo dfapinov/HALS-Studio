@@ -97,6 +97,4 @@ and 46 captured arrays were identical. Regression tests exercise form signal
 routing, manual-order/regularization controls, sparse-bin error recovery,
 surface/chart switching and reuse of the 3D scene between plot types.
 
-##
-
 <!-- help-group: hidden -->
