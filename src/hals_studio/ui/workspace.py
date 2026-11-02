@@ -8,7 +8,7 @@ import hals_studio.bootstrap as bootstrap
 import hals_studio.analysis.acoustics as ac
 from hals_studio.ui.app import STYLE, label, button, number
 from hals_studio.ui.panes import PlotPane
-from hals_studio.ui.plotting.plot_settings import TITLES, SPECS, setting_keys
+from hals_studio.ui.plotting.plot_settings import TITLES, SPECS, setting_keys, MAGNITUDE_KINDS
 from hals_studio.ui.pane_setup import editor
 from hals_studio.analysis.analysis_metrics import cea2034, reference_axis
 from hals_studio.infrastructure.worker_pool import WarmPool
@@ -497,7 +497,9 @@ class Workspace(W.QMainWindow):
             heading.addWidget(caption, 1); form.addLayout(heading)
             for key in keys:
                 control = editor(key, pane.config[key], lambda v, p=pane, k=key: p.change(k, v),
-                                 pane.fit_names() if key == 'fit_curve' else None)
+                                 pane.fit_names() if key == 'fit_curve' else
+                                 ['Peak', 'On axis', 'Global peak']
+                                 if key == 'normalization' and pane.config['kind'] == 'balloon' else None)
                 if isinstance(control, W.QCheckBox):
                     control.setText(SPECS[key][0])
                 else:
@@ -908,6 +910,11 @@ class Workspace(W.QMainWindow):
 
 
     def schedule(self, *_):
+        if self.sender() is self.frequency:
+            for pane in getattr(self, 'panes', []):
+                if (pane.config['kind'] in (*MAGNITUDE_KINDS, 'phase', 'minimum', 'map_h', 'map_v')
+                        and not pane.isHidden()):
+                    pane.render()
         self.refresh_timer.start()
 
 

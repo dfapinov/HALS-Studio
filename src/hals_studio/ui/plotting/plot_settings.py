@@ -83,8 +83,9 @@ DECAY_DEFAULTS = dict(
 DEFAULT = dict(
     **DECAY_DEFAULTS,
     directivity_display="Sonogram",
-    directivity_on_axis=False,
+    directivity_normalization="Global peak",
     directivity_contour_step=6.0,
+    beamwidth_threshold=-6.0,
     kind="probe",
     normalization="Peak",
     smoothing="None",
@@ -153,8 +154,9 @@ def default_config(kind):
 # key: label, type/options, range. A single schema drives both setup and sidebar.
 SPECS = {
     "csd_method": ("Analysis", ["CSD", "Morlet wavelet"]),
-    "directivity_on_axis": ("SPL - normalize on axis", bool),
+    "directivity_normalization": ("Normalize to", ["On axis", "Global peak", "Off"]),
     "directivity_contour_step": ("Contours Step / dB", (0.5, 60.0)),
+    "beamwidth_threshold": ("Beam width threshold / dB", (-60.0, -0.1)),
     "directivity_display": ("Display", ["Sonogram", "Waterfall"]),
     "csd_level_reference": ("SPL - normalize", bool),
     "wavelet_level_reference": ("SPL - normalize", bool),
@@ -235,7 +237,8 @@ def setting_keys(kind, config=None):
         return decay_setting_keys({**DEFAULT, **(config or {}), "kind": kind})
     if kind == "cross_sonograms":
         return [
-            "directivity_on_axis",
+            "directivity_normalization",
+            "auto_axes", "ymin", "ymax",
             "smoothing",
             "span",
             "contours",
@@ -245,7 +248,8 @@ def setting_keys(kind, config=None):
         ]
     if kind.startswith("globe_"):
         return [
-            "directivity_on_axis",
+            "directivity_normalization",
+            "auto_axes", "ymin", "ymax",
             "smoothing",
             "span",
             "contours",
@@ -256,12 +260,17 @@ def setting_keys(kind, config=None):
     if kind.startswith("map_"):
         return [
             "directivity_display",
-            "directivity_on_axis",
+            "beamwidth_threshold",
+            "directivity_normalization",
+            "auto_axes", "ymin", "ymax",
             "smoothing",
             "span",
             "contours",
             "directivity_contour_step",
         ]
+    if kind == 'polar':
+        return ['directivity_normalization', 'smoothing', 'span', 'auto_axes', 'ymin', 'ymax',
+                'polar_sample_points']
     common = ["smoothing"]
     if kind in ("balloon", "volume", "map_h", "map_v", "polar"):
         common += ["normalization", "span"]

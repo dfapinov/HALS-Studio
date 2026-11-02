@@ -21,6 +21,39 @@ def test_isotropic_energy_and_di():
     assert np.isnan(ac.beamwidth(angles, h)).all()
 
 
+def test_global_peak_preserves_frequency_rolloff_and_uses_off_axis_peak():
+    s = constant_sphere()
+    s.pressure[:] = np.array([.01, .1, 1.])[:, None, None]
+    s.pressure[-1, 0, 0] = 2.
+    levels = s.levels()
+    relative = s.relative(levels, "Global peak")
+    np.testing.assert_allclose(relative, levels - 20 * np.log10(2.))
+    assert relative.max() == pytest.approx(0.)
+    np.testing.assert_allclose(np.diff(relative[:, *s.index()]), [20., 20.])
+    np.testing.assert_allclose(s.relative(levels, "Peak").max(axis=(1, 2)), 0.)
+    np.testing.assert_allclose(s.relative(levels, "On axis")[:, *s.index()], 0.)
+
+    from hals_studio.ui.plotting.plots import balloon_mesh
+
+    radii = [np.linalg.norm(balloon_mesh(s, row).points, axis=1).max() for row in relative]
+    assert radii[0] < radii[1] < radii[2]
+
+
+def test_directivity_reference_preserves_rolloff_unless_normalized_on_axis():
+    s = constant_sphere()
+    s.pressure[:] = np.array([.001, .1, 1.])[:, None, None]
+    s.pressure[-1, 0, 0] = 2.
+    levels = s.levels()
+    relative = s.directivity_relative(levels, False)
+    np.testing.assert_allclose(relative, levels - levels.max())
+    _, horizontal, vertical = s.cuts(relative)
+    assert np.max(horizontal[0]) < -60
+    assert np.max(vertical[0]) < -60
+    on_axis = s.directivity_relative(levels, True)
+    np.testing.assert_allclose(on_axis[:, *s.index()], 0.)
+    np.testing.assert_allclose(on_axis, levels - levels[:, *s.index()][:, None, None])
+
+
 def test_dipole_di_and_beamwidth():
     s = constant_sphere()
     x = ac.directions(s.elevation, s.azimuth)[..., 0]

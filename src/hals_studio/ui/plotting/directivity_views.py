@@ -2,6 +2,26 @@
 import numpy as np
 import pyvista as pv
 from hals_studio.ui.plotting.plots import audio_ticks, audio_frequency
+from hals_studio.analysis.acoustics import directivity_normalization
+
+
+def directivity_scale(config, *values):
+    """One shared colour/height range for each directivity plot's planes."""
+    if directivity_normalization(config) != 'Off':
+        return (-config['span'], 0.), 'Relative level / dB'
+    if not config.get('auto_axes', True):
+        return (config['ymin'], config['ymax']), 'Level / dB'
+    finite = [np.asarray(v)[np.isfinite(v)] for v in values]
+    finite = [v for v in finite if v.size]
+    peak = config.get('_directivity_peak')
+    high = float(peak) if peak is not None else max((float(v.max()) for v in finite), default=0.)
+    return (high-config.get('span', 36.), high), 'Level / dB'
+
+
+def directivity_contours(config, limits):
+    low, high = limits
+    step = config.get('directivity_contour_step', 6.)
+    return np.sort(high - np.arange(step, high-low, step))
 
 
 def add_rotation_handle(pane, ax, rotation):
@@ -53,8 +73,9 @@ def cut_data(sphere, relative, config):
 
 
 def draw_cross_sonograms(pane, sphere, relative):
-    p, c = pane.plotter, pane.config
+    p, c = pane.plotter, {**pane.config, '_directivity_peak': getattr(pane, 'directivity_peak', None)}
     f, angles, horizontal, vertical = cut_data(sphere, relative, c)
+    limits, level_label = directivity_scale(c, horizontal, vertical)
     camera = p.camera_position if getattr(pane, '_scene_kind', None) == 'cross_sonograms' else None
     bounds_key = (float(f[0]), float(f[-1]), 8.)
     refit = getattr(pane, '_cross_bounds', None) != bounds_key
@@ -67,12 +88,12 @@ def draw_cross_sonograms(pane, sphere, relative):
                                   ('Vertical', vertical, np.zeros_like(angle), angle)]:
         mesh = pv.StructuredGrid(x, y, z)
         mesh['level'] = values.ravel(order='F')
-        p.add_mesh(mesh, scalars='level', cmap='PColor', clim=(-c['span'], 0), lighting=False,
-                   scalar_bar_args={'title': 'Relative level / dB', 'vertical': True,
+        p.add_mesh(mesh, scalars='level', cmap='PColor', clim=limits, lighting=False,
+                   scalar_bar_args={'title': level_label, 'vertical': True,
                                     'position_x': .88, 'position_y': .16, 'width': .07, 'height': .68,
                                     'title_font_size': 11, 'label_font_size': 10}, name=label)
         if c.get('contours', True):
-            thresholds = -np.arange(c.get('directivity_contour_step',6.), c['span'], c.get('directivity_contour_step',6.))
+            thresholds = directivity_contours(c, limits)
             thresholds = sorted(v for v in thresholds if np.nanmin(values) < v < np.nanmax(values))
             if thresholds:
                 contours = mesh.contour(thresholds, scalars='level')
@@ -106,7 +127,7 @@ def draw_cross_sonograms(pane, sphere, relative):
 
 
 def draw_globe(pane, sphere, relative):
-    c = pane.config
+    c = {**pane.config, '_directivity_peak': getattr(pane, 'directivity_peak', None)}
     f, angles, h, v = cut_data(sphere, relative, c)
     draw_globe_cuts(pane, f, {'horizontal': (angles, h), 'vertical': (angles, v)})
 
@@ -120,11 +141,11 @@ def draw_spectrogram(ax, frequencies, angles, values, config, *, bounded=False):
     """Shared Analysis/Export frequency-angle heatmap and contour styling."""
     x = np.exp(bounded_edges(np.log(frequencies))) if bounded else frequencies
     y = bounded_edges(angles) if bounded else angles
+    limits, _ = directivity_scale(config, values)
     image = ax.pcolormesh(x, y, values.T, shading='flat' if bounded else 'auto',
-                         cmap='PColor', vmin=-config['span'], vmax=0)
+                         cmap='PColor', vmin=limits[0], vmax=limits[1])
     if config.get('contours', True):
-        step = config.get('directivity_contour_step', 6.)
-        levels = sorted(v for v in -np.arange(step, config['span'], step)
+        levels = sorted(v for v in directivity_contours(config, limits)
                         if np.nanmin(values) < v < np.nanmax(values))
         if levels:
             ax.contour(frequencies, angles, values.T, levels=levels, colors='white', linewidths=.5)
@@ -137,8 +158,10 @@ def draw_directivity_map(pane, frequencies, angles, values, *, bounded=False, cu
     from hals_studio.ui.plotting.plots import style
     from hals_studio.ui.plotting.spl_cursor import add_frequency_cursor
 
-    c = pane.config
+    c = {**pane.config, '_directivity_peak': getattr(pane, 'directivity_peak', None)}
     plane = 'Horizontal' if c['kind'] == 'map_h' else 'Vertical'
+    pane.cursor.clear()
+    limits, level_label = directivity_scale(c, values)
     if len(angles) >= 2 and c.get('directivity_display') in ('Waterfall', '3D surface'):
         from hals_studio.ui.plotting.csd_plot import CSDView
         if not hasattr(pane, 'csd_view'):
@@ -146,9 +169,10 @@ def draw_directivity_map(pane, frequencies, angles, values, *, bounded=False, cu
         pane.stack.setCurrentWidget(pane.csd_view)
         pane.csd_view.render(None, 1., {**c, 'csd_mode': '3D waterfall',
             'csd_span': c['span'], '_surface_data': (frequencies, angles, values.T),
+            '_level_limits': limits, '_level_label': level_label,
             '_y_label': plane+' angle / degrees'})
         pane.interaction.finish([])
-        pane.note.setText('Directivity surface - frequency / angle / relative level - drag to orbit, wheel to zoom')
+        pane.note.setText(f'Directivity surface - frequency / angle / {level_label} - drag to orbit, wheel to zoom')
         return
 
     pane.stack.setCurrentWidget(getattr(pane, 'chart_frame', pane.chart))
@@ -166,14 +190,17 @@ def draw_directivity_map(pane, frequencies, angles, values, *, bounded=False, cu
         ax.set_ylim((angles[0], angles[-1]) if bounded else (-180, 180))
         ax.set_xticks(audio_ticks(*ax.get_xlim()))
         ax.xaxis.set_major_formatter(FuncFormatter(lambda value, _: audio_frequency(value)))
-        fig.colorbar(image, ax=ax, label='Relative level / dB', pad=.02)
-        if cursor is not None: pane.frequency_marker = add_frequency_cursor(ax, cursor)
+        fig.colorbar(image, ax=ax, label=level_label, pad=.02)
+        if cursor is not None: pane.frequency_marker = add_frequency_cursor(ax, cursor, extra_pixels=1)
         pane.interaction.finish([ax])
+        pane.cursor.bind_beamwidth(ax, frequencies, angles, values, c.get('beamwidth_threshold', -6.))
+        if pane.frequency_marker is not None: pane.cursor.bind_marker(pane.frequency_marker)
     pane.chart.done()
 
 
 def draw_globe_cuts(pane, f, cuts, *, close_curves=True):
-    c = pane.config
+    c = {**pane.config, '_directivity_peak': getattr(pane, 'directivity_peak', None)}
+    limits, level_label = directivity_scale(c, *(values for _, values in cuts.values()))
     radius = np.log10(f / f[0])
     fig = pane.chart.fig; fig.clear(); fig.set_layout_engine('constrained')
     grid = fig.add_gridspec(1, 3, width_ratios=[1, 1, .045], wspace=.12)
@@ -201,10 +228,9 @@ def draw_globe_cuts(pane, f, cuts, *, close_curves=True):
         ax.grid(False)
         theta = np.deg2rad(angles if close_curves else bounded_edges(angles))
         radial = radius if close_curves else bounded_edges(radius)
-        img = ax.pcolormesh(theta, radial, values, shading='nearest' if close_curves else 'flat', cmap='PColor', vmin=-c['span'], vmax=0)
+        img = ax.pcolormesh(theta, radial, values, shading='nearest' if close_curves else 'flat', cmap='PColor', vmin=limits[0], vmax=limits[1])
         if c.get('contours', True):
-            step = c.get('directivity_contour_step', 6.)
-            levels = sorted(value for value in -np.arange(step, c['span'], step) if np.nanmin(values) < value < np.nanmax(values))
+            levels = sorted(value for value in directivity_contours(c, limits) if np.nanmin(values) < value < np.nanmax(values))
             if levels:
                 ax.contour(np.deg2rad(angles), radius, values, levels=levels, colors='#d9e2ea', linewidths=.65, alpha=.75)
         ax.set_ylim(0, radius[-1])
@@ -216,7 +242,7 @@ def draw_globe_cuts(pane, f, cuts, *, close_curves=True):
         # with the globe and can be positioned as its angle changes.
         add_rotation_handle(pane, ax, rotations.get(key, 0.))
     colour_axis = fig.add_subplot(grid[0, 2])
-    if img is not None: fig.colorbar(img, cax=colour_axis, label='Relative level / dB')
+    if img is not None: fig.colorbar(img, cax=colour_axis, label=level_label)
     else: colour_axis.set_axis_off()
     pane.interaction.finish(axes)
     pane.chart.done()

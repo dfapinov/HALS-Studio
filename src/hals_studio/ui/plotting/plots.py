@@ -214,6 +214,12 @@ def draw_polar_cuts(chart, cuts, i, dynamic_range, pane=None, *, close_curves=Tr
     """Polar cuts on Cartesian axes so cursor-centred zoom also pans correctly."""
     from matplotlib.patches import Circle
     from matplotlib.transforms import Affine2D
+    lower, upper = -dynamic_range, 0.
+    if pane is not None:
+        from hals_studio.ui.plotting.directivity_views import directivity_scale
+        config = {**pane.config, '_directivity_peak': getattr(pane, 'directivity_peak', None)}
+        (lower, upper), _ = directivity_scale(config, *(values for _, values in cuts.values()))
+        dynamic_range = upper - lower
     if pane is not None:
         pane._rotation_axes = {}; pane._rotation_handles = {}
         pane._rotation_handle_artists = {}; pane._polar_transforms = {}
@@ -229,16 +235,16 @@ def draw_polar_cuts(chart, cuts, i, dynamic_range, pane=None, *, close_curves=Tr
         # Positive angles follow the top/side views of the 3D field.
         theta = -np.deg2rad(np.r_[angles, angles[0]+360] if close_curves else angles)
         samples = np.r_[values[i], values[i, 0]] if close_curves else values[i]
-        radius = np.clip(samples, -dynamic_range, 6)+dynamic_range
+        radius = np.clip(samples-lower, 0, dynamic_range+6)
         ax.plot(radius*np.sin(theta), radius*np.cos(theta), color=color, lw=1.5,
                 marker='.' if show_points else None, gid='directivity-trace')
         if close_curves or angles[-1]-angles[0] >= 359.999:
             ax.fill(radius*np.sin(theta), radius*np.cos(theta), color=color, alpha=.1)
-        for level in np.arange(0, dynamic_range+.01, 12):
+        for level in np.arange(0, dynamic_range+.01, max(1., 12*np.ceil(dynamic_range/144))):
             r = dynamic_range-level
             if r > 0:
                 ax.add_patch(Circle((0, 0), r, facecolor='none', edgecolor='#385061', lw=.5))
-                ax.text(.7, r, f'{-level:g}', color='#8ca4b8', fontsize=7, va='top', clip_on=True)
+                ax.text(.7, r, f'{upper-level:g}', color='#8ca4b8', fontsize=7, va='top', clip_on=True)
         for angle, text in [(0, '0°'), (90, '+90°'), (180, '180°'), (270, '−90°')]:
             rad = -np.deg2rad(angle)
             ax.plot([0, dynamic_range*np.sin(rad)], [0, dynamic_range*np.cos(rad)], color='#385061', lw=.5)

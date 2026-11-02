@@ -270,4 +270,5 @@ def draw_response_curves(pane, freqs, curves, cursor_frequency, *, ylabel='HALS 
     pane.note.setText(note or 'Wheel: zoom at cursor - Zoom out: full view')
     pane.cursor.bind(ax, phase_ax if phase_mode not in ('None', 'DI') else None,
                      di_ax=phase_ax if phase_mode == 'DI' else None)
+    pane.cursor.bind_marker(pane.frequency_marker)
     pane.chart.done()

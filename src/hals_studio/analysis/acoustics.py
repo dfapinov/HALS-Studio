@@ -41,6 +41,20 @@ def relative_levels(levels, reference=None):
     return levels - np.asarray(reference).reshape((-1,) + (1,)*(levels.ndim-1))
 
 
+def directivity_normalization(config):
+    """Read the explicit mode, retaining saved checkbox settings."""
+    return config.get('directivity_normalization',
+                      'On axis' if config.get('directivity_on_axis', False) or
+                      (config.get('kind') == 'polar' and config.get('normalization') == 'On axis')
+                      else 'Global peak')
+
+
+def directivity_levels(levels, normalization='Global peak', reference=None):
+    if normalization == 'Off': return levels
+    if normalization == 'Global peak': return levels - np.max(levels)
+    return relative_levels(levels, reference)
+
+
 def directions(elevation, azimuth):
     e, a = np.deg2rad(np.meshgrid(elevation, azimuth, indexing="ij"))
     return np.stack((np.cos(e) * np.cos(a), np.cos(e) * np.sin(a), np.sin(e)), -1)
@@ -94,7 +108,14 @@ class Sphere:
         return 10 * np.log10(np.maximum(energy, 1e-60))
 
     def relative(self, levels, normalization="Peak"):
+        if normalization == "Global peak":
+            return levels - np.max(levels)
         return relative_levels(levels, None if normalization == "Peak" else levels[:, *self.index()])
+
+    def directivity_relative(self, levels, on_axis=False):
+        """Reference sonograms to one global peak, or to each frequency's axis."""
+        mode = ('On axis' if on_axis else 'Global peak') if isinstance(on_axis, bool) else on_axis
+        return directivity_levels(levels, mode, levels[:, *self.index()])
 
     def metrics(self, levels):
         power = 10 * np.log10(np.maximum(np.sum(10 ** (levels / 10) * self.weights(), axis=(1, 2)), 1e-60))
@@ -139,6 +160,53 @@ def beamwidth(angles, cut, threshold=-6):
             crossings.append(crossing)
         out.append(sum(crossings) if all(c is not None for c in crossings) else np.nan)
     return np.asarray(out)
+
+
+def forward_beamwidth(angles, levels, threshold=-6.):
+    """Return (status, left, right) for the strongest forward lobe's width.
+
+    Select the highest level within -90 to +90 degrees, then interpolate
+    the first threshold crossing on each side, including beyond that range.
+    Other lobes do not block a reading. Full-circle cuts wrap at the
+    seam; partial cuts never extrapolate beyond their sampled coverage.
+    """
+    angles, levels = np.asarray(angles), np.asarray(levels)
+    if (len(angles) < 3 or levels.shape != angles.shape or
+            not np.isfinite(angles).all() or not np.isfinite(levels).all() or
+            np.any(np.diff(angles) <= 0)):
+        return 'undefined', None, None
+    span = angles[-1] - angles[0]
+    closed = np.isclose(span, 360.)
+    full_circle = closed or (np.allclose(np.diff(angles), np.diff(angles)[0]) and
+                             np.isclose(span + np.diff(angles)[0], 360.))
+    if closed:
+        angles, levels = angles[:-1], levels[:-1]
+    forward = np.flatnonzero((angles >= -90.) & (angles <= 90.))
+    if not len(forward): return 'undefined', None, None
+    peak = int(forward[np.argmax(levels[forward])])
+    limit = levels[peak] + threshold
+    if full_circle:
+        if np.all(levels > limit): return '>360', None, None
+        peak += len(angles)
+        angles = np.concatenate((angles-360., angles, angles+360.))
+        levels = np.tile(levels, 3)
+    boundaries = []
+    missing = False
+    for step in (-1, 1):
+        inner = peak
+        outer = inner + step
+        while 0 <= outer < len(angles) and levels[outer] > limit:
+            inner, outer = outer, outer + step
+        if not 0 <= outer < len(angles):
+            missing = True
+            boundaries.append(float(angles[inner]))
+            continue
+        fraction = (limit - levels[inner]) / (levels[outer] - levels[inner])
+        boundaries.append(float(angles[inner] + fraction * (angles[outer] - angles[inner])))
+    if missing:
+        available = boundaries[1] - boundaries[0]
+        return f'>{available:g}', None, None
+    return 'ok', *boundaries
 
 
 def phase_delay(freqs, pressure, remove_ms=0):

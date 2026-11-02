@@ -21,6 +21,17 @@ def editor(key, value, callback, options=None):
         w.setToolTip("Lowest-level surface opacity; highest-level surface stays at 95%.")
         w.valueChanged.connect(lambda v: callback(v / 100))
         return w
+    if key == 'directivity_normalization':
+        w = W.QComboBox()
+        w.addItems(spec)
+        w.setCurrentText(value)
+        w.setToolTip('On axis: reference each frequency to its on-axis level.\n'
+                     'Global peak: one reference across all directions and frequencies.\n'
+                     'Off: retain absolute levels; Automatic axes places the global peak '
+                     'at the top and uses the Colour / polar range below it, '
+                     'or use Magnitude minimum/maximum when it is disabled.')
+        w.currentTextChanged.connect(callback)
+        return w
     if spec is bool:
         w = W.QCheckBox()
         w.setChecked(
@@ -144,9 +155,18 @@ class Setup(W.QDialog):
                 key,
                 self.values[key],
                 lambda v, k=key: self.changed(k, v),
-                pane.fit_names() if key == "fit_curve" else None,
+                pane.fit_names() if key == "fit_curve" else
+                ["Peak", "On axis", "Global peak"]
+                if key == "normalization" and pane.config["kind"] == "balloon" else None,
             )
             self.controls[key] = control
+            if key == "normalization" and pane.config["kind"] == "balloon":
+                control.setToolTip(
+                    "Peak: strongest direction at each frequency.\n"
+                    "On axis: on-axis level at each frequency.\n"
+                    "Global peak: strongest direction across the full loaded frequency range; "
+                    "preserves relative levels between frequencies."
+                )
             if key in (disabled_settings or {}):
                 control.setEnabled(False)
                 control.setToolTip(disabled_settings[key])

@@ -68,6 +68,4 @@ class CTAPanel(W.QWidget):
         if legend is not None and legend.contains(event)[0]: return
         f = self.result['freqs']
         self.frequency = float(f[np.argmin(abs(f-event.xdata))])
-        self.frequency_marker.set_xdata([self.frequency]*2)
-        self.cursor.follow_marker()
-        self.chart.canvas.draw_idle()
+        self.cursor.move_marker(self.frequency)

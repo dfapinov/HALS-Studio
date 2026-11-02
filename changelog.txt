@@ -1,3 +1,19 @@
+02/11/26
+
+- Added Global peak normalisation to Analysis balloon plots. One peak across
+  all sampled directions and frequencies preserves frequency response roll-off
+  as the balloon changes size.
+
+- Replaced the directivity on-axis normalisation checkbox with On axis,
+  Global peak and Off options for sonograms, intersecting H/V views,
+  waterfalls, globes and polars in Analysis and Export.
+
+- Added a sonogram cursor beam width readout with an adjustable threshold,
+  defaulting to -6 dB below the highest peak within +/-90 degrees of
+  on-axis at the cursor frequency.
+
+- Sped up cursor readouts by using cached drawings.
+
 01/11/26
 
 - Fixed Stage 2 full grid scans showing a misleading negative residual colour

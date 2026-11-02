@@ -37,6 +37,48 @@ def pump_until(app, predicate, timeout=5):
     assert predicate()
 
 
+def test_beamwidth_threshold_setting_updates_configuration(window):
+    from hals_studio.ui.pane_setup import Setup
+
+    pane = window.panes[1]
+    pane.set_kind('map_h')
+    dialog = Setup(pane)
+    dialog.controls['beamwidth_threshold'].setValue(-12.)
+    assert dialog.values['beamwidth_threshold'] == -12.
+    dialog.close()
+
+
+@pytest.mark.parametrize('kind', ['map_h', 'map_v', 'probe', 'sweep_h', 'cea'])
+def test_frequency_cursor_moves_immediately_without_rebuilding_plot(window, monkeypatch, kind):
+    from unittest.mock import Mock
+    from hals_studio.analysis.acoustics import demo
+
+    window.set_sphere(demo())
+    pane = window.panes[1]
+    for other in window.panes:
+        if other is not pane: other.hide()
+    pane.set_kind(kind)
+    pane.render()
+    pane.chart.canvas.draw()
+    axis = pane.chart.fig.axes[0]
+    levels = Mock(wraps=window.get_levels)
+    monkeypatch.setattr(window, 'get_levels', levels)
+    index = (window.frequency.value() + 1) % len(window.sphere.freqs)
+    window.frequency.setValue(index)
+    hz = window.sphere.freqs[index]
+    np.testing.assert_allclose(pane.frequency_marker.get_xdata(), [hz, hz])
+    assert pane.cursor.frequency == pytest.approx(hz)
+    assert pane.chart.fig.axes[0] is axis
+    levels.assert_not_called()
+    # A full draw (e.g. resize or zoom) must leave the next cursor move correct.
+    pane.chart.canvas.draw()
+    index = (index + 1) % len(window.sphere.freqs)
+    window.frequency.setValue(index)
+    hz = window.sphere.freqs[index]
+    np.testing.assert_allclose(pane.frequency_marker.get_xdata(), [hz, hz])
+    assert pane.cursor.frequency == pytest.approx(hz)
+
+
 def test_export_set_gain_controls_and_restore(window):
     from hals_studio.ui.project_ui import ensure_export
     pane = ensure_export(window)
@@ -555,7 +597,7 @@ def test_export_partial_directivity_and_preview_demand(window):
     angles, levels = cuts['horizontal']
     assert angles[0] == -90 and angles[-1] == 90
     assert len(cuts['vertical'][0]) == 0
-    np.testing.assert_allclose(levels[:, np.flatnonzero(angles == 0)[0]], 0.)
+    np.testing.assert_allclose(levels[:, np.flatnonzero(angles == 0)[0]], [-10., -5., 0.])
     workspace.config.update(config); workspace.result = result; workspace.dirty = False
     pane = workspace.custom_panes[0]
     pane.select_directivity('polar')
@@ -808,7 +850,7 @@ def test_export_spectrogram_settings_use_analysis_controls(window, monkeypatch, 
             elif key == 'smoothing': control.setCurrentText('1/3 octave')
             elif key == 'span': control.setValue(48)
             elif key == 'contours': control.setChecked(False)
-            elif key == 'directivity_on_axis': control.setChecked(True)
+            elif key == 'directivity_normalization': control.setCurrentText('On axis')
         return W.QDialog.Accepted
 
     class Surface(W.QWidget):
@@ -819,7 +861,7 @@ def test_export_spectrogram_settings_use_analysis_controls(window, monkeypatch, 
     monkeypatch.setattr(csd_plot, 'CSDView', Surface)
     panel.settings()
     assert options['smoothing'] == '1/3 octave'
-    assert options['directivity_on_axis']
+    assert options['directivity_normalization'] == 'On axis'
     assert not options['contours']
     assert panel.span.value() == options['span'] == 48
     assert panel.stack.currentWidget() is panel.csd_view

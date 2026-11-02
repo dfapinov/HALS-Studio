@@ -1,7 +1,7 @@
 """Directivity charts restricted to available export-plane samples."""
 import numpy as np
 from PySide6 import QtWidgets as W
-from hals_studio.application.export_directivity import export_cuts, sweep_direction_indices
+from hals_studio.application.export_directivity import export_cuts, export_levels, sweep_direction_indices
 from hals_studio.ui.plotting.plots import Chart, draw_polar_cuts
 from hals_studio.ui.plotting.plot_interaction import PlotInteraction
 from hals_studio.ui.plot_header import PlotHeader
@@ -21,6 +21,9 @@ class ExportDirectivityPanel(W.QWidget):
         super().__init__()
         self.chart = Chart(); self.config = default_config('map_h'); self.last_render = None
         self.options = options if options is not None else {}
+        from hals_studio.analysis.acoustics import directivity_normalization
+        self.options['directivity_normalization'] = directivity_normalization(self.options)
+        self.options.pop('directivity_on_axis', None)
         self.options.setdefault('polar_sample_points', True)
         for key, value in self.config.items(): self.options.setdefault(key, value)
         self.config = self.options
@@ -32,7 +35,7 @@ class ExportDirectivityPanel(W.QWidget):
         self.frequency = W.QDoubleSpinBox(); self.frequency.setRange(1, 100000)
         self.frequency.setValue(1000); self.frequency.setSuffix(' Hz'); self.frequency.setKeyboardTracking(False)
         self.frequency.setToolTip('Polar frequency')
-        self.header.layout().insertWidget(1, self.frequency)
+        self.header.controls.insertWidget(1, self.frequency)
         self.span = W.QDoubleSpinBox(self); self.span.setRange(6, 120)
         self.span.setValue(self.config['span']); self.span.hide()
         self.settings_button = self.header.gear
@@ -46,15 +49,14 @@ class ExportDirectivityPanel(W.QWidget):
         self.frequency.valueChanged.connect(self.redraw); self.span.valueChanged.connect(self.redraw)
 
     def select_frequency(self, event):
-        if not self.kind.startswith('sweep_') or self.result is None: return
+        if not (self.kind.startswith('sweep_') or self.kind in ('map_h', 'map_v')) or self.result is None: return
         if event.button != 1 or event.inaxes not in self.interaction.axes or event.xdata is None: return
         if self.interaction.on_handle(event): return
         legend = event.inaxes.get_legend()
         if legend is not None and legend.contains(event)[0]: return
         f = self.result['freqs']
         self.cursor_frequency = float(f[np.argmin(abs(f-event.xdata))])
-        self.frequency_marker.set_xdata([self.cursor_frequency]*2)
-        self.cursor.follow_marker(); self.chart.canvas.draw_idle()
+        self.cursor.move_marker(self.cursor_frequency)
 
     def fit_names(self, config=None):
         return ['First curve', *getattr(self, 'magnitude_curves', {})]
@@ -93,9 +95,11 @@ class ExportDirectivityPanel(W.QWidget):
         if hasattr(self, 'header'): self.header.title.setText(DIRECTIVITY_TITLES[self.kind].upper() + '  \u25be')
         self.settings_button.setVisible(True)
         self.config.update(kind=self.kind, span=self.span.value())
+        self.cursor.clear()
         sweep = self.kind.startswith('sweep_')
         if hasattr(self, 'header'): self.header.readout.setVisible(sweep)
         cuts = export_cuts(self.result, self.config, normalize=False) if sweep else export_cuts(self.result, self.config)
+        self.directivity_peak = float(np.max(export_levels(self.result, self.config)))
         f = self.result['freqs']
         span = self.span.value(); index = int(np.argmin(abs(f-self.frequency.value())))
         self.interaction.begin((id(self.result), self.kind, span, index))
@@ -146,9 +150,11 @@ class ExportDirectivityPanel(W.QWidget):
         else:
             plane = 'horizontal' if self.kind == 'map_h' else 'vertical'
             angles, values = cuts[plane]
-            draw_directivity_map(self, f, angles, values, bounded=True)
+            draw_directivity_map(self, f, angles, values, bounded=True, cursor=self.cursor_frequency)
         frequency_note = f' - {f[index]:g} Hz' if self.kind == 'polar' else ''
-        on_axis = self.config.get('normalization') == 'On axis' if self.kind == 'polar' else self.config.get('directivity_on_axis', False)
-        reference = 'the export reference point' if on_axis else 'the strongest export point at each frequency'
+        mode = self.config['directivity_normalization']
+        reference = {'On axis': 'the export reference point at each frequency',
+                     'Global peak': 'the strongest export point across all frequencies',
+                     'Off': 'absolute levels (normalization off)'}.get(mode, 'the strongest export point at each frequency')
         self.note.setText('Export points only; relative to '+reference+'. Missing planes remain empty.'+frequency_note)
         self.chart.done()

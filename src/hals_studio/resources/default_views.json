@@ -4,7 +4,7 @@
     "panes": [
       {
         "directivity_display": "Sonogram",
-        "directivity_on_axis": false,
+        "directivity_normalization": "Global peak",
         "directivity_contour_step": 6.0,
         "csd_level_reference": false,
         "wavelet_level_reference": false,
@@ -101,7 +101,7 @@
       },
       {
         "directivity_display": "Sonogram",
-        "directivity_on_axis": false,
+        "directivity_normalization": "Global peak",
         "directivity_contour_step": 6.0,
         "csd_level_reference": false,
         "wavelet_level_reference": false,
@@ -203,7 +203,7 @@
       },
       {
         "directivity_display": "Sonogram",
-        "directivity_on_axis": false,
+        "directivity_normalization": "Global peak",
         "directivity_contour_step": 6.0,
         "csd_level_reference": false,
         "wavelet_level_reference": false,
@@ -296,7 +296,7 @@
       },
       {
         "directivity_display": "Sonogram",
-        "directivity_on_axis": false,
+        "directivity_normalization": "Global peak",
         "directivity_contour_step": 6.0,
         "csd_level_reference": false,
         "wavelet_level_reference": false,
@@ -398,7 +398,7 @@
     "panes": [
       {
         "directivity_display": "Sonogram",
-        "directivity_on_axis": true,
+        "directivity_normalization": "On axis",
         "directivity_contour_step": 6.0,
         "csd_level_reference": false,
         "wavelet_level_reference": false,
@@ -471,7 +471,7 @@
         "breakout": "All",
         "pins": [
           "directivity_display",
-          "directivity_on_axis",
+          "directivity_normalization",
           "contours"
         ],
         "energy_smoothing_version": 1,
@@ -495,7 +495,7 @@
       },
       {
         "directivity_display": "Sonogram",
-        "directivity_on_axis": true,
+        "directivity_normalization": "On axis",
         "directivity_contour_step": 6.0,
         "csd_level_reference": false,
         "wavelet_level_reference": false,
@@ -568,7 +568,7 @@
         "breakout": "All",
         "pins": [
           "directivity_display",
-          "directivity_on_axis",
+          "directivity_normalization",
           "contours"
         ],
         "energy_smoothing_version": 1,
@@ -592,7 +592,7 @@
       },
       {
         "directivity_display": "Sonogram",
-        "directivity_on_axis": false,
+        "directivity_normalization": "Global peak",
         "directivity_contour_step": 6.0,
         "csd_level_reference": false,
         "wavelet_level_reference": false,
@@ -664,7 +664,7 @@
         "surface_finish": "Glossy",
         "breakout": "All",
         "pins": [
-          "directivity_on_axis",
+          "directivity_normalization",
           "contours"
         ],
         "energy_smoothing_version": 1,
@@ -688,7 +688,7 @@
       },
       {
         "directivity_display": "Waterfall",
-        "directivity_on_axis": false,
+        "directivity_normalization": "Global peak",
         "directivity_contour_step": 6.0,
         "csd_level_reference": false,
         "wavelet_level_reference": false,
@@ -761,7 +761,7 @@
         "breakout": "All",
         "pins": [
           "directivity_display",
-          "directivity_on_axis",
+          "directivity_normalization",
           "smoothing",
           "contours"
         ],
@@ -788,7 +788,7 @@
     "panes": [
       {
         "directivity_display": "Sonogram",
-        "directivity_on_axis": false,
+        "directivity_normalization": "Global peak",
         "directivity_contour_step": 6.0,
         "csd_level_reference": false,
         "wavelet_level_reference": false,
@@ -881,7 +881,7 @@
       },
       {
         "directivity_display": "Sonogram",
-        "directivity_on_axis": false,
+        "directivity_normalization": "Global peak",
         "directivity_contour_step": 6.0,
         "csd_level_reference": false,
         "wavelet_level_reference": false,
@@ -980,7 +980,7 @@
       },
       {
         "directivity_display": "Sonogram",
-        "directivity_on_axis": false,
+        "directivity_normalization": "Global peak",
         "directivity_contour_step": 6.0,
         "csd_level_reference": false,
         "wavelet_level_reference": true,
@@ -1079,7 +1079,7 @@
       },
       {
         "directivity_display": "Sonogram",
-        "directivity_on_axis": false,
+        "directivity_normalization": "Global peak",
         "directivity_contour_step": 6.0,
         "csd_level_reference": true,
         "wavelet_level_reference": false,
@@ -1180,7 +1180,7 @@
     "panes": [
       {
         "directivity_display": "Sonogram",
-        "directivity_on_axis": false,
+        "directivity_normalization": "Global peak",
         "directivity_contour_step": 6.0,
         "csd_level_reference": false,
         "wavelet_level_reference": false,
@@ -1279,7 +1279,7 @@
       },
       {
         "directivity_display": "Sonogram",
-        "directivity_on_axis": false,
+        "directivity_normalization": "Global peak",
         "directivity_contour_step": 6.0,
         "csd_level_reference": false,
         "wavelet_level_reference": false,
@@ -1377,7 +1377,7 @@
       },
       {
         "directivity_display": "Sonogram",
-        "directivity_on_axis": false,
+        "directivity_normalization": "Global peak",
         "directivity_contour_step": 6.0,
         "csd_level_reference": false,
         "wavelet_level_reference": false,
@@ -1477,7 +1477,7 @@
       },
       {
         "directivity_display": "Sonogram",
-        "directivity_on_axis": false,
+        "directivity_normalization": "Global peak",
         "directivity_contour_step": 6.0,
         "csd_level_reference": false,
         "wavelet_level_reference": false,
@@ -1549,7 +1549,7 @@
         "surface_finish": "Glossy",
         "breakout": "All",
         "pins": [
-          "directivity_on_axis",
+          "directivity_normalization",
           "contours"
         ],
         "energy_smoothing_version": 1

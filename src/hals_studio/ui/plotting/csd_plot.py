@@ -191,11 +191,13 @@ class CSDView(W.QWidget):
         y_label = config.get('_y_label',f'Time from {time_label} / {unit}')
         palette = 'PColor'
         upper = max(0., float(np.ceil(np.max(db)/5)*5))
+        lower, upper = config.get('_level_limits', (-span, upper))
+        level_label = config.get('_level_label', 'Relative level / dB')
         if config['csd_mode'] == 'Sonogram':
             self.stack.setCurrentWidget(self.chart); self.chart.fig.clear(); self.chart.fig.set_layout_engine('constrained')
-            ax = self.chart.fig.add_subplot(); im = ax.pcolormesh(f,t,db,cmap=palette,vmin=-span,vmax=upper,shading='auto')
+            ax = self.chart.fig.add_subplot(); im = ax.pcolormesh(f,t,db,cmap=palette,vmin=lower,vmax=upper,shading='auto')
             ax.set_xscale('log'); ax.set_xticks(audio_ticks(f[0],f[-1])); ax.xaxis.set_major_formatter(FuncFormatter(lambda v,_:audio_frequency(v)))
-            ax.set_xlabel('Frequency / Hz'); ax.set_ylabel(y_label); self.chart.fig.colorbar(im,ax=ax,label='Relative level / dB')
+            ax.set_xlabel('Frequency / Hz'); ax.set_ylabel(y_label); self.chart.fig.colorbar(im,ax=ax,label=level_label)
             self.interaction.begin(key); self.interaction.finish([ax]); self.chart.done(); return
         if self.plotter is None:
             self.plotter = QtInteractor(self,auto_update=False); self.plotter.render_window.SetMultiSamples(0)
@@ -205,14 +207,14 @@ class CSDView(W.QWidget):
         camera = p.camera_position if getattr(self,'initialized',False) else None
         p.suppress_rendering=True; p.clear()
         x,y = np.meshgrid(3*(np.log10(f)-np.log10(f[0]))/np.log10(f[-1]/f[0]), -2*(t-t[0])/max(t[-1]-t[0],.001))
-        z = 1.5*(db+span)/(span+upper)
-        if config.get('_surface_data') is not None: z=np.maximum(z,0.)
+        z = 1.5*(db-lower)/(upper-lower)
+        if config.get('_surface_data') is not None: z=np.clip(z,0.,1.5)
         grid = pv.StructuredGrid(x,y,z); grid['Level'] = db.ravel(order='F')
         surface = grid.extract_surface(algorithm='dataset_surface').clip(normal=(0,0,1),origin=(0,0,0),invert=False)
         if config.get('_surface_data') is not None:
             top=grid.extract_surface(algorithm='dataset_surface')
             bottom=pv.StructuredGrid(x,y,np.full_like(z,-.015)).extract_surface(algorithm='dataset_surface')
-            bottom['Level']=np.full(bottom.n_points,-span)
+            bottom['Level']=np.full(bottom.n_points,lower)
             # The perimeter runs around all four sides; stitch it to a base.
             rows,cols=x.shape
             indices=[(0,j) for j in range(cols)]+[(i,cols-1) for i in range(1,rows)]+[(rows-1,j) for j in range(cols-2,-1,-1)]+[(i,0) for i in range(rows-2,0,-1)]
@@ -220,19 +222,20 @@ class CSDView(W.QWidget):
             base=rim.copy(); base[:,2]=-.015
             faces=np.array([[4,i,(i+1)%n,(i+1)%n+n,i+n] for i in range(n)]).ravel()
             walls=pv.PolyData(np.vstack([rim,base]),faces)
-            walls['Level']=np.r_[[db[i,j] for i,j in indices],np.full(n,-span)]
+            walls['Level']=np.r_[[db[i,j] for i,j in indices],np.full(n,lower)]
             surface=top.merge(bottom).merge(walls).clean()
         self.surface = surface
         if surface.n_points:
-            p.add_mesh(surface,scalars='Level',cmap=palette,clim=(-span,upper),show_edges=False,smooth_shading=True,
+            p.add_mesh(surface,scalars='Level',cmap=palette,clim=(lower,upper),show_edges=False,smooth_shading=True,
                        ambient=.3,diffuse=.65,specular=.3,specular_power=24,show_scalar_bar=False)
         if config.get('_surface_data') is not None and config.get('contours',True):
-            contours=grid.contour(-np.arange(config.get('directivity_contour_step',6.),span,config.get('directivity_contour_step',6.)),scalars='Level')
+            from hals_studio.ui.plotting.directivity_views import directivity_contours
+            contours=grid.contour(directivity_contours(config, (lower, upper)),scalars='Level')
             if contours.n_points: p.add_mesh(contours,color='#ffffff',line_width=1.5,lighting=False)
         text = '#345574' if NAME=='Light' else '#afc6db'
         p.show_bounds(bounds=(0,3,-2,0,0,1.5),grid='back',location='outer',all_edges=False,color=text,
-                      xtitle='Frequency / Hz',ytitle=y_label,ztitle='Level / dB',n_xlabels=2,show_xlabels=False,n_ylabels=2,show_ylabels=False,n_zlabels=4,
-                      axes_ranges=(0,1,0,float(t[-1]),-span,upper),font_size=9)
+                      xtitle='Frequency / Hz',ytitle=y_label,ztitle=level_label,n_xlabels=2,show_xlabels=False,n_ylabels=2,show_ylabels=False,n_zlabels=4,
+                      axes_ranges=(0,1,0,float(t[-1]),lower,upper),font_size=9)
         ticks = audio_ticks(f[0],f[-1]); tick_x=3*np.log10(ticks/f[0])/np.log10(f[-1]/f[0])
         p.add_point_labels(np.column_stack([tick_x,np.full(len(ticks),-2.06),np.full(len(ticks),-.04)]),[audio_frequency(v) for v in ticks],
                            font_size=11,text_color=text,shape=None,show_points=False,always_visible=True)
@@ -262,7 +265,7 @@ class CSDPanel(W.QWidget):
         from hals_studio.ui.plot_header import PlotHeader
         self.header = PlotHeader(lambda: None, lambda: self.view.reset(), self.settings)
         self.header.readout.hide(); layout.addWidget(self.header)
-        row = self.header.layout()
+        row = self.header.controls
         self.method=W.QComboBox(); self.method.addItems(['CSD','Morlet wavelet']); self.method.currentTextChanged.connect(self.set_method); row.insertWidget(1, self.method)
         self.mode=W.QComboBox(); self.mode.addItems(['3D waterfall','Sonogram']); self.mode.currentTextChanged.connect(self.set_mode); row.insertWidget(2, self.mode)
         self.view=CSDView(); self.chart=self.view.chart; layout.addWidget(self.view,1)

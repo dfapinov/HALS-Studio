@@ -2,9 +2,9 @@
 import numpy as np
 
 
-def add_frequency_cursor(ax, frequency, *, visible=True):
+def add_frequency_cursor(ax, frequency, *, visible=True, extra_pixels=0):
     """One cursor style for all response plots."""
-    return ax.axvline(frequency, color='#7db0c0', alpha=.35, lw=.8,
+    return ax.axvline(frequency, color='#7db0c0', alpha=.35, lw=.8+extra_pixels*72/ax.figure.dpi,
                       gid='frequency-cursor', visible=visible)
 
 
@@ -14,14 +14,66 @@ class SPLCursor:
         self.frequency_provider = frequency_provider
         self.active = None; self.frequency = None; self.lines = {}; self.phase = {}; self.ax = None
         self.selection_changed = None
+        self.beam_data = None
+        self.marker = None; self.background = None
         canvas = pane.chart.canvas
         canvas.mpl_connect('button_press_event', self.press)
+        canvas.mpl_connect('draw_event', self.capture_background)
 
     def clear(self):
+        if self.marker is not None: self.marker.set_animated(False)
+        self.marker = None; self.background = None
+        if hasattr(self.pane, 'header'): self.pane.header.set_readout_expanded(False)
+        self.beam_data = None
         self.lines = {}; self.phase = {}; self.ax = None
         self.label.clear(); self.label.hide()
 
+    def bind_marker(self, marker):
+        canvas = self.pane.chart.canvas
+        if canvas.supports_blit is not True: return
+        self.marker = marker; self.background = None
+        marker.set_animated(True)
+
+    def capture_background(self, event):
+        if self.marker is None: return
+        canvas = self.pane.chart.canvas
+        if canvas.is_saving():
+            self.background = None
+            return
+        self.background = canvas.copy_from_bbox(self.marker.axes.bbox)
+        self.marker.axes.draw_artist(self.marker)
+        canvas.blit(self.marker.axes.bbox)
+
+    def move_marker(self, frequency):
+        marker = self.pane.frequency_marker
+        marker.set_xdata([frequency, frequency])
+        self.follow_marker()
+        canvas = self.pane.chart.canvas
+        if marker is self.marker and self.background is not None:
+            canvas.restore_region(self.background)
+            marker.axes.draw_artist(marker)
+            canvas.blit(marker.axes.bbox)
+        else:
+            canvas.draw_idle()
+
+    def bind_beamwidth(self, ax, frequencies, angles, values, threshold=-6.):
+        self.beam_threshold = threshold
+        self.ax = ax
+        self.lines = {}; self.phase = {}
+        self.beam_data = (np.asarray(frequencies), np.asarray(angles), np.asarray(values))
+        self.label.setToolTip(
+            f"{threshold:g} dB relative to the strongest peak within -90° to +90° "
+            "in this plot's plane at the cursor frequency, independent of normalization. Crossings "
+            "on each side may extend beyond ±90° and are interpolated in dB; full-circle cuts wrap at the seam. "
+            "Other lobes do not prevent a width reading. Missing crossings show the "
+            "available half-angle limit using the same +/- convention as measured widths."
+        )
+        self.label.show()
+        self.follow_marker()
+
     def bind(self, ax, phase_ax=None, di_ax=None):
+        self.beam_data = None
+        self.label.setToolTip('')
         self.ax = ax
         self.lines = {line.get_label(): line for line in ax.lines
                       if not line.get_label().startswith(('_', 'Fit')) and 'phase' not in line.get_label().lower()}
@@ -75,6 +127,21 @@ class SPLCursor:
                 self.pane.chart.canvas.draw_idle(); return
 
     def readout(self, frequency):
+        if self.beam_data is not None:
+            from hals_studio.analysis.acoustics import forward_beamwidth
+
+            f, angles, values = self.beam_data
+            if not len(f) or frequency < f[0] or frequency > f[-1]:
+                self.label.clear()
+                return
+            index = int(np.argmin(abs(f-frequency)))
+            status, left, right = forward_beamwidth(angles, values[index], self.beam_threshold)
+            text = (f'+/-{(right-left)/2:.0f}\N{DEGREE SIGN}'
+                    if status == 'ok' else f'>+/-{float(status[1:])/2:.0f}\N{DEGREE SIGN}'
+                    if status.startswith('>') else status)
+            self.label.setText(f'{f[index]:.0f} Hz Beam Width ({self.beam_threshold:g}dB): {text}')
+            self.frequency = float(f[index])
+            return
         line = self.lines.get(self.active)
         if line is None: return
         f, values = np.asarray(line.get_xdata()), np.asarray(line.get_ydata())

@@ -52,7 +52,8 @@ def test_full_sweep_rotation_preserves_directivity_levels(processed, phi):
     angles, values = export_cuts(result)['horizontal']
     absolute = np.deg2rad(angles + phi)
     expected = np.array([8., 16.])[:, None]*np.cos(absolute) + 3*np.sin(absolute)
-    expected -= expected.max(axis=1, keepdims=True)
+    expected += np.array([70., 85.])[:, None]
+    expected -= levels.max()
     np.testing.assert_allclose(values, expected, atol=1e-10)
     assert values.max() == 0
     assert np.all(values.min(axis=1) < -15)
@@ -105,7 +106,7 @@ def test_analysis_and_export_normalize_identical_samples_identically(on_axis):
     result = dict(config=config, geometry=layout,
                   data={str(i): {'mag': levels[:, i]} for i in range(levels.shape[1])})
     sphere = SimpleNamespace(index=lambda: (0, layout['reference']))
-    expected = Sphere.relative(sphere, levels[:, None, :], 'On axis' if on_axis else 'Peak')[:, 0]
+    expected = Sphere.relative(sphere, levels[:, None, :], 'On axis' if on_axis else 'Global peak')[:, 0]
     angles, actual = export_cuts(result, {'directivity_on_axis': on_axis})['horizontal']
     order = np.argsort(np.arctan2(layout['xyz'][:, 1], layout['xyz'][:, 0]))
     np.testing.assert_allclose(actual, expected[:, order])

@@ -167,9 +167,11 @@ class PlotPane(W.QFrame):
             writer = csv.writer(stream)
             if self.config['kind'].startswith(('map_', 'globe_')):
                 s = self.owner.sphere; levels = self.owner.get_levels(self.config['smoothing'])
-                angles, h, v = s.cuts(s.relative(levels, 'On axis' if self.config.get('directivity_on_axis',False) else 'Peak'))
+                from hals_studio.analysis.acoustics import directivity_normalization
+                angles, h, v = s.cuts(s.directivity_relative(levels, directivity_normalization(self.config)))
                 data = h if self.config['kind'] in ('map_h', 'globe_h') else v
-                writer.writerow(['Frequency Hz', 'Angle degrees', 'Relative level dB'])
+                writer.writerow(['Frequency Hz', 'Angle degrees',
+                                 'Level dB' if directivity_normalization(self.config) == 'Off' else 'Relative level dB'])
                 for j, freq in enumerate(s.freqs):
                     writer.writerows((freq, angle, value) for angle, value in zip(angles, data[j]))
             else:
@@ -385,14 +387,19 @@ class PlotPane(W.QFrame):
         key = (id(o.sphere), o.frequency.value(), o.azimuth.value(), o.elevation.value(),
                repr(c), o.overlay_revision, o.axis, markers)
         if self.last_render == key: return
+        frequency_only = (self.last_render is not None and
+                          self.last_render[:1] + self.last_render[2:] == key[:1] + key[2:])
+        if frequency_only and c['kind'] in ('map_h', 'map_v', 'cross_sonograms', 'globe_hv', 'globe_h', 'globe_v'):
+            if c['kind'] in ('map_h', 'map_v') and getattr(self, 'frequency_marker', None) is not None:
+                self.cursor.move_marker(o.sphere.freqs[o.frequency.value()])
+            self.last_render = key
+            return
         response_plot = c['kind'] in MAGNITUDE_KINDS or c['kind'] in ('phase', 'minimum')
         if (response_plot and self.last_render is not None and
                 self.last_render[:1] + self.last_render[2:] == key[:1] + key[2:] and
                 hasattr(self, 'frequency_marker')):
             frequency = o.sphere.freqs[o.frequency.value()]
-            self.frequency_marker.set_xdata([frequency, frequency])
-            self.cursor.follow_marker()
-            self.chart.canvas.draw_idle()
+            self.cursor.move_marker(frequency)
             self.last_render = key
             return
         self.cursor.clear()
@@ -407,7 +414,13 @@ class PlotPane(W.QFrame):
         self.title.setToolTip(title)
         self.note.setText('Right-click to choose plot or configure settings')
         s, i = o.sphere, o.frequency.value()
-        levels = o.get_levels(c['smoothing']); rel = s.relative(levels, ('On axis' if c.get('directivity_on_axis',False) else 'Peak') if c['kind'].startswith(('map_', 'globe_')) or c['kind']=='cross_sonograms' else c['normalization'])
+        levels = o.get_levels(c['smoothing'])
+        self.directivity_peak = float(np.max(levels))
+        if c['kind'].startswith(('map_', 'globe_')) or c['kind'] in ('cross_sonograms', 'polar'):
+            from hals_studio.analysis.acoustics import directivity_normalization
+            rel = s.directivity_relative(levels, directivity_normalization(c))
+        else:
+            rel = s.relative(levels, c['normalization'])
         kind = c['kind']
         self.probe_controls.setVisible(kind == 'balloon')
         self.frequency_controls.setVisible(kind == 'balloon')

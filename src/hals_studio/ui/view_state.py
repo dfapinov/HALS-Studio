@@ -70,6 +70,11 @@ def valid_view(view):
 
 def restore_pane(config):
     result = dict(default_config(config["kind"]), **deepcopy(config))
+    from hals_studio.analysis.acoustics import directivity_normalization
+    result['directivity_normalization'] = directivity_normalization(config)
+    result.pop('directivity_on_axis', None)
+    result['pins'] = ['directivity_normalization' if key == 'directivity_on_axis' else key
+                      for key in result['pins']]
     if "sweep_direction" not in config:
         result["sweep_direction"] = "+/-" if config.get("symmetric", True) else "+"
     result["pins"] = ["sweep_direction" if key == "symmetric" else key for key in result["pins"]]
