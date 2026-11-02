@@ -44,8 +44,6 @@ def test_polar_rotation_handle_rotates_plot_and_survives_redraw():
 @pytest.mark.parametrize('enabled', [False, True])
 @pytest.mark.parametrize('workspace', ['analysis', 'export'])
 def test_sample_angle_dots_follow_pane_option(enabled, workspace):
-    from hals_studio.ui.plotting.export_directivity import ExportDirectivityPanel
-    from unittest.mock import patch
     fig = Figure(figsize=(9, 5)); canvas = FigureCanvasAgg(fig)
     chart = SimpleNamespace(fig=fig, canvas=canvas, width=lambda: 900,
                             height=lambda: 500, done=canvas.draw)
@@ -56,17 +54,26 @@ def test_sample_angle_dots_follow_pane_option(enabled, workspace):
         sphere = SimpleNamespace(cuts=lambda _: (angles, values, values))
         draw_zoomable_polars(chart, sphere, None, 0, 36, pane=pane)
     else:
-        pane.options = {'polar_sample_points': enabled}
-        pane.result = {'freqs': np.array([1000.])}; pane.kind = 'polar'
-        pane.frequency = Mock(); pane.frequency.value.return_value = 1000.
-        pane.span = Mock(); pane.span.value.return_value = 36.
-        pane.settings_button = Mock(); pane.interaction = Mock(); pane.note = Mock()
-        with patch('hals_studio.ui.plotting.export_directivity.export_cuts',
-                   return_value={key: (angles, values) for key in ('horizontal', 'vertical')}):
-            ExportDirectivityPanel.redraw(pane)
-    traces = [line for ax in fig.axes for line in ax.lines if line.get_gid() == 'directivity-trace']
-    assert len(traces) == 2
-    assert all(line.get_marker() == ('.' if enabled else 'None') for line in traces)
+        from PySide6 import QtWidgets as W
+        from hals_studio.ui.plotting.export_directivity import ExportDirectivityPanel
+        from hals_studio.application.export_engine import DEFAULT_EXPORT, geometry
+
+        app = W.QApplication.instance() or W.QApplication([])
+        pane = ExportDirectivityPanel({'polar_sample_points': enabled})
+        config = dict(DEFAULT_EXPORT, direction='hor_vert', range_deg=90., increment_deg=90.)
+        layout = geometry(config)
+        result = dict(config=config, geometry=layout, freqs=np.array([1000.]),
+                      processed=np.ones((1, len(layout['xyz']))))
+        pane.update_result(result, 'polar')
+        fig = pane.chart.fig
+    try:
+        traces = [line for ax in fig.axes for line in ax.lines if line.get_gid() == 'directivity-trace']
+        assert len(traces) == 2
+        assert all(line.get_marker() == ('.' if enabled else 'None') for line in traces)
+    finally:
+        if workspace == 'export':
+            pane.shutdown(); pane.close(); pane.deleteLater()
+            app.processEvents()
 
 
 def test_view_round_trip_preserves_independent_rotations():

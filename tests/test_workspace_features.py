@@ -453,18 +453,25 @@ def test_export_controller_cancellation_and_restart_run_on_gui_thread(tmp_path):
         config["frd_prefix"] = "changed while working"
         assert snapshots[0]["frd_prefix"] != config["frd_prefix"]
         assert not controller.start(config, None, False, Preview(), 3, 8)
+        worker = controller.job
         controller.cancel()
+        # Complete the worker before pumping queued GUI callbacks. This keeps
+        # unrelated pending redraws out of the worker-cancellation deadline.
+        assert worker.wait(3000), "Cancelled export worker did not terminate"
         pump_until(app, lambda: controller.job is None)
         assert received == []
         assert completions == [(True, False, None)]
         release.set()
         assert controller.start(config, None, False, Preview(), 3, 8)
+        assert controller.job.wait(3000), "Restarted export worker did not terminate"
         pump_until(app, lambda: controller.job is None)
         assert received == [({"point": 3}, 8, False, True)]
         assert completions[-1] == (False, False, None)
     finally:
         controller.cancel()
         release.set()
+        if controller.job is not None:
+            assert controller.job.wait(3000), "Export worker did not terminate during cleanup"
         pump_until(app, lambda: controller.job is None)
 
 
