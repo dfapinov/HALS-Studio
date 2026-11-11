@@ -94,6 +94,12 @@ def _init_worker(log_file_path: Optional[str] = None):
         force=True
     )
 
+def _solve_log(frequency, order, residual, reason, *, finished=True):
+    status = 'Finished' if finished else 'Stopped'
+    return (f'{frequency:8.2f} Hz | N={order:2d} | residual {residual:6.2f}% | '
+            f'{status}: {reason}')
+
+
 def _worker_wrapper(args: Tuple) \
         -> Tuple[int, np.ndarray, float, float, int, np.ndarray, str]:
     k_idx, f, Pk, r, th, ph, N_grid, cfg = args
@@ -132,13 +138,11 @@ def _worker_wrapper(args: Tuple) \
     base_norm = np.linalg.norm(Pk)
     pct_err = resid_norm / max(base_norm, 1e-20) * 100.0
     
-    if cfg['condition_metrics']:
-        if cfg.get('max_lambda', 0.0) > 0.0:
-            log_msg = f"{f:6.2f} Hz N={final_N} Resid={pct_err:.2f}% Pre-Cond={metrics['cond_pre']:.2e} Post-Cond={metrics['cond_post']:.2e} -> {stop_reason}"
-        else:
-            log_msg = f"{f:6.2f} Hz N={final_N} Resid={pct_err:.2f}% Condition Number={metrics['cond_pre']:.2e} -> {stop_reason}"
-    else:
-        log_msg = f"{f:6.2f} Hz N={final_N} Resid={pct_err:.2f}% -> {stop_reason}"
+    labels = {'Optimized Growth': 'KR rule (optimised growth)', 'KR-Limit': 'KR rule',
+              'Manual Table': 'manual order table', 'Grid-Limit': 'measurement grid limit',
+              'User Hard Cap Reached': 'maximum order'}
+    log_msg = _solve_log(f, final_N, pct_err, labels.get(stop_reason, stop_reason),
+                         finished=final_N == N_target)
 
     return k_idx, coeffs, resid_norm, metrics['cond_post'], final_N, metrics['residual_vector'], log_msg
 
@@ -153,7 +157,9 @@ def _press_worker(args):
         CONDITION_METRICS=cfg['condition_metrics'], noise_floor_start_db=cfg['noise_floor_start_db'],
         noise_floor_max_db=cfg['noise_floor_max_db'], max_lambda=cfg['max_lambda'])
     error = 100*metrics['residual_norm']/max(np.linalg.norm(pressure), 1e-20)
-    log = f'{f:.2f} Hz N={metrics["final_N"]} Resid={error:.3g}% -> leave-one-out prediction LF + HF growth schedule; equal measurement weights'
+    finished = metrics['final_N'] == cfg['press_order']
+    reason = cfg.get('press_order_source', 'KR rule') if finished else metrics.get('stop_reason', 'solver stopped early')
+    log = _solve_log(f, metrics['final_N'], error, reason, finished=finished)
     return k_idx, coeff, metrics['residual_norm'], metrics['cond_post'], metrics['final_N'], metrics['residual_vector'], log
 def run_she_solve(
     input_filename_she: str,
@@ -251,7 +257,7 @@ def run_she_solve(
             parsed_data = retained_data(parsed_data, press_plan)
             saved_orders, press_growth_result = solve_schedule(parsed_data, press_plan, lf_orders, target_n_max,
                                                               condition_preflight, runtime)
-            logger.info('Using saved Stage 2 origins/LF requirements; HF growth computed for current Stage 4 settings. No interpolation or origin searches.')
+            logger.info('Using Stage 2 origins and LF orders; KR controls higher-frequency order growth.')
 
         preflight = None
         if press_plan is not None:
@@ -318,7 +324,10 @@ def run_she_solve(
             # Calculate translated spherical coordinates for this specific frequency bin
             origin_m = origins_sel_mm[k] / 1000.0
             r_k, th_k, ph_k = translate_coordinates(r_static, th_static, ph_static, origin_m)
-            cfg = worker_cfg if press_plan is None else dict(worker_cfg, press_order=int(saved_orders[idx[k]]))
+            cfg = worker_cfg if press_plan is None else dict(worker_cfg,
+                press_order=int(saved_orders[idx[k]]),
+                press_order_source=('LF-optimised schedule' if lf_orders[idx[k]] > 0
+                                    and saved_orders[idx[k]] == lf_orders[idx[k]] else 'KR rule'))
             tasks.append((k, f_sel[k], P[k], r_k, th_k, ph_k, N_grid, cfg))
     
         # 6. Execution
