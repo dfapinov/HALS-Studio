@@ -2,11 +2,10 @@
 import numpy as np
 
 
-def add_frequency_cursor(ax, frequency, *, visible=True, sonogram=False):
-    """Shared cursor behaviour, with a brighter marker over sonogram colours."""
-    style = dict(color='#ffffff', alpha=1., lw=2., zorder=20) if sonogram else dict(
-        color='#7db0c0', alpha=.35, lw=.8)
-    return ax.axvline(frequency, gid='frequency-cursor', visible=visible, **style)
+def add_frequency_cursor(ax, frequency, *, visible=True):
+    """One visible frequency cursor style across response plots and sonograms."""
+    return ax.axvline(frequency, color='#ffffff', alpha=1., lw=1.5, zorder=20,
+                      gid='frequency-cursor', visible=visible)
 
 
 class SPLCursor:
