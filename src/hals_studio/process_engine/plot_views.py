@@ -230,12 +230,49 @@ class FrequencyBrowser3DView:
         self.ax.set_zlabel('Z (Height) mm')
 
         self.ax.view_init(elev=30, azim=-45, roll=0, vertical_axis='z')
+        self._score_samples = None
+        self._score_scale_note = self.fig.text(.88, .15, '>=100%: poor prediction',
+            ha='center', fontsize=8, visible=False)
+        self._score_hover = self.ax.annotate('', xy=(0, 0), xytext=(12, 12),
+            textcoords='offset points', fontsize=8,
+            bbox=dict(boxstyle='round', facecolor='white', alpha=.95), visible=False)
+        self.fig.canvas.mpl_connect('motion_notify_event', self._inspect_score)
 
-    def update_view(self, f, grid_3d, xv, yv, zv, final_c, plane, val):
+    def _inspect_score(self, event):
+        was_visible = self._score_hover.get_visible()
+        self._score_hover.set_visible(False)
+        if event.inaxes is self.ax and event.button is None and self._score_samples is not None:
+            from mpl_toolkits.mplot3d import proj3d
+            points, values, metric = self._score_samples
+            valid = np.isfinite(values)
+            points, values = points[valid], values[valid]
+            if len(points):
+                x, y, _ = proj3d.proj_transform(*points.T, self.ax.get_proj())
+                pixels = self.ax.transData.transform(np.column_stack((x, y)))
+                distances = np.linalg.norm(pixels-[event.x, event.y], axis=1)
+                i = int(np.argmin(distances))
+                if distances[i] <= 12:
+                    label = 'Prediction' if metric == 'prediction' else 'Residual'
+                    xyz = ', '.join(f'{v:.1f}' for v in points[i])
+                    self._score_hover.set_color(self.ax.xaxis.label.get_color())
+                    self._score_hover.get_bbox_patch().set_facecolor(self.ax.get_facecolor())
+                    self._score_hover.xy = (x[i], y[i])
+                    self._score_hover.set_text(f'Grid point ({xyz}) mm\n{label} error: {values[i]:.3f}%')
+                    self._score_hover.set_visible(True)
+        if was_visible or self._score_hover.get_visible():
+            self.fig.canvas.draw_idle()
+
+
+    def update_view(self, f, grid_3d, xv, yv, zv, final_c, plane, val, metric="residual", prediction_max=100.):
         while self.ax.collections: self.ax.collections[0].remove()
         for line in self.ax.lines: line.remove()
             
         actual_val = val
+        if metric == 'prediction' and (not np.isfinite(prediction_max) or prediction_max <= 0):
+            raise ValueError('Prediction colour maximum must be finite and positive.')
+        self._score_scale_note.set_text('>=100%: poor prediction' if prediction_max == 100. else
+                                        f'Colours capped at {prediction_max:g}%')
+        self._score_scale_note.set_visible(metric == 'prediction' and grid_3d is not None and np.isfinite(grid_3d).any())
         finite_values = (grid_3d[np.isfinite(grid_3d)]
                          if grid_3d is not None else np.array([]))
         if finite_values.size:
@@ -244,7 +281,10 @@ class FrequencyBrowser3DView:
             # Avoid Matplotlib expanding a constant zero range below zero.
             if vmin == vmax:
                 vmin, vmax = 0.0, max(float(vmax), 1.0)
-            norm = plt.Normalize(vmin=vmin, vmax=vmax)
+            if metric == 'prediction':
+                norm = plt.Normalize(vmin=0., vmax=prediction_max, clip=True)
+            else:
+                norm = plt.Normalize(vmin=vmin, vmax=vmax)
             sm = plt.cm.ScalarMappable(cmap='viridis', norm=norm)
             sm.set_array([])
             
@@ -267,6 +307,8 @@ class FrequencyBrowser3DView:
                 X_grid, Y_grid = np.meshgrid(xv, yv, indexing='ij')
                 Z_grid = np.full_like(X_grid, actual_val)
 
+            self._score_samples = (np.column_stack((X_grid.ravel(), Y_grid.ravel(), Z_grid.ravel())),
+                                   slice_2d.ravel(), metric)
             # Outside the scan region the grid contains infinity, not residuals.
             colors = plt.cm.viridis(norm(np.ma.masked_invalid(slice_2d)))
             colors[..., 3] *= 0.85
@@ -274,15 +316,20 @@ class FrequencyBrowser3DView:
             
             if self.cbar is None: self.cbar = self.fig.colorbar(sm, cax=self.cbar_ax)
             else: self.cbar.update_normal(sm)
-            self.cbar.set_label('Residual Error (%)')
+            self.cbar.set_label('Prediction Error (%)' if metric == 'prediction' else 'Residual Error (%)')
+            if metric == 'prediction':
+                ticks = np.linspace(0., prediction_max, 6)
+                self.cbar.set_ticks(ticks, labels=[f'{value:g}' for value in ticks[:-1]]+
+                                    [f'>={prediction_max:g}'])
             grid_min_text = f"{finite_values.min():.2f}%"
         else:
-            grid_min_text = ("N/A (Bypassed)" if grid_3d is None
-                             else "N/A (No finite residuals)")
+            grid_min_text = ("N/A (rescan to calculate this score)" if grid_3d is None
+                             else "N/A (no usable scores)")
             if self.cbar is not None:
                 self.cbar_ax.clear()
                 self.cbar = None
             self.cbar_ax.set_visible(False)
+            self._score_samples = None
 
         if final_c is not None:
             self.ax.scatter(final_c[0], final_c[1], final_c[2], c='yellow', marker='D', s=100, edgecolors='black', label='Simplex Final')
@@ -352,7 +399,7 @@ class ValidationView:
         self.fig.subplots_adjust(bottom=0.1, top=0.95, right=0.95, left=0.1)
 
     @silence_log_warnings
-    def update_view(self, history_freq, history_search, history_orig, history_err_search, history_err_orig):
+    def update_view(self, history_freq, history_search, history_orig, history_err_search, history_err_orig, metric="residual"):
         axes = [self.ax_x, self.ax_y, self.ax_z]
         labels = ['X (Depth)', 'Y (Width)', 'Z (Height)']
                
@@ -369,7 +416,7 @@ class ValidationView:
                      label='Current Result' if i == 0 else '')
             for j, f in enumerate(history_freq):
                 offset=7 if j % 2 == 0 else -7
-                sax.annotate(f"{history_err_search[j]:.0f}%",
+                sax.annotate(f"{history_err_search[j]:.0f}%" if np.isfinite(history_err_search[j]) else "N/A",
                              (f, history_search[i][j]), xytext=(0, offset),
                              textcoords='offset points', color='blue', fontsize=7,
                              ha='center', va='bottom' if offset>0 else 'top', alpha=0.85)
@@ -381,7 +428,7 @@ class ValidationView:
             sax.set_ylabel(f'{labels[i]} (mm)')
             sax.grid(True, which='both', ls='--', alpha=0.3)
             if i == 0:
-                sax.set_title('Frequency Sweep Validation: Coordinates & Residual Error Labels', fontweight='bold')
+                sax.set_title('Origin Coordinates - '+('Prediction Error (%)' if metric == 'prediction' else 'Residual Error (%)'), fontweight='bold')
 
         self.ax_z.set_xlabel('Frequency (Hz)')
         self.fig.canvas.draw_idle()

@@ -8,8 +8,7 @@ Updated with Two-Threshold Progressive Lambda (Generalized Tikhonov) regularizat
 from __future__ import annotations
 import numpy as np
 import math
-from scipy.special import spherical_jn, sph_harm_y
-from hals_studio.process_engine.utils import hankel2
+from .harmonic_basis import build_field_matrix
 
 # Attempt to import Speed of Sound and new solver configs
 try:
@@ -18,23 +17,8 @@ except ImportError:
     SPEED_OF_SOUND = None
 
 def build_she_matrix(coords_sph, order_N, k):
-    """Unscaled dual basis shared by the solver and condition preflight."""
-    r, th, ph = coords_sph
-    kr = r * k
-    # Build Matrix
-    A_cols = []
-    final_N = order_N
-    for n in range(order_N + 1):
-        hn = hankel2(n, kr)
-        jn = spherical_jn(n, kr)
-        if not (np.all(np.isfinite(hn)) and np.all(np.isfinite(jn))):
-            final_N = n - 1
-            break
-        for m_ord in range(-n, n + 1):
-            Y = sph_harm_y(n, m_ord, th, ph)
-            A_cols.extend([hn * Y, jn * Y])
-
-    return (np.column_stack(A_cols) if A_cols else np.empty((len(r), 0), complex)), final_N
+    """Dual-field matrix, preserving the solver's public interface."""
+    return build_field_matrix(coords_sph, order_N, k)
 
 
 def matrix_condition(coords_sph, order_N, k):
@@ -78,7 +62,6 @@ def _solve_one_frequency(
         return np.array([]), {'residual_norm': base_norm, 'cond_pre': 0.0, 'cond_post': 0.0, 'final_N': -1, 'stop_reason': "Instability"}
 
     b_solve = P_complex
-
     # Two-Threshold Progressive Lambda / Generalized Tikhonov Logic
     try:
         from hals_studio.process_engine.config_process import NOISE_FLOOR_START_DB, NOISE_FLOOR_MAX_DB, MAX_LAMBDA
@@ -143,7 +126,7 @@ def _solve_one_frequency(
         else:
             cond_post = cond_pre
 
-    resid_vec = b_solve - (A_solve @ x)
+    resid_vec = b_solve-(A_solve@x)
     resid_norm = np.linalg.norm(resid_vec)
 
     metrics = {

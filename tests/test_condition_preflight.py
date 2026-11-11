@@ -107,9 +107,9 @@ def test_stage4_optimises_current_target_before_solving(tmp_path, monkeypatch):
     import logging
     freqs = np.arange(0., 4100., 100.)
     name = 'input.npz';(tmp_path/name).touch()
-    data = dict(freqs=freqs, complex_data={'a': np.ones(len(freqs), complex)},
-                filenames=['a'], r_arr=np.array([.2]), th_arr=np.array([1.]),
-                ph_arr=np.array([0.]), origins_mm=None, speed_of_sound_mps=315.)
+    data = dict(freqs=freqs, complex_data={key: np.ones(len(freqs), complex) for key in ('a', 'b')},
+                filenames=['a', 'b'], r_arr=np.array([.2, .2]), th_arr=np.array([np.pi/2, np.pi/2]),
+                ph_arr=np.array([0., np.pi]), origins_mm=None, speed_of_sound_mps=315.)
     monkeypatch.setattr(solver, 'load_and_parse_npz', lambda path: data)
     monkeypatch.setattr(solver, 'get_grid_limit', lambda *args: (20, 1))
     monkeypatch.setattr(growth, 'get_grid_limit', lambda *args: (20, 1))
@@ -123,7 +123,7 @@ def test_stage4_optimises_current_target_before_solving(tmp_path, monkeypatch):
         events.append('solve')
         n = kwargs['order_N']
         return np.zeros(2*(n+1)**2, complex), dict(residual_norm=0., final_N=n,
-            stop_reason='test', cond_pre=1e4, cond_post=1e4, residual_vector=np.zeros(1, complex))
+            stop_reason='test', cond_pre=1e4, cond_post=1e4, residual_vector=np.zeros(2, complex))
     monkeypatch.setattr(solver, '_solve_one_frequency', solve)
     def run(n, optimise=True, manual=False):
         events.clear()

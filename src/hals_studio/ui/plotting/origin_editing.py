@@ -42,11 +42,12 @@ def line_edits(rows, axis, start, end):
 
 class OriginPointSelection:
     """Select a sampled frequency on all three graphs and report its details."""
-    def __init__(self, canvas, axes, rows, on_select=None):
+    def __init__(self, canvas, axes, rows, on_select=None, error_key="error"):
         self.canvas, self.axes = canvas, list(axes)
         self.frequencies = np.array(sorted(rows))
         self.coordinates = np.array([rows[f]['final_c'] for f in self.frequencies])
-        self.errors = [rows[f]['error'] for f in self.frequencies]
+        self.errors = [rows[f].get(error_key, np.nan) for f in self.frequencies]
+        self.error_label = 'Prediction error' if error_key == 'press_pct' else 'Residual error'
         self.on_select = on_select
         self.pressed = None
         self.markers = []
@@ -92,7 +93,7 @@ class OriginPointSelection:
             marker.set_data([frequency], [self.coordinates[index, axis]])
         xyz = ' | '.join(f'{axis}: {value:.2f} mm' for axis, value in zip('XYZ', self.coordinates[index]))
         if self.on_select:
-            self.on_select(f'{frequency:g} Hz | Fit error: {self.errors[index]:.2f}% | {xyz}')
+            self.on_select(f'{frequency:g} Hz | {self.error_label}: {self.errors[index]:.2f}% | {xyz}')
         self.canvas.draw_idle()
 
 

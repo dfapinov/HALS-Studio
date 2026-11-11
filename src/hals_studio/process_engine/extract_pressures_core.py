@@ -26,7 +26,7 @@ os.environ['NUMEXPR_NUM_THREADS'] = '1'
 
 import h5py
 import numpy as np
-from scipy.special import spherical_jn, spherical_yn, sph_harm_y
+from .harmonic_basis import build_field_matrix
 import hals_studio.process_engine.schema as schema
 from hals_studio.process_engine.stage5_pressure_utils import (
     DEFAULT_IR_CAPTURE_PADDING_SAMPLES,
@@ -38,7 +38,7 @@ from hals_studio.process_engine.complex_to_ir_core import complex_to_ir
 
 from hals_studio.process_engine.utils import (
     spherical_to_cartesian, cartesian_to_spherical, translate_coordinates,
-    hankel2, load_she_h5, apply_mic_calibration
+    load_she_h5, apply_mic_calibration
 )
 
 # -------------------------------------------------
@@ -75,39 +75,19 @@ def _worker_calc_chunk(args):
 
         N_max = int(n_used_sub[local_idx])
         k_wave = 2 * math.pi * f / c_sound
-        kr = k_wave * r_eval
 
-        n_indices_list = []
-        m_indices_list = []
-        for n in range(N_max + 1):
-            deg_range = range(-n, n + 1)
-            count = len(deg_range)
-            n_indices_list.extend([n] * count)
-            m_indices_list.extend(deg_range)
-            
-        n_vec = np.array(n_indices_list)
-        m_vec = np.array(m_indices_list)
-        coeffs_k = coeffs_sub[local_idx]
-        num_modes = len(n_vec)
-        
-        C_coeffs = coeffs_k[0 : 2*num_modes : 2]
-        D_coeffs = coeffs_k[1 : 2*num_modes : 2]
-
-        Y_nm = sph_harm_y(n_vec[:, np.newaxis], m_vec[:, np.newaxis], 
-                          theta_eval[np.newaxis, :], phi_eval[np.newaxis, :])
-        h_n_val = hankel2(n_vec[:, np.newaxis], kr[np.newaxis, :])
-        j_n_val = spherical_jn(n_vec[:, np.newaxis], kr[np.newaxis, :])
-        
+        matrix, actual_order = build_field_matrix(
+            (r_eval, theta_eval, phi_eval), N_max, k_wave, obs_mode)
+        if actual_order != N_max:
+            raise ValueError('Nonfinite harmonic basis during pressure reconstruction.')
+        modes = (N_max+1)**2
+        coefficients = coeffs_sub[local_idx, :2*modes]
         if is_internal:
-            term = C_coeffs[:, np.newaxis] * h_n_val * Y_nm
+            coefficients = coefficients[::2]
         elif is_external:
-            term = D_coeffs[:, np.newaxis] * j_n_val * Y_nm
-        else:
-            term = (C_coeffs[:, np.newaxis] * h_n_val + 
-                    D_coeffs[:, np.newaxis] * j_n_val) * Y_nm
-            
-        pressures_chunk[local_idx, :] = np.sum(term, axis=0)
-        
+            coefficients = coefficients[1::2]
+        pressures_chunk[local_idx] = matrix @ coefficients
+
     return indices, pressures_chunk
 
 # -------------------------------------------------

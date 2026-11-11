@@ -70,10 +70,33 @@ class ProcessWorkspace(W.QWidget):
         menu.addAction('Export All...',lambda:self.export_stage1_ir(True));self.ir_export.setMenu(menu);bar.addWidget(self.ir_export)
         bar.removeWidget(self.power_reset);bar.addWidget(self.power_reset)
         self.save_image_button=W.QPushButton('Save image');self.save_image_button.setFixedHeight(32);self.save_image_button.clicked.connect(self.save_image);bar.addWidget(self.save_image_button)
-        self.stage2_tools=W.QWidget();s2=W.QHBoxLayout(self.stage2_tools);s2.setContentsMargins(0,0,0,0);rescan=W.QPushButton('Full grid rescan of selected frequency');rescan.clicked.connect(lambda:self.run('rescan'));s2.addWidget(rescan);s2.addWidget(W.QLabel('Frequency'));self.rescan_frequency=W.QComboBox();self.rescan_frequency.setFixedWidth(145);self.rescan_frequency.currentIndexChanged.connect(self.sample.setCurrentIndex);self.sample.currentIndexChanged.connect(self.rescan_frequency.setCurrentIndex);s2.addWidget(self.rescan_frequency);edit=W.QPushButton('Edit coordinate table');edit.clicked.connect(self.edit_origins);s2.addWidget(edit);s2.addStretch();bar.insertWidget(2,self.stage2_tools)
+        self.stage2_tools=W.QWidget();s2=W.QHBoxLayout(self.stage2_tools);s2.setContentsMargins(0,0,0,0);rescan=W.QPushButton('Full grid rescan of selected frequency');rescan.clicked.connect(lambda:self.run('rescan'));s2.addWidget(rescan);s2.addWidget(W.QLabel('Frequency'));self.rescan_frequency=W.QComboBox();self.rescan_frequency.setFixedWidth(145);self.rescan_frequency.currentIndexChanged.connect(self.sample.setCurrentIndex);self.sample.currentIndexChanged.connect(self.rescan_frequency.setCurrentIndex);s2.addWidget(self.rescan_frequency);edit=W.QPushButton('Edit coordinate table');edit.clicked.connect(self.edit_origins);s2.addWidget(edit)
+        s2.addWidget(W.QLabel('Score'))
+        self.origin_score = W.QComboBox()
+        self.origin_score.addItem('Residual error', 'residual')
+        self.origin_score.addItem('Leave-one-out prediction', 'prediction')
+        self.origin_score.setToolTip('Choose the score shown on origin plots and grid landscapes. Searches use leave-one-out prediction.')
+        self.origin_score.currentIndexChanged.connect(self.draw)
+        s2.addWidget(self.origin_score)
+        s2.addStretch();bar.insertWidget(2,self.stage2_tools)
         self.stage3_tools=W.QWidget();s3=W.QHBoxLayout(self.stage3_tools);s3.setContentsMargins(0,0,0,0);s3.addWidget(W.QLabel('Sound power reference'));self.reference_order.setMaximumWidth(200);s3.addWidget(self.reference_order);s3.addStretch();bar.insertWidget(0,self.stage3_tools)
         self.order_choice.hide()
 
+        self.grid_colour_tools = W.QWidget()
+        colour_row = W.QHBoxLayout(self.grid_colour_tools)
+        colour_row.setContentsMargins(0, 0, 0, 0)
+        colour_row.addWidget(W.QLabel('Prediction colour range: 0 to'))
+        self.prediction_colour_max = W.QDoubleSpinBox()
+        self.prediction_colour_max.setRange(.01, 1000000000.)
+        self.prediction_colour_max.setDecimals(2)
+        self.prediction_colour_max.setValue(100.)
+        self.prediction_colour_max.setSuffix(' %')
+        self.prediction_colour_max.setKeyboardTracking(False)
+        self.prediction_colour_max.setToolTip('Lower this maximum to reveal differences near the minimum, for example 5% or 10%. Higher scores share the top colour. Hover shows the actual score.')
+        self.prediction_colour_max.valueChanged.connect(self.draw)
+        colour_row.addWidget(self.prediction_colour_max)
+        colour_row.addStretch()
+        resultbox.addWidget(self.grid_colour_tools)
         self.origin_plot_tools=W.QWidget();origin_tools=W.QHBoxLayout(self.origin_plot_tools);origin_tools.setContentsMargins(0,0,0,0)
         self.origin_waypoint_box=W.QWidget();self.origin_waypoint_layout=W.QHBoxLayout(self.origin_waypoint_box);self.origin_waypoint_layout.setContentsMargins(0,0,0,0)
         self.origin_waypoint_checks={};self._origin_waypoint_project=None;origin_tools.addWidget(self.origin_waypoint_box)
@@ -264,6 +287,8 @@ class ProcessWorkspace(W.QWidget):
         if self.stage==3 and not self.rft_supplied:request['settings']['fdw_rft_ms']=5.0
         request['rft_supplied']=self.rft_supplied
         request['tweeter_supplied']=self.tweeter_supplied
+        if self.stage == 2:
+            request['press_kr_offset'] = float(self.values[4].get('kr_offset', 2.))
         if self.stage==1 and self.filter_ir_filenames:
             from hals_studio.application.ir_recovery import scan_ir_folder
             try:request['input_filenames'],_=scan_ir_folder(self.ir_folder.text())
@@ -515,6 +540,8 @@ class ProcessWorkspace(W.QWidget):
         return [(index,name,xyz) for index,(name,xyz) in enumerate(points) if self.origin_waypoint_checks[index,name].isChecked()]
 
     def draw(self,*_):
+        self.grid_colour_tools.setVisible(self.stage == 2 and self.view.currentText() == '3D grid scan'
+                                          and self.origin_score.currentData() == 'prediction')
         self.origin_plot_tools.setVisible(self.stage==2 and self.view.currentText()=='Validation')
         self.origin_edit_note.setVisible(self.stage==2)
         if self.stage==0:return

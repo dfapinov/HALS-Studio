@@ -340,16 +340,39 @@ def run_speed_of_sound_candidate_batch(
 # 1. 3D PHYSICS ENGINE
 # =============================================================================
 
+def prediction_grid_scores(x, y, z, context):
+    """Prediction and training errors from one fit at a fixed grid order."""
+    freq_data_list, _, _, _, order, cfg = context
+    from .press_fitting import basis, prediction_fit
+    offset = np.array([x, y, z])/1000.
+    hull = cfg['origin_grid_hull']
+    if np.any(hull[:, :3] @ offset + hull[:, 3] >= -1e-10):
+        return float('inf'), float('inf')
+    try:
+        metrics = [prediction_fit(basis(cfg['origin_grid_xyz'], offset, order, k), pressure)[1]
+                   for _, k, pressure in freq_data_list]
+        return tuple(float(np.mean([m[key] for m in metrics])) for key in ('press_pct', 'training_pct'))
+    except (ValueError, np.linalg.LinAlgError):
+        return float('inf'), float('inf')
+
+
 def solve_physics_3d(x, y, z, context):
     freq_data_list, r_geom, th_geom, ph_geom, order, cfg = context
     off_vec = np.array([x, y, z]) / 1000.0
     
+    if cfg.get('origin_grid_metric') == 'prediction':
+        return prediction_grid_scores(x, y, z, context)[0]
+
     r_n, th_n, ph_n = translate_coordinates(r_geom, th_geom, ph_geom, off_vec)
     
     avg_resid_pct = 0.0
     
     for (f_hz, k, P) in freq_data_list:
-        N_kr = get_kr_limit(f_hz, r_n, cfg['speed_of_sound'], cfg['kr_offset'])
+        from .utils import grid_reference
+        reference = cfg.get('kr_reference_radii')
+        if reference is None:
+            reference = grid_reference(r_geom, th_geom, ph_geom)[1]
+        N_kr = get_kr_limit(f_hz, reference, cfg['speed_of_sound'], cfg['kr_offset'])
         safe_order = min(order, N_kr)
 
         _, metrics_out = _solve_one_frequency(
@@ -464,6 +487,8 @@ def estimate_hf_seed(freqs, spectra, keys, geometry, cfg, end_hz, runtime):
 
 def _worker_landscape_3d(args):
     x, y, z, context = args
+    if context[-1].get("origin_grid_metric") == "prediction":
+        return prediction_grid_scores(x, y, z, context)
     return solve_physics_3d(x, y, z, context)
 
 def generate_3d_landscape_volumetric(context, runtime=None, *, cylindrical=False
@@ -504,7 +529,14 @@ def generate_3d_landscape_volumetric(context, runtime=None, *, cylindrical=False
     from hals_studio.process_engine.process_progress import collect_tasks
     def collect(pool):
         values = runtime.collect(pool, _worker_landscape_3d, pixels, 'Stage 2 grid scan', chunksize=200)
-        grid.flat[indices] = np.asarray(values)
+        if cfg.get('origin_grid_metric') == 'prediction':
+            scores = np.asarray(values).reshape(-1, 2)
+            grid.flat[indices] = scores[:, 0]
+            residuals = np.full(grid.shape, np.inf)
+            residuals.flat[indices] = scores[:, 1]
+            cfg['origin_grid_residuals'] = residuals
+        else:
+            grid.flat[indices] = np.asarray(values)
     if cfg.get('use_process_pool', True):
         with shared_pool or get_context('spawn').Pool(grid_workers) as pool:
             collect(pool)
@@ -634,7 +666,7 @@ class DynamicBranchSweeper:
 
         return results
 
-def export_interpolated_origins(history_freq, history_search_x, history_search_y, history_search_z, f_all, data, input_dir, output_filename, save_to_disk, speed_of_sound=None, test_range_hz=None, hold_origin_lf=True, hold_origin_hf=True, runtime=None
+def export_interpolated_origins(history_freq, history_search_x, history_search_y, history_search_z, f_all, data, input_dir, output_filename, save_to_disk, speed_of_sound=None, test_range_hz=None, hold_origin_lf=True, hold_origin_hf=True, runtime=None, press_state=None
 ):
     from hals_studio.process_engine.runtime import EngineRuntime
     runtime = runtime or EngineRuntime()
@@ -655,10 +687,22 @@ def export_interpolated_origins(history_freq, history_search_x, history_search_y
         lower, upper = test_range_hz if test_range_hz is not None else (xp.min(), xp.max())
         if not hold_origin_lf: origins_full[np.asarray(f_all) < lower] = 0.0
         if not hold_origin_hf: origins_full[np.asarray(f_all) > upper] = 0.0
+
+        press_plan = None
+        if press_state is not None:
+            from .press_origins import finalize
+            rows, geometry, cfg = press_state
+            press_plan, press_lf_orders, origins_full = finalize(rows, f_all, geometry, cfg, runtime)
         
         if save_to_disk:
-            save_dict = {k: data[k] for k in data.files if k not in (schema.ORIGINS_MM, schema.SPEED_OF_SOUND_MPS)}
+            save_dict = {k: data[k] for k in data.files if k not in (schema.ORIGINS_MM, schema.SPEED_OF_SOUND_MPS,
+                         'press_plan_json', 'press_orders', 'press_lf_orders', 'press_origins_mm', 'press_pilot_origins_mm')}
             save_dict[schema.ORIGINS_MM] = origins_full
+            if press_plan is not None:
+                import json
+                save_dict['press_plan_json'] = json.dumps(press_plan)
+                save_dict['press_lf_orders'] = press_lf_orders
+                save_dict['press_origins_mm'] = origins_full.copy()
             if speed_of_sound is not None:
                 save_dict[schema.SPEED_OF_SOUND_MPS] = np.array(float(speed_of_sound), dtype=np.float64)
             if hasattr(data, "close"):
@@ -716,7 +760,9 @@ def run_origin_search(
     use_process_pool: bool = True,
     return_state: bool = False,
     hold_origin_lf: bool = True,
-    hold_origin_hf: bool = True, runtime=None
+    hold_origin_hf: bool = True, runtime=None,
+    press_enabled: bool = False,
+    press_residual_seed: bool = False, press_blacklist: str = ''
 ):
     from hals_studio.process_engine.runtime import EngineRuntime
     runtime = runtime or EngineRuntime()
@@ -724,17 +770,17 @@ def run_origin_search(
     stage_start_time = time.time()
 
     runtime.print("--- Stage 2 Acoustic Origin Search ---")
-    runtime.print(
-        "Search mode: full volumetric grid scan with simplex refinement."
-        if enable_full_grid_scan else
-        "Search mode: simplex origin search (full grid scan disabled)."
-    )
-    
+    if not press_enabled:
+        runtime.print("Search mode: full grid scan with simplex refinement."
+                      if enable_full_grid_scan else "Search mode: simplex origin search.")
+
     if isinstance(x_bounds, (int, float)): x_bounds = (-float(x_bounds), float(x_bounds))
     if isinstance(y_bounds, (int, float)): y_bounds = (-float(y_bounds), float(y_bounds))
     if isinstance(z_bounds, (int, float)): z_bounds = (-float(z_bounds), float(z_bounds))
     
     cfg = {
+        'press_enabled': press_enabled,
+        'press_residual_seed': press_residual_seed,
         'origin_test_range_hz': (float(freq_start_hz), float(freq_end_hz)),
         'hold_origin_lf': hold_origin_lf, 'hold_origin_hf': hold_origin_hf,
         'noise_floor_start_db': NOISE_FLOOR_START_DB,
@@ -769,15 +815,31 @@ def run_origin_search(
     ph_arr = parsed_data['ph_arr']
     data = parsed_data['raw_data'] # Used for dict re-saving at the very end
 
+    from .utils import grid_reference
+    centre, radii = grid_reference(r_arr, th_arr, ph_arr)
+    cfg.update(kr_reference_radii=radii, grid_centre_m=centre.tolist(), grid_radius_m=float(max(radii)))
+    if press_enabled and press_blacklist:
+        from pathlib import Path
+        excluded = {Path(line.strip()).name for line in Path(press_blacklist).read_text(encoding='utf-8-sig').splitlines()
+                    if line.strip() and not line.lstrip().startswith('#')}
+        keep = np.array([name not in excluded for name in keys])
+        runtime.print(f'leave-one-out prediction blacklist: excluded {sum(~keep)} of {len(keys)} recordings.')
+        keys = [name for name, retained in zip(keys, keep) if retained]
+        r_arr, th_arr, ph_arr = r_arr[keep], th_arr[keep], ph_arr[keep]
+        if len(keys) < 19:
+            raise ValueError('Blacklist leaves too few recordings for leave-one-out prediction.')
+
     if not enable_full_grid_scan:
         from .origin_scan_region import measurement_cylinder
         cfg.update(measurement_cylinder(r_arr, th_arr))
-        runtime.print(f"Automatic scan cylinder: radius {cfg['scan_radius_mm']:g} mm; "
+        if not press_enabled:
+            runtime.print(f"Automatic scan cylinder: radius {cfg['scan_radius_mm']:g} mm; "
                       f"Z {cfg['z_bounds'][0]:g} to {cfg['z_bounds'][1]:g} mm")
 
 
     N_grid, M_unique = get_grid_limit(th_arr, ph_arr)
     cfg['N_grid'] = N_grid
+    cfg['press_names'] = keys
 
     actual_freqs_asc, f_indices_asc = build_stage2_frequency_targets(f_all, freq_start_hz, freq_end_hz, octave_resolution)
 
@@ -790,7 +852,38 @@ def run_origin_search(
     if automatic_seed:
         tweeter_coords_mm = estimate_hf_seed(f_all, d_dict, keys, (r_arr, th_arr, ph_arr),
                                             cfg, freq_end_hz, runtime)
-    lf_seed = (0.0, 0.0, 0.0) if automatic_seed else tweeter_coords_mm
+    lf_seed = (0.0, 0.0, 0.0)
+
+    if press_enabled:
+        if optimize_speed_of_sound:
+            raise ValueError('leave-one-out prediction uses the fixed project sound speed; disable speed optimization.')
+        if target_n_max_origins < 2 or max_iterations < 1:
+            raise ValueError('leave-one-out prediction search maximum must be at least N2 and iterations positive.')
+        from .press_origins import run_search, finalize
+        seeds = None
+        if press_residual_seed:
+            runtime.print('Optional residual seed pre-pass: running low-to-high and high-to-low searches.')
+            sweeper = DynamicBranchSweeper(actual_freqs_asc, f_indices_asc, keys, d_dict, r_arr, th_arr, ph_arr, cfg, runtime=runtime)
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                hf = executor.submit(sweeper.run_dynamic_branch, 'Residual HF -> LF', sweeper.get_next_hf, tweeter_coords_mm)
+                lf = executor.submit(sweeper.run_dynamic_branch, 'Residual LF -> HF', sweeper.get_next_lf, lf_seed)
+                hf, lf = hf.result(), lf.result()
+            seeds = {f: min((hf[f], lf[f]), key=lambda row: row['error']) for f in actual_freqs_asc}
+        geometry = (r_arr, th_arr, ph_arr)
+        if press_residual_seed:
+            runtime.print('Residual pre-pass complete; its origins will provide extra prediction-search seeds.')
+        sweep_results = run_search(f_all, f_indices_asc, keys, d_dict, geometry, cfg, tweeter_coords_mm, runtime, seeds)
+        runtime.print('\n--- 3. Preparing results ---')
+        runtime.print('Interpolating origins and LF orders onto the full frequency grid.')
+        finalize(sweep_results, f_all, geometry, cfg, runtime)
+        runtime.print(f'Stage 2 search complete in {time.time()-stage_start_time:.1f} seconds.')
+        if return_state:
+            return sweep_results, f_all, keys, d_dict, geometry, cfg, data
+        positions = np.array([sweep_results[f]['final_c'] for f in sorted(sweep_results)])
+        return export_interpolated_origins(sorted(sweep_results), *positions.T, f_all, data, input_dir_origins,
+            output_filename_origins, save_to_disk, speed_of_sound=speed_of_sound,
+            test_range_hz=cfg['origin_test_range_hz'], hold_origin_lf=hold_origin_lf, hold_origin_hf=hold_origin_hf,
+            runtime=runtime, press_state=(sweep_results, geometry, cfg))
 
     if optimize_speed_of_sound:
         speed_probe_bins = select_speed_of_sound_probe_bins(

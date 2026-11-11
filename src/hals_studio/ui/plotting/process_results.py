@@ -88,7 +88,7 @@ class Results(W.QWidget):
         self.canvas.setToolTip('')
 
     def draw(self, workspace):
-        from hals_studio.ui.plotting.process_renderers import renderer_for
+        from hals_studio.ui.plotting.process_renderers import renderer_for, origin_score_metric
         kind = workspace.view.currentText()
         view = renderer_for(workspace.stage, kind)(self, workspace)
         if view is None:
@@ -114,7 +114,8 @@ class Results(W.QWidget):
                 ha='left',va='top',fontsize=8,zorder=20,
                 color=view.ax_x.yaxis.label.get_color())
             self.origin_selection = OriginPointSelection(self.canvas, [view.ax_x, view.ax_y, view.ax_z], workspace.results[2][0],
-                lambda text:self.origin_point_details.set_text(text.replace('% | ','%\n',1)))
+                lambda text:self.origin_point_details.set_text(text.replace('% | ','%\n',1)),
+                error_key='press_pct' if origin_score_metric(workspace) == 'prediction' else 'error')
             if selected is not None:self.origin_selection.select(selected)
             self.canvas.setFocusPolicy(C.Qt.StrongFocus)
             self.canvas.setCursor(C.Qt.CrossCursor if workspace.draw_origin_line.isChecked() else C.Qt.ArrowCursor)

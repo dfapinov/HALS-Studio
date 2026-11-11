@@ -68,12 +68,19 @@ def test_normal_run_speed_probes_do_not_depend_on_origin_resolution(tmp_path, mo
     assert all(f == pressure[0] for f, pressure in captured[0])
 
 
-def test_rescan_uses_current_bounds_and_grid_resolution(tmp_path, monkeypatch):
+@pytest.mark.parametrize('predictive', [False, True])
+def test_rescan_uses_current_bounds_and_grid_resolution(tmp_path, monkeypatch, predictive):
     from hals_studio.application import process_stages
     cfg = dict(x_bounds=(-500, 500), y_bounds=(-500, 500), z_bounds=(-500, 500),
                grid_res_mm=15., speed_of_sound=343., scan_radius_mm=10.)
     result = ({100.: dict(final_c=np.zeros(3), error=1.)}, np.array([100.]),
               ['mic'], {'mic': np.array([1.])}, ([], [], []), cfg, {})
+    if predictive:
+        from hals_studio.process_engine.utils import cartesian_to_spherical
+        xyz = np.random.default_rng(10).normal(size=(30, 3))
+        result = (*result[:4], cartesian_to_spherical(*xyz.T), cfg, {})
+        cfg.update(press_enabled=True, target_n_max_origins=7)
+        result[0][100.]['press_order'] = 3
     monkeypatch.setattr(process_stages.process_cache, 'load', lambda *args: result)
     monkeypatch.setattr(process_stages.process_cache, 'hydrate_stage2', lambda *args: result)
 
@@ -87,6 +94,9 @@ def test_rescan_uses_current_bounds_and_grid_resolution(tmp_path, monkeypatch):
         assert actual['z_bounds'] == (0., 100.)
         assert actual['grid_res_mm'] == 20.
         assert 'scan_radius_mm' not in actual
+        if predictive:
+            assert context[-2] == 3  # Selected order, not the search ceiling.
+            assert actual['origin_grid_metric'] == 'prediction'
         raise ReachedGrid
 
     monkeypatch.setattr(stage, 'generate_3d_landscape_volumetric', capture)

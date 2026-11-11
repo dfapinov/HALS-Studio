@@ -28,6 +28,10 @@ def validated_settings(stage, supplied):
     schema = _settings_schema()[str(int(stage))]
     settings = {key: deepcopy(field["default"]) for key, field in schema.items()}
     settings.update(deepcopy(supplied))
+    if int(stage) == 2:
+        # Retired project settings must not restore legacy searches or exclusions.
+        settings.pop("press_enabled", None)
+        settings.pop("press_blacklist", None)
     integers = {
         "fdw_windows_per_oct",
         "target_n_max_origins",

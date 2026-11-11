@@ -5,8 +5,11 @@ from hals_studio.process_engine.utils import get_grid_limit, translate_coordinat
 from hals_studio.process_engine.stage4_run_she_solve import proposed_order
 
 
-def optimise_transitions(freqs, proposed, condition, *, runtime=None):
-    """Search a bounded set of entry bins for a condition ceiling.
+def optimise_transitions(freqs, proposed, condition, *, runtime=None, reference_order=4, reference_index=None, label_prefix='Stage 4 growth'):
+    """Search bounded entry bins above the reference order for a condition ceiling.
+
+    Legacy callers use the first N4 bin. PRESS supplies its crossover order and
+    bin explicitly, preserving the plain KR schedule below that handover.
 
     For each higher degree, sample five frequency offsets. If a
     sample is below the ceiling after a sample above it, bisect twice to
@@ -25,7 +28,7 @@ def optimise_transitions(freqs, proposed, condition, *, runtime=None):
     freqs = np.asarray(freqs, float)
     proposed = np.asarray(proposed, int)
     entries = {n: int(np.flatnonzero(proposed >= n)[0])
-               for n in range(3, int(proposed.max()) + 1)}
+               for n in range(3 if reference_order == 4 and reference_index is None else reference_order, int(proposed.max()) + 1)}
     cache = {}
 
     def check(n, i):
@@ -34,32 +37,32 @@ def optimise_transitions(freqs, proposed, condition, *, runtime=None):
         return cache[n, i]
 
     from hals_studio.process_engine.process_progress import Progress
-    checking = runtime.progress("Stage 4 growth: original entries", len(entries), console=False)
+    checking = runtime.progress(label_prefix+': original entries', len(entries), console=False)
     initial = {}
     for n, i in entries.items():
         initial[n] = check(n, i)
         checking.advance()
-    reference = np.flatnonzero(proposed == 4)
-    target = check(4, int(reference[0])) if reference.size else float('inf')
+    reference = np.flatnonzero(proposed == reference_order) if reference_index is None else np.array([int(reference_index)])
+    target = check(reference_order, int(reference[0])) if reference.size else float('inf')
     if not np.isfinite(target) or target < 1:
-        return dict(status='unavailable', reason='No finite first N=4 reference; original schedule retained.',
+        return dict(status='unavailable', reason=f'No finite first N={reference_order} reference; original schedule retained.',
                     evaluations=len(cache), transitions=[])
 
     upper = target * 10.0
     lower = target / 5.0
-    adjusted = np.minimum(proposed, 4)
+    adjusted = np.minimum(proposed, reference_order)
     rows = []
-    previous = entries[4]
+    previous = int(reference[0])
     # Changing sample count or refinement depth below changes the test's
     # per-order evaluation bound; keep its documented budget in sync.
     sample_factors = (1.15, 1.50, 2.0, 2.5, 3.0)
 
-    tuning = runtime.progress("Stage 4 growth: transitions", len(entries), console=False)
+    tuning = runtime.progress(label_prefix+': transitions', len(entries), console=False)
     for n, entry in entries.items():
-        chosen = entry if n <= 4 else None
+        chosen = entry if n <= reference_order else None
         forced = False
         deadline = min(len(freqs)-1, int(np.searchsorted(freqs, 3*freqs[entry], side='right'))-1)
-        if n > 4:
+        if n > reference_order:
             start = max(entry, previous)
             sample_indices = [start]
             sample_indices.extend(
@@ -101,16 +104,16 @@ def optimise_transitions(freqs, proposed, condition, *, runtime=None):
         rows.append(dict(order=n, original_hz=float(freqs[entry]), original_condition=initial[n],
                          activation_hz=None if chosen is None else float(freqs[chosen]),
                          condition=None if chosen is None else check(n, chosen),
-                         forced=forced, deadline_hz=float(freqs[deadline]) if n > 4 else None,
-                         target_lower=lower if n > 4 else None,
-                         target_upper=upper if n > 4 else None))
+                         forced=forced, deadline_hz=float(freqs[deadline]) if n > reference_order else None,
+                         target_lower=lower if n > reference_order else None,
+                         target_upper=upper if n > reference_order else None))
         tuning.advance()
 
     ends = np.r_[np.flatnonzero(np.diff(adjusted)), len(freqs)-1]
     table = {float(freqs[i]): int(adjusted[i]) for i in ends}
     proposed_ends = np.r_[np.flatnonzero(np.diff(proposed)), len(freqs)-1]
     proposed_table = {float(freqs[i]): int(proposed[i]) for i in proposed_ends}
-    return dict(status='ok', target_condition=target, target_band=[lower, upper],
+    return dict(status='ok', target_condition=target, target_band=[lower, upper], reference_order=reference_order,
                 tolerance_decades=1, evaluations=len(cache), transitions=rows,
                 manual_table=table, proposed_manual_table=proposed_table, frequencies_hz=freqs,
                 proposed_orders=proposed, adjusted_orders=adjusted)
@@ -129,7 +132,8 @@ def run_condition_preflight(data, cfg, *, runtime=None):
     static = (data['r_arr'], data['th_arr'], data['ph_arr'])
     grid, _ = get_grid_limit(static[1], static[2])
     speed = float(cfg.get('speed_of_sound') or data.get('speed_of_sound_mps') or 343.)
-    cfg = dict(cfg, speed_of_sound=speed)
+    from .utils import grid_reference
+    cfg = dict(cfg, speed_of_sound=speed, kr_reference_radii=grid_reference(*static)[1])
     def coords(i):
         origin = np.zeros(3) if origins is None else origins[indices[i]]/1000.
         return translate_coordinates(*static, origin)

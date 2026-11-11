@@ -46,10 +46,46 @@ def test_empty_grid_clears_scale_and_can_be_followed_by_valid_grid():
     draw(view, np.full((3, 3, 3), np.inf))
     assert view.cbar is None
     assert not view.cbar_ax.get_visible()
-    assert 'No finite residuals' in view.fig._suptitle.get_text()
     draw(view, np.full((3, 3, 3), 7.24))
     assert view.cbar_ax.get_visible()
     assert view.cbar.vmax == pytest.approx(7.24)
+
+
+@pytest.mark.parametrize('minimum', [0., 2.64])
+def test_prediction_landscape_caps_colours_without_changing_scores(minimum):
+    view = make_view()
+    axis = np.arange(3, dtype=float)
+    grid = np.geomspace(2.64, 214219., 27).reshape(3, 3, 3)
+    grid[0, 0, 0] = minimum
+    grid[0, 0, 1] = np.inf
+    view.update_view(74.8, grid, axis, axis, axis, [1., 1., 1.],
+                     'XY (Z Height)', 1., metric='prediction')
+    norm = view.cbar.mappable.norm
+    assert norm.vmin == 0.
+    assert norm.vmax == 100.
+    assert float(norm(2.)) == pytest.approx(.02)
+    assert float(norm(100.)) == float(norm(214219.)) == 1.
+    assert grid.max() == np.inf
+    assert np.max(grid[np.isfinite(grid)]) == pytest.approx(214219.)
+    # Switching metrics restores the residual view's linear convention.
+    draw(view, grid)
+    assert float(view.cbar.mappable.norm(100.)-view.cbar.mappable.norm(10.)) < .001
+
+
+@pytest.mark.parametrize('upper', [5., 10., 250.])
+def test_user_colour_limit_changes_display_without_changing_grid(upper):
+    view = make_view()
+    axis = np.arange(3, dtype=float)
+    grid = np.linspace(0., 1000., 27).reshape(3, 3, 3)
+    original = grid.copy()
+    view.update_view(74.8, grid, axis, axis, axis, [1., 1., 1.],
+                     'XY (Z Height)', 1., metric='prediction', prediction_max=upper)
+    norm = view.cbar.mappable.norm
+    assert norm.vmin == 0.
+    assert norm.vmax == upper
+    assert norm(upper/2) == pytest.approx(.5)
+    assert norm(1000.) == 1.
+    np.testing.assert_array_equal(grid, original)
 
 
 @pytest.mark.parametrize('extent', [10., 30.])

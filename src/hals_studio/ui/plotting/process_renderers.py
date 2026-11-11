@@ -85,13 +85,21 @@ def draw_fdw(host, workspace):
     return view
 
 
+def origin_score_metric(workspace):
+    selector = getattr(workspace, 'origin_score', None)
+    return selector.currentData() if selector is not None else 'residual'
+
+
 def draw_origin_validation(host, workspace):
     self, p = host, workspace
     r = p.results[p.stage]
     kind = p.view.currentText()
     rows=r[0];freqs=sorted(rows);current=np.array([rows[f]['final_c'] for f in freqs]).T;original=np.array([rows[f].get('original_c',rows[f]['final_c']) for f in freqs]).T
-    errors=[rows[f]['error'] for f in freqs];old=[rows[f].get('original_error',rows[f]['error']) for f in freqs]
-    view=VIEWS['ValidationView']();view.update_view(freqs,current,original,errors,old)
+    metric = origin_score_metric(p)
+    key = 'press_pct' if metric == 'prediction' else 'error'
+    errors = [rows[f].get(key, np.nan) for f in freqs]
+    old = [rows[f].get('original_'+key, rows[f].get(key, np.nan)) for f in freqs]
+    view=VIEWS['ValidationView']();view.update_view(freqs,current,original,errors,old, metric=metric)
     waypoints=p.selected_origin_waypoints()
     if waypoints:
         from .origin_editing import waypoint_color
@@ -141,7 +149,11 @@ def draw_origin_grid(host, workspace):
     r = p.results[p.stage]
     kind = p.view.currentText()
     rows=r[0];f=p.sample.currentData() or next(iter(rows));row=rows[f];view=VIEWS['FrequencyBrowser3DView'](r[5]);plane={'XY':'XY (Z Height)','XZ':'XZ (Y Width)','YZ':'YZ (X Depth)'}[p.plane.currentText()]
-    view.update_view(f,row.get('grid'),row['X_vals'],row['Y_vals'],row['Z_vals'],row['final_c'],plane,p.slice_value())
+    metric = origin_score_metric(p)
+    grid = row.get('grid') if row.get('grid_metric', 'residual') == metric else row.get('grid_residual' if metric == 'residual' else 'grid_prediction')
+    maximum = getattr(p, 'prediction_colour_max', None)
+    view.update_view(f,grid,row['X_vals'],row['Y_vals'],row['Z_vals'],row['final_c'],plane,p.slice_value(),
+                     metric=metric, prediction_max=maximum.value() if maximum is not None else 100.)
 
     return view
 

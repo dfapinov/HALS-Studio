@@ -642,8 +642,10 @@ def calc_internal_external_ratio(coeffs):
     return 10 * np.log10((pwr_C + eps) / (pwr_D + eps))
 
 def _worker(args):
-    f, Pk, r_k, th_k, ph_k, N, st_db, mx_db, lam, base_norm, c_sound, kr_offset = args
-    N_kr = get_kr_limit(f, r_k, c_sound, kr_offset)
+    f, Pk, r_k, th_k, ph_k, N, st_db, mx_db, lam, base_norm, c_sound, kr_offset, *reference = args
+    from .utils import grid_reference
+    kr_radius = reference[0] if reference else grid_reference(r_k, th_k, ph_k)[1]
+    N_kr = get_kr_limit(f, kr_radius, c_sound, kr_offset)
     safe_N = min(N, N_kr)
     coeffs, metrics = _solve_one_frequency(
         f_hz=f, P_complex=Pk, coords_sph=(r_k, th_k, ph_k), order_N=safe_N,
@@ -748,6 +750,12 @@ def run_open_branch_optimizer(
         speed_of_sound = float(saved_speed)
         runtime.print(f"Using Stage 2 speed of sound from NPZ: {speed_of_sound:g} m/s")
     f_all = parsed_data['freqs']
+    from .utils import grid_reference
+    kr_geometry = (parsed_data['r_arr'], parsed_data['th_arr'], parsed_data['ph_arr'])
+    from .press_origins import load_plan, retained_data
+    press_plan = load_plan(parsed_data)
+    if press_plan is not None:
+        parsed_data = retained_data(parsed_data, press_plan)
     data_dict = parsed_data['complex_data']
     filenames = parsed_data['filenames']
     r_static = parsed_data['r_arr']
@@ -781,6 +789,7 @@ def run_open_branch_optimizer(
             f"does not contain any frequency bins from {f_all[0]:g}-{f_all[-1]:g} Hz."
         )
     test_indices = select_stage3_frequency_indices(f_all, freq_start_hz, freq_end_hz, octave_resolution)
+    kr_radius = float(max(grid_reference(*kr_geometry)[1]))
     resolution_label = "all bins" if octave_resolution == 0 else f"1/{octave_resolution}-octave"
     runtime.print(f"Stage 3 order test frequency range: {freq_start_hz:g}-{freq_end_hz:g} Hz ({len(test_indices)} sample frequencies, {resolution_label})")
 
@@ -795,7 +804,7 @@ def run_open_branch_optimizer(
             r_k, th_k, ph_k = translate_coordinates(r_static, th_static, ph_static, origin_m)
             base_norm = np.linalg.norm(Pk)
             for N, st_db, mx_db, lam in configs:
-                tasks.append((f, Pk, r_k, th_k, ph_k, N, st_db, mx_db, lam, base_norm, speed_of_sound, kr_offset))
+                tasks.append((f, Pk, r_k, th_k, ph_k, N, st_db, mx_db, lam, base_norm, speed_of_sound, kr_offset, kr_radius))
         backend = "process" if use_process_pool else "thread"
         from hals_studio.process_engine.session_pool import default_worker_count
         max_workers = (getattr(process_pool, 'workers', default_worker_count())

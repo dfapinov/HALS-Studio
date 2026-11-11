@@ -2,9 +2,10 @@
 import numpy as np
 
 
-def add_frequency_cursor(ax, frequency, *, visible=True, extra_pixels=0):
-    """One cursor style for all response plots."""
-    return ax.axvline(frequency, color='#7db0c0', alpha=.35, lw=.8+extra_pixels*72/ax.figure.dpi,
+def add_frequency_cursor(ax, frequency, *, visible=True):
+    """One visible frequency cursor style across response plots and sonograms."""
+    return ax.axvline(frequency, color='#ffffff', alpha=1., lw=1.5,
+                      linestyle=(0, (2, 2)), dash_capstyle='butt', zorder=20,
                       gid='frequency-cursor', visible=visible)
 
 

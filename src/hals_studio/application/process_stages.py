@@ -46,6 +46,8 @@ def prepare_measurements(request, runtime, out, filename, input_name):
 
 
 def search_origins(request, runtime, out, filename, input_name):
+    from hals_studio.process_engine.runtime import EngineRuntime
+    runtime = runtime or EngineRuntime()
     v = request["settings"]
     name = request["name"]
     from hals_studio.process_engine.stage2_centre_origin import (
@@ -59,6 +61,8 @@ def search_origins(request, runtime, out, filename, input_name):
         for row in result[0].values():
             row.setdefault("original_c", np.array(row["final_c"]).copy())
             row.setdefault("original_error", row["error"])
+            if "press_pct" in row:
+                row.setdefault("original_press_pct", row["press_pct"])
         for freq, xyz in request.get("edits", []):
             result[0][float(freq)]["final_c"] = np.asarray(xyz)
         if request["action"] == "rescan":
@@ -77,6 +81,13 @@ def search_origins(request, runtime, out, filename, input_name):
                 )
             cfg.pop("scan_radius_mm", None)  # Full grid re-scans use only manual XYZ bounds.
             cfg["grid_res_mm"] = float(v["grid_res_mm"])
+            if cfg.get('press_enabled'):
+                from scipy.spatial import ConvexHull
+                from hals_studio.process_engine.utils import spherical_to_cartesian
+                xyz = np.column_stack(spherical_to_cartesian(*geom))
+                cfg.update(origin_grid_metric='prediction', origin_grid_xyz=xyz,
+                           origin_grid_hull=ConvexHull(xyz).equations)
+                runtime.print('Grid rescan: leave-one-out prediction at the selected order. This does not repeat LF order selection.')
             for f in request["rescan"]:
                 i = np.argmin(abs(freqs - f))
                 N = get_order_for_frequency(
@@ -85,6 +96,9 @@ def search_origins(request, runtime, out, filename, input_name):
                     cfg.get("target_n_max_origins", 4),
                     cfg.get("N_grid", 999),
                 )
+                if cfg.get('press_enabled'):
+                    N = rows[f]['press_order']
+                runtime.print(f'Rescanning {f:.1f} Hz at N={N}.')
                 pc = (
                     [
                         (
@@ -98,13 +112,18 @@ def search_origins(request, runtime, out, filename, input_name):
                     cfg,
                 )
                 x, y, z, grid = generate_3d_landscape_volumetric(pc, runtime=runtime)
+                if not np.isfinite(grid).any():
+                    raise ValueError('No usable origin in this grid. Choose bounds inside the microphone grid or a finer grid spacing.')
                 idx = np.unravel_index(np.argmin(grid), grid.shape)
                 seed = (x[idx[0]], y[idx[1]], z[idx[2]])
                 from hals_studio.process_engine.process_progress import Progress
 
                 refining = runtime.progress("Stage 2 refining grid origin", 1)
                 centre, path = run_simplex_descent_3d(seed, pc, runtime=runtime)
-                rows[f].update(grid=grid, X_vals=x, Y_vals=y, Z_vals=z, final_c=centre, path=path)
+                from hals_studio.process_engine.stage2_centre_origin import solve_physics_3d
+                if solve_physics_3d(*centre, pc) > grid[idx]:
+                    centre = np.asarray(seed)
+                rows[f].update(grid_residual=cfg.pop('origin_grid_residuals', None), grid_metric='prediction' if cfg.get('press_enabled') else 'residual', grid=grid, X_vals=x, Y_vals=y, Z_vals=z, final_c=centre, path=path)
                 refining.advance()
     else:
         result = run_origin_search(
@@ -130,12 +149,16 @@ def search_origins(request, runtime, out, filename, input_name):
             read_cache_file=request.get("origin_cache", ""),
             hold_origin_lf=v.get("hold_origin_lf", True),
             hold_origin_hf=v.get("hold_origin_hf", True),
+            press_enabled=True,
+            press_residual_seed=v.get('press_residual_seed', False),
+            press_blacklist='',
+            kr_offset=float(request.get('press_kr_offset', 2.)),
             runtime=runtime,
         )
     if result is None:
         raise ValueError("Origin search returned no results")
     rows, freqs, keys, d, geom, cfg, data = result
-    if request.get("action") in ("rescan", "save_origins"):
+    if request.get("action") in ("rescan", "save_origins") and not cfg.get('press_enabled'):
         from hals_studio.process_engine.stage2_centre_origin import (
             solve_physics_3d,
             get_order_for_frequency,
@@ -165,6 +188,26 @@ def search_origins(request, runtime, out, filename, input_name):
     cfg.update(
         hold_origin_lf=v.get("hold_origin_lf", True), hold_origin_hf=v.get("hold_origin_hf", True)
     )
+    if cfg.get('press_enabled'):
+        if not np.isclose(float(request.get('press_kr_offset', cfg['kr_offset'])), cfg['kr_offset']):
+            raise ValueError('KR offset changed. Rerun Stage 2.')
+        from hals_studio.process_engine.press_fitting import basis, prediction_fit
+        from hals_studio.process_engine.utils import spherical_to_cartesian
+        from hals_studio.process_engine.press_origins import VERSION
+        if cfg.get('press_plan_version') != VERSION:
+            raise ValueError('Cached origin-search results use an older format. Rerun Stage 2.')
+        xyz = np.column_stack(spherical_to_cartesian(*geom))
+        for f, row in rows.items():
+            previous = row.get('press_evaluated_c', row.get('original_c', row['final_c']))
+            if np.allclose(previous, row['final_c'], atol=1e-8, rtol=0):
+                continue
+            index = int(np.argmin(abs(freqs-f)))
+            pressure = np.array([d[name][index] for name in keys])
+            k = 2*np.pi*f/cfg['speed_of_sound']
+            _, metric = prediction_fit(basis(xyz, np.asarray(row['final_c'])/1000, row['press_order'], k), pressure)
+            row.update(error=metric['training_pct'], press_pct=metric['press_pct'],
+                       press_evaluated_c=np.asarray(row['final_c']).copy(), press_reference_settled=None)
+            runtime.print(f'Manual leave-one-out prediction origin at {f:g} Hz: fit error refreshed; original convergence check no longer applies.')
     if request.get("preview_only"):
         return process_cache.compact(2, result)
     return persist_origin_result(result, v, out, filename, runtime)
@@ -197,6 +240,7 @@ def persist_origin_result(result, settings, out, filename, runtime=None):
         hold_origin_lf=v.get("hold_origin_lf", True),
         hold_origin_hf=v.get("hold_origin_hf", True),
         runtime=runtime,
+        press_state=(rows, geom, cfg) if cfg.get('press_enabled') else None,
     )
     result = OriginResult(rows, freqs, keys, d, geom, cfg, dict(data))
 

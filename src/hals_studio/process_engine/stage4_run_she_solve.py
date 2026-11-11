@@ -66,7 +66,7 @@ def _get_table_limit(f_hz: float, use_manual_table: bool, manual_order_table: di
 
 
 def proposed_order(f, r, N_grid, cfg):
-    N_kr = get_kr_limit(f, r, cfg['speed_of_sound'], cfg['kr_offset'])
+    N_kr = get_kr_limit(f, cfg.get('kr_reference_radii', r), cfg['speed_of_sound'], cfg['kr_offset'])
     N_table = _get_table_limit(f, cfg['use_manual_table'], cfg['manual_order_table'])
 
     N_target = min(N_kr, N_grid, N_table, cfg['target_n_max'])
@@ -93,6 +93,12 @@ def _init_worker(log_file_path: Optional[str] = None):
         handlers=handlers,
         force=True
     )
+
+def _solve_log(frequency, order, residual, reason, *, finished=True):
+    status = 'Finished' if finished else 'Stopped'
+    return (f'{frequency:8.2f} Hz | N={order:2d} | residual {residual:6.2f}% | '
+            f'{status}: {reason}')
+
 
 def _worker_wrapper(args: Tuple) \
         -> Tuple[int, np.ndarray, float, float, int, np.ndarray, str]:
@@ -132,19 +138,29 @@ def _worker_wrapper(args: Tuple) \
     base_norm = np.linalg.norm(Pk)
     pct_err = resid_norm / max(base_norm, 1e-20) * 100.0
     
-    if cfg['condition_metrics']:
-        if cfg.get('max_lambda', 0.0) > 0.0:
-            log_msg = f"{f:6.2f} Hz N={final_N} Resid={pct_err:.2f}% Pre-Cond={metrics['cond_pre']:.2e} Post-Cond={metrics['cond_post']:.2e} -> {stop_reason}"
-        else:
-            log_msg = f"{f:6.2f} Hz N={final_N} Resid={pct_err:.2f}% Condition Number={metrics['cond_pre']:.2e} -> {stop_reason}"
-    else:
-        log_msg = f"{f:6.2f} Hz N={final_N} Resid={pct_err:.2f}% -> {stop_reason}"
+    labels = {'Optimized Growth': 'KR rule (optimised growth)', 'KR-Limit': 'KR rule',
+              'Manual Table': 'manual order table', 'Grid-Limit': 'measurement grid limit',
+              'User Hard Cap Reached': 'maximum order'}
+    log_msg = _solve_log(f, final_N, pct_err, labels.get(stop_reason, stop_reason),
+                         finished=final_N == N_target)
 
     return k_idx, coeffs, resid_norm, metrics['cond_post'], final_N, metrics['residual_vector'], log_msg
 
 # =============================================================================
 # --- Main Driver Logic ---
 # =============================================================================
+
+def _press_worker(args):
+    k_idx, f, pressure, r, th, ph, grid, cfg = args
+    k = 2*np.pi*f/cfg['speed_of_sound']
+    coeff, metrics = _solve_one_frequency(f, pressure, (r, th, ph), cfg['press_order'], k_val=k,
+        CONDITION_METRICS=cfg['condition_metrics'], noise_floor_start_db=cfg['noise_floor_start_db'],
+        noise_floor_max_db=cfg['noise_floor_max_db'], max_lambda=cfg['max_lambda'])
+    error = 100*metrics['residual_norm']/max(np.linalg.norm(pressure), 1e-20)
+    finished = metrics['final_N'] == cfg['press_order']
+    reason = cfg.get('press_order_source', 'KR rule') if finished else metrics.get('stop_reason', 'solver stopped early')
+    log = _solve_log(f, metrics['final_N'], error, reason, finished=finished)
+    return k_idx, coeff, metrics['residual_norm'], metrics['cond_post'], metrics['final_N'], metrics['residual_vector'], log
 def run_she_solve(
     input_filename_she: str,
     output_filename_she: str,
@@ -210,6 +226,8 @@ def run_she_solve(
             raise FileNotFoundError(f"ERROR: Input file '{input_npz_path}' not found.")
         
         parsed_data = load_and_parse_npz(input_npz_path)
+        from .press_origins import load_plan, retained_data, validate_saved, solve_schedule
+        press_plan = load_plan(parsed_data)
         saved_speed = parsed_data.get('speed_of_sound_mps')
         if use_saved_speed and saved_speed is not None:
             speed_of_sound = float(saved_speed)
@@ -229,9 +247,22 @@ def run_she_solve(
             'max_lambda': max_lambda,
             'kr_offset': kr_offset
         }
+        from .utils import grid_reference
+        worker_cfg['kr_reference_radii'] = float(max(grid_reference(parsed_data['r_arr'], parsed_data['th_arr'], parsed_data['ph_arr'])[1]))
+        saved_orders = None
+        press_growth_result = None
+        if press_plan is not None:
+            lf_orders = validate_saved(parsed_data, press_plan, speed_of_sound, target_n_max,
+                                         use_manual_table, use_optimized_origins, kr_offset)
+            parsed_data = retained_data(parsed_data, press_plan)
+            saved_orders, press_growth_result = solve_schedule(parsed_data, press_plan, lf_orders, target_n_max,
+                                                              condition_preflight, runtime)
+            logger.info('Using Stage 2 origins and LF orders; KR controls higher-frequency order growth.')
 
         preflight = None
-        if condition_preflight and not use_manual_table:
+        if press_plan is not None:
+            preflight = press_growth_result
+        elif condition_preflight and not use_manual_table:
             from hals_studio.process_engine.condition_preflight import run_condition_preflight
             logger.info('Optimising order growth for Stage 4 target N=%s (maximum frequency delay: 3x).', target_n_max)
             # The optimized schedule is private to this solve; never overwrite the
@@ -293,13 +324,18 @@ def run_she_solve(
             # Calculate translated spherical coordinates for this specific frequency bin
             origin_m = origins_sel_mm[k] / 1000.0
             r_k, th_k, ph_k = translate_coordinates(r_static, th_static, ph_static, origin_m)
-            tasks.append((k, f_sel[k], P[k], r_k, th_k, ph_k, N_grid, worker_cfg))
+            cfg = worker_cfg if press_plan is None else dict(worker_cfg,
+                press_order=int(saved_orders[idx[k]]),
+                press_order_source=('LF-optimised schedule' if lf_orders[idx[k]] > 0
+                                    and saved_orders[idx[k]] == lf_orders[idx[k]] else 'KR rule'))
+            tasks.append((k, f_sel[k], P[k], r_k, th_k, ph_k, N_grid, cfg))
     
         # 6. Execution
         from hals_studio.process_engine.process_progress import Progress, completed_map
         solving = runtime.progress("Stage 4 solve", K, console=False)
         def consume_results(results_iter):
-            for k, cfs, resid, cond, n_val, r_vec, log_msg in results_iter:
+            for result in results_iter:
+                k, cfs, resid, cond, n_val, r_vec, log_msg = result
                 res_coeffs[k, :len(cfs)] = cfs
                 res_resid[k], res_cond[k], res_N[k] = resid, cond, n_val
                 res_resid_vec[k, :] = r_vec
@@ -313,10 +349,10 @@ def run_she_solve(
                 initializer=_init_worker,
                 initargs=(log_file_path,)
             ) as pool:
-                consume_results(pool.imap_unordered(_worker_wrapper, tasks))
+                consume_results(pool.imap_unordered(_press_worker if press_plan is not None else _worker_wrapper, tasks))
         else:
             with ThreadPoolExecutor(max_workers=jobs) as executor:
-                consume_results(runtime.completed(executor, _worker_wrapper, tasks))
+                consume_results(runtime.completed(executor, _press_worker if press_plan is not None else _worker_wrapper, tasks))
 
         bn = np.linalg.norm(P, axis=1)
         pct_error = res_resid / np.maximum(bn, 1e-20) * 100.0
@@ -334,6 +370,12 @@ def run_she_solve(
                 h[schema.ORIGINS_MM] = origins_sel_mm # Saved so reconstruction scripts can extract and shift observation coords
                 h[schema.PCT_ERROR] = pct_error
                 h[schema.SPEED_OF_SOUND_MPS] = np.array(float(speed_of_sound), dtype=np.float64)
+                if press_plan is not None:
+                    import json
+                    h['press_plan_json'] = json.dumps(press_plan)
+                    h['press_solve_plan_json'] = json.dumps(dict(target_max=target_n_max, growth_enabled=condition_preflight,
+                        growth={key: value for key, value in preflight.items() if key not in ('frequencies_hz','proposed_orders','adjusted_orders')}))
+                    h['measurement_filenames'] = np.asarray(keys, dtype=h5py.string_dtype('utf-8'))
                 if fs_common is not None:
                     h[schema.FS] = fs_common
             
@@ -358,6 +400,7 @@ def run_she_solve(
         return {
             "coeffs": res_coeffs,
             "condition_preflight": preflight,
+            "press_order_schedule": saved_orders[idx] if saved_orders is not None else None,
             "freqs": f_sel,
             "pct_error": pct_error,
             "cond": res_cond,
