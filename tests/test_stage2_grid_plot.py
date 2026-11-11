@@ -52,7 +52,7 @@ def test_empty_grid_clears_scale_and_can_be_followed_by_valid_grid():
 
 
 @pytest.mark.parametrize('minimum', [0., 2.64])
-def test_prediction_landscape_preserves_large_range_and_separates_low_scores(minimum):
+def test_prediction_landscape_caps_colours_without_changing_scores(minimum):
     view = make_view()
     axis = np.arange(3, dtype=float)
     grid = np.geomspace(2.64, 214219., 27).reshape(3, 3, 3)
@@ -61,10 +61,12 @@ def test_prediction_landscape_preserves_large_range_and_separates_low_scores(min
     view.update_view(74.8, grid, axis, axis, axis, [1., 1., 1.],
                      'XY (Z Height)', 1., metric='prediction')
     norm = view.cbar.mappable.norm
-    assert norm.vmin == minimum
-    assert norm.vmax == pytest.approx(214219.)
-    assert np.isfinite(norm(minimum))
-    assert float(norm(100.)-norm(10.)) > .1
+    assert norm.vmin == 0.
+    assert norm.vmax == 100.
+    assert float(norm(2.)) == pytest.approx(.02)
+    assert float(norm(100.)) == float(norm(214219.)) == 1.
+    assert grid.max() == np.inf
+    assert np.max(grid[np.isfinite(grid)]) == pytest.approx(214219.)
     # Switching metrics restores the residual view's linear convention.
     draw(view, grid)
     assert float(view.cbar.mappable.norm(100.)-view.cbar.mappable.norm(10.)) < .001
