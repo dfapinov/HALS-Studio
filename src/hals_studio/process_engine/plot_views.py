@@ -244,7 +244,15 @@ class FrequencyBrowser3DView:
             # Avoid Matplotlib expanding a constant zero range below zero.
             if vmin == vmax:
                 vmin, vmax = 0.0, max(float(vmax), 1.0)
-            norm = plt.Normalize(vmin=vmin, vmax=vmax)
+            logarithmic = metric == 'prediction' and finite_values.min() != finite_values.max()
+            if logarithmic:
+                from matplotlib.colors import LogNorm, SymLogNorm
+                # Deletion errors can span many decades near the grid boundary.
+                # Retain the full range, including exact zero if present.
+                norm = (LogNorm(vmin=vmin, vmax=vmax) if vmin > 0 else
+                        SymLogNorm(linthresh=1., vmin=vmin, vmax=vmax, base=10))
+            else:
+                norm = plt.Normalize(vmin=vmin, vmax=vmax)
             sm = plt.cm.ScalarMappable(cmap='viridis', norm=norm)
             sm.set_array([])
             
@@ -274,7 +282,8 @@ class FrequencyBrowser3DView:
             
             if self.cbar is None: self.cbar = self.fig.colorbar(sm, cax=self.cbar_ax)
             else: self.cbar.update_normal(sm)
-            self.cbar.set_label('Prediction Error (%)' if metric == 'prediction' else 'Residual Error (%)')
+            self.cbar.set_label(('Prediction Error (%) - logarithmic scale' if logarithmic else
+                                 'Prediction Error (%)') if metric == 'prediction' else 'Residual Error (%)')
             grid_min_text = f"{finite_values.min():.2f}%"
         else:
             grid_min_text = ("N/A (rescan to calculate this score)" if grid_3d is None

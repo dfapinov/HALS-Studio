@@ -52,6 +52,8 @@ The log also reports which LF orders were selected. A **provisional** warning me
 
 Use **Score** to switch between **Residual error** and **Leave-one-out prediction**. The choice changes the percentages on the main origin graphs, the selected-point readout and the colour scale on a grid landscape. The origin search and grid refinement still use leave-one-out prediction.
 
+Prediction landscapes use a logarithmic colour scale because a few poor origin positions can produce very large prediction errors. The colour-bar values are still percentages, and the full score range is retained. Residual landscapes use a linear colour scale.
+
 New grid rescans calculate both scores together, so switching the display does not require another scan. Older saved grids may contain only residual scores; rescan the frequency to obtain both. A grid rescan stays at the selected order for that frequency and does not repeat the LF order comparisons.
 
 ### Waypoint References
