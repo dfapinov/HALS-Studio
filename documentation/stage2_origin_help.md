@@ -52,7 +52,7 @@ The log also reports which LF orders were selected. A **provisional** warning me
 
 Use **Score** to switch between **Residual error** and **Leave-one-out prediction**. The choice changes the percentages on the main origin graphs, the selected-point readout and the colour scale on a grid landscape. The origin search and grid refinement still use leave-one-out prediction.
 
-Prediction landscapes use a 0-100% colour scale. All scores at or above 100% share the top colour: these predictions are no better than predicting silence. Hover over a grid point to see its actual score, including values above 100%. The stored scores are unchanged. Residual landscapes use their measured range.
+Prediction landscapes start with a 0-100% colour scale. Use **Prediction colour range** below the viewer controls to set a lower maximum, such as 5% or 10%, when you want to see the gradient around a good origin. Scores above your chosen maximum share the top colour. This changes the display only: 2% still means 2%, and hovering over a grid point shows its actual score. Scores at or above 100% are no better than predicting silence. Residual landscapes use their measured range.
 
 New grid rescans calculate both scores together, so switching the display does not require another scan. Older saved grids may contain only residual scores; rescan the frequency to obtain both. A grid rescan stays at the selected order for that frequency and does not repeat the LF order comparisons.
 

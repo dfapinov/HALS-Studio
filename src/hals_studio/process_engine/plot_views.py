@@ -263,11 +263,15 @@ class FrequencyBrowser3DView:
             self.fig.canvas.draw_idle()
 
 
-    def update_view(self, f, grid_3d, xv, yv, zv, final_c, plane, val, metric="residual"):
+    def update_view(self, f, grid_3d, xv, yv, zv, final_c, plane, val, metric="residual", prediction_max=100.):
         while self.ax.collections: self.ax.collections[0].remove()
         for line in self.ax.lines: line.remove()
             
         actual_val = val
+        if metric == 'prediction' and (not np.isfinite(prediction_max) or prediction_max <= 0):
+            raise ValueError('Prediction colour maximum must be finite and positive.')
+        self._score_scale_note.set_text('>=100%: poor prediction' if prediction_max == 100. else
+                                        f'Colours capped at {prediction_max:g}%')
         self._score_scale_note.set_visible(metric == 'prediction' and grid_3d is not None and np.isfinite(grid_3d).any())
         finite_values = (grid_3d[np.isfinite(grid_3d)]
                          if grid_3d is not None else np.array([]))
@@ -278,7 +282,7 @@ class FrequencyBrowser3DView:
             if vmin == vmax:
                 vmin, vmax = 0.0, max(float(vmax), 1.0)
             if metric == 'prediction':
-                norm = plt.Normalize(vmin=0., vmax=100., clip=True)
+                norm = plt.Normalize(vmin=0., vmax=prediction_max, clip=True)
             else:
                 norm = plt.Normalize(vmin=vmin, vmax=vmax)
             sm = plt.cm.ScalarMappable(cmap='viridis', norm=norm)
@@ -314,8 +318,9 @@ class FrequencyBrowser3DView:
             else: self.cbar.update_normal(sm)
             self.cbar.set_label('Prediction Error (%)' if metric == 'prediction' else 'Residual Error (%)')
             if metric == 'prediction':
-                self.cbar.set_ticks([0., 20., 40., 60., 80., 100.],
-                                   labels=['0', '20', '40', '60', '80', '>=100'])
+                ticks = np.linspace(0., prediction_max, 6)
+                self.cbar.set_ticks(ticks, labels=[f'{value:g}' for value in ticks[:-1]]+
+                                    [f'>={prediction_max:g}'])
             grid_min_text = f"{finite_values.min():.2f}%"
         else:
             grid_min_text = ("N/A (rescan to calculate this score)" if grid_3d is None

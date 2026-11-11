@@ -82,6 +82,21 @@ class ProcessWorkspace(W.QWidget):
         self.stage3_tools=W.QWidget();s3=W.QHBoxLayout(self.stage3_tools);s3.setContentsMargins(0,0,0,0);s3.addWidget(W.QLabel('Sound power reference'));self.reference_order.setMaximumWidth(200);s3.addWidget(self.reference_order);s3.addStretch();bar.insertWidget(0,self.stage3_tools)
         self.order_choice.hide()
 
+        self.grid_colour_tools = W.QWidget()
+        colour_row = W.QHBoxLayout(self.grid_colour_tools)
+        colour_row.setContentsMargins(0, 0, 0, 0)
+        colour_row.addWidget(W.QLabel('Prediction colour range: 0 to'))
+        self.prediction_colour_max = W.QDoubleSpinBox()
+        self.prediction_colour_max.setRange(.01, 1000000000.)
+        self.prediction_colour_max.setDecimals(2)
+        self.prediction_colour_max.setValue(100.)
+        self.prediction_colour_max.setSuffix(' %')
+        self.prediction_colour_max.setKeyboardTracking(False)
+        self.prediction_colour_max.setToolTip('Lower this maximum to reveal differences near the minimum, for example 5% or 10%. Higher scores share the top colour. Hover shows the actual score.')
+        self.prediction_colour_max.valueChanged.connect(self.draw)
+        colour_row.addWidget(self.prediction_colour_max)
+        colour_row.addStretch()
+        resultbox.addWidget(self.grid_colour_tools)
         self.origin_plot_tools=W.QWidget();origin_tools=W.QHBoxLayout(self.origin_plot_tools);origin_tools.setContentsMargins(0,0,0,0)
         self.origin_waypoint_box=W.QWidget();self.origin_waypoint_layout=W.QHBoxLayout(self.origin_waypoint_box);self.origin_waypoint_layout.setContentsMargins(0,0,0,0)
         self.origin_waypoint_checks={};self._origin_waypoint_project=None;origin_tools.addWidget(self.origin_waypoint_box)
@@ -525,6 +540,8 @@ class ProcessWorkspace(W.QWidget):
         return [(index,name,xyz) for index,(name,xyz) in enumerate(points) if self.origin_waypoint_checks[index,name].isChecked()]
 
     def draw(self,*_):
+        self.grid_colour_tools.setVisible(self.stage == 2 and self.view.currentText() == '3D grid scan'
+                                          and self.origin_score.currentData() == 'prediction')
         self.origin_plot_tools.setVisible(self.stage==2 and self.view.currentText()=='Validation')
         self.origin_edit_note.setVisible(self.stage==2)
         if self.stage==0:return

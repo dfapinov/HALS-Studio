@@ -151,7 +151,9 @@ def draw_origin_grid(host, workspace):
     rows=r[0];f=p.sample.currentData() or next(iter(rows));row=rows[f];view=VIEWS['FrequencyBrowser3DView'](r[5]);plane={'XY':'XY (Z Height)','XZ':'XZ (Y Width)','YZ':'YZ (X Depth)'}[p.plane.currentText()]
     metric = origin_score_metric(p)
     grid = row.get('grid') if row.get('grid_metric', 'residual') == metric else row.get('grid_residual' if metric == 'residual' else 'grid_prediction')
-    view.update_view(f,grid,row['X_vals'],row['Y_vals'],row['Z_vals'],row['final_c'],plane,p.slice_value(), metric=metric)
+    maximum = getattr(p, 'prediction_colour_max', None)
+    view.update_view(f,grid,row['X_vals'],row['Y_vals'],row['Z_vals'],row['final_c'],plane,p.slice_value(),
+                     metric=metric, prediction_max=maximum.value() if maximum is not None else 100.)
 
     return view
 

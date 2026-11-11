@@ -72,6 +72,22 @@ def test_prediction_landscape_caps_colours_without_changing_scores(minimum):
     assert float(view.cbar.mappable.norm(100.)-view.cbar.mappable.norm(10.)) < .001
 
 
+@pytest.mark.parametrize('upper', [5., 10., 250.])
+def test_user_colour_limit_changes_display_without_changing_grid(upper):
+    view = make_view()
+    axis = np.arange(3, dtype=float)
+    grid = np.linspace(0., 1000., 27).reshape(3, 3, 3)
+    original = grid.copy()
+    view.update_view(74.8, grid, axis, axis, axis, [1., 1., 1.],
+                     'XY (Z Height)', 1., metric='prediction', prediction_max=upper)
+    norm = view.cbar.mappable.norm
+    assert norm.vmin == 0.
+    assert norm.vmax == upper
+    assert norm(upper/2) == pytest.approx(.5)
+    assert norm(1000.) == 1.
+    np.testing.assert_array_equal(grid, original)
+
+
 @pytest.mark.parametrize('extent', [10., 30.])
 def test_synthetic_physics_grid_and_all_plot_planes(extent):
     from hals_studio.process_engine import stage2_centre_origin as stage
