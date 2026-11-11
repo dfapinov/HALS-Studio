@@ -88,6 +88,8 @@ def select_local(candidates, baseline, ceiling):
 
 def sweep_direction(payload, runtime, advance):
     direction, xyz, hull, anchor_f, pressures, cap, cfg, tweeter_mm, residual_seeds = payload
+    label = 'High to low' if direction == 'down' else 'Low to high'
+    runtime.print(f'{label} pass starting: N={cap}, {len(anchor_f)} frequencies.')
     results = {}
     seed = np.asarray(tweeter_mm)/1000 if direction == 'down' else np.zeros(3)
     indices = range(len(anchor_f)-1, -1, -1) if direction == 'down' else range(len(anchor_f))
@@ -100,9 +102,10 @@ def sweep_direction(payload, runtime, advance):
             candidate = min((candidate, extra), key=lambda c: c['press_pct'])
         seed = candidate['origin']
         results[i] = candidate
-        runtime.print(f'leave-one-out prediction unweighted {direction} {f:.2f} Hz N={cap}: {candidate["press_pct"]:.4g}%'+
+        runtime.print(f'[{label}] {len(results)}/{len(anchor_f)} | {f:.2f} Hz | N={cap} | prediction error {candidate["press_pct"]:.3f}%'+
                       ('' if candidate['converged'] else ' (iteration limit; provisional)'))
         advance()
+    runtime.print(f'{label} pass complete.')
     return results
 
 
@@ -134,10 +137,44 @@ def refine_anchor(payload, runtime):
         error=chosen['training_pct'], grid=None, X_vals=None, Y_vals=None, Z_vals=None,
         press_order=selected, press_pct=chosen['press_pct'], press_candidates=diagnostic,
         press_reference_settled=settled)
-    runtime.print(f'LF/order {f:.2f} Hz: KR={base[i]}, selected N={selected}, upper reference settled={settled}')
-    if settled is False or not chosen['adequate']:
-        runtime.print(f'Warning: {f:.2f} Hz order selection is provisional; the upper reference or prediction has not passed the checks.')
+    if base[i] < cap:
+        runtime.print(f'[LF order] {f:.2f} Hz | tested N={int(base[i])} to {cap} | selected N={selected} | '
+                      f'internal pressure change {chosen["field_difference_pct"]:.2f}% | '
+                      f'power change {abs(chosen["power_difference_db"]):.2f} dB')
+    reasons = []
+    if not chosen['converged']:
+        reasons.append('selected origin reached the iteration limit')
+    if chosen['press_pct'] >= 100:
+        reasons.append('prediction error is too high')
+    if settled is False:
+        if not candidates[cap]['converged'] or not previous['converged']:
+            reasons.append('upper-order comparison did not converge')
+        else:
+            reasons.append(f'N={cap-1} and N={cap} still differ by more than 5% pressure or 1 dB power')
+    if reasons:
+        runtime.print(f'Warning at {f:.2f} Hz: provisional result - '+ '; '.join(reasons)+'.')
     return float(f), row
+
+
+def announce_order_phase(frequencies, baseline, cap, runtime):
+    count = int(np.count_nonzero(baseline < cap))
+    runtime.print('\nBoth origin passes complete; keeping the lower prediction error at each frequency.')
+    runtime.print('2. LF order selection - comparing the internal field and sound power')
+    runtime.print(f'{count} frequencies need lower-order comparisons; '
+                  f'{len(frequencies)-count} already reach the search ceiling under KR.')
+    runtime.print('Acceptable change from the upper-order reference: 5% pressure and 1 dB sound power.')
+
+
+def report_order_completion(rows, cfg, runtime):
+    runtime.print('\nLF order selection complete.')
+    crossover = max(0., cfg['press_search_cap']-cfg['kr_offset'])*cfg['speed_of_sound']/(2*np.pi*cfg['grid_radius_m'])
+    runtime.print(f'Handover to the KR rule at about {crossover:.1f} Hz, where KR reaches N={cfg["press_search_cap"]}.')
+    runtime.print('Above this handover, Stage 4 controls order growth; origins were still searched across the full test range.')
+    provisional = sum(row['press_reference_settled'] is False or any(
+        c['order'] == row['press_order'] and not c['adequate'] for c in row['press_candidates'])
+        for row in rows.values())
+    if provisional:
+        runtime.print(f'{provisional} of {len(rows)} frequencies have provisional results; see the warnings above.')
 
 
 def run_search(frequencies, anchor_indices, names, spectra, geometry, cfg, tweeter_mm, runtime, residual_seeds=None):
@@ -152,13 +189,22 @@ def run_search(frequencies, anchor_indices, names, spectra, geometry, cfg, tweet
     anchor_f = np.asarray(frequencies)[anchor_indices]
     pressures = [np.array([spectra[name][i] for name in names]) for i in anchor_indices]
     base = plain_orders(anchor_f, cfg['grid_radius_m'], cfg['speed_of_sound'], cap, cfg['kr_offset'])
-    runtime.print('Stage 2: equal-weight full-order leave-one-out prediction origins, then LF order comparisons.')
+    runtime.print(f'\n1. Origin search - leave-one-out prediction')
+    runtime.print(f'{len(names)} recordings | {len(anchor_f)} frequencies | '
+                  f'{anchor_f[0]:.2f} to {anchor_f[-1]:.2f} Hz | search order N={cap}')
+    if cap < int(cfg['target_n_max_origins']):
+        runtime.print(f'Requested N={cfg["target_n_max_origins"]} reduced to N={cap} by measurement support.')
+    runtime.print('Two passes run together: low to high from coordinate zero; high to low from the tweeter seed.')
     pool = runtime.borrow_pool() if cfg.get('use_process_pool', True) else None
     if pool is not None:
         from .origin_workers import pooled_search
-        return pooled_search(pool, xyz, hull, anchor_f, pressures, cap, base, cfg,
+        runtime.print(f'Using the shared pool ({pool.workers} workers).')
+        rows = pooled_search(pool, xyz, hull, anchor_f, pressures, cap, base, cfg,
                              tweeter_mm, residual_seeds, runtime)
-    progress = runtime.progress('Stage 2 unweighted leave-one-out prediction directions', 2*len(anchor_f))
+        report_order_completion(rows, cfg, runtime)
+        return rows
+    runtime.print('Using local threads.')
+    progress = runtime.progress('Stage 2 - origin search (both directions)', 2*len(anchor_f))
     def sweep(direction):
         return sweep_direction((direction, xyz, hull, anchor_f, pressures, cap, cfg,
                                 tweeter_mm, residual_seeds), runtime, progress.advance)
@@ -168,6 +214,7 @@ def run_search(frequencies, anchor_indices, names, spectra, geometry, cfg, tweet
         up, down = up.result(), down.result()
     initial = {i: min((up[i], down[i]), key=lambda c: c['press_pct']) for i in range(len(anchor_f))}
     rows = {}
+    announce_order_phase(anchor_f, base, cap, runtime)
     refining = runtime.progress('Stage 2 LF order comparisons', len(anchor_f))
     def refine(i):
         return refine_anchor((i, xyz, pressures, anchor_f, cap, base, initial, cfg, hull), runtime)
@@ -175,6 +222,7 @@ def run_search(frequencies, anchor_indices, names, spectra, geometry, cfg, tweet
         for f, row in runtime.completed(executor, refine, range(len(anchor_f))):
             rows[f] = row
             refining.advance()
+    report_order_completion(rows, cfg, runtime)
     return rows
 
 
@@ -184,7 +232,7 @@ def finalize(rows, frequencies, geometry, cfg, runtime):
     anchors = np.array(sorted(rows))
     positions = np.array([rows[x]['final_c'] for x in anchors])
     if cfg.get('press_plan_version') != VERSION:
-        raise ValueError('Cached leave-one-out prediction results predate equal-weight-only fitting. Rerun Stage 2.')
+        raise ValueError('Cached origin-search results use an older format. Rerun Stage 2.')
     signature = (positions.tobytes(), tuple(rows[x]['press_order'] for x in anchors),
                  bool(cfg['hold_origin_lf']),
                  bool(cfg['hold_origin_hf']), cfg['speed_of_sound'], cfg['kr_offset'])
@@ -227,7 +275,7 @@ def load_plan(data):
         return None
     plan = json.loads(str(np.asarray(value).item()))
     if plan.get('version') != VERSION or plan.get('weighting', False):
-        raise ValueError('This leave-one-out prediction plan predates equal-weight-only fitting or is unsupported. Rerun Stage 2.')
+        raise ValueError('This saved origin-search plan uses an older or unsupported format. Rerun Stage 2.')
     return plan
 
 

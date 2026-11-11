@@ -743,6 +743,8 @@ def run_origin_search(
 
     runtime.print("--- Stage 2 Acoustic Origin Search ---")
     runtime.print(
+        "Search method: leave-one-out prediction with simplex optimisation."
+        if press_enabled else
         "Search mode: full volumetric grid scan with simplex refinement."
         if enable_full_grid_scan else
         "Search mode: simplex origin search (full grid scan disabled)."
@@ -835,6 +837,7 @@ def run_origin_search(
         from .press_origins import run_search, finalize
         seeds = None
         if press_residual_seed:
+            runtime.print('Optional residual seed pre-pass: running low-to-high and high-to-low searches.')
             sweeper = DynamicBranchSweeper(actual_freqs_asc, f_indices_asc, keys, d_dict, r_arr, th_arr, ph_arr, cfg, runtime=runtime)
             with ThreadPoolExecutor(max_workers=2) as executor:
                 hf = executor.submit(sweeper.run_dynamic_branch, 'Residual HF -> LF', sweeper.get_next_hf, tweeter_coords_mm)
@@ -842,9 +845,12 @@ def run_origin_search(
                 hf, lf = hf.result(), lf.result()
             seeds = {f: min((hf[f], lf[f]), key=lambda row: row['error']) for f in actual_freqs_asc}
         geometry = (r_arr, th_arr, ph_arr)
-        runtime.print(f'leave-one-out prediction: all {len(keys)} retained recordings; unscaled QR, no damping or outer holdout.')
+        if press_residual_seed:
+            runtime.print('Residual pre-pass complete; its origins will provide extra prediction-search seeds.')
         sweep_results = run_search(f_all, f_indices_asc, keys, d_dict, geometry, cfg, tweeter_coords_mm, runtime, seeds)
+        runtime.print('\n3. Preparing results - interpolating origins and LF orders onto the full frequency grid.')
         finalize(sweep_results, f_all, geometry, cfg, runtime)
+        runtime.print(f'Stage 2 search complete in {time.time()-stage_start_time:.1f} seconds.')
         if return_state:
             return sweep_results, f_all, keys, d_dict, geometry, cfg, data
         positions = np.array([sweep_results[f]['final_c'] for f in sorted(sweep_results)])

@@ -8,8 +8,14 @@ from .runtime import EngineRuntime
 
 def _worker(payload):
     kind, data, cancelled, messages = payload
-    runtime = EngineRuntime(output=lambda text: messages.put(('text', text)),
-                            cancelled=cancelled.is_set)
+    pending = ['']
+    def output(text):
+        # Send complete lines so simultaneous directions cannot interleave text.
+        pending[0] += text
+        while '\n' in pending[0]:
+            line, pending[0] = pending[0].split('\n', 1)
+            messages.put(('text', line+'\n'))
+    runtime = EngineRuntime(output=output, cancelled=cancelled.is_set)
     from .press_origins import sweep_direction, refine_anchor
     if kind == 'refine':
         result = refine_anchor(data, runtime)
@@ -41,7 +47,7 @@ def _run(pool, tasks, runtime, label, total):
                 if kind == 'tick':
                     progress.advance()
                 else:
-                    runtime.print(value)
+                    runtime.stream.write(value)
         with ThreadPoolExecutor(max_workers=1) as coordinator:
             future = coordinator.submit(collect)
             try:
@@ -63,9 +69,11 @@ def pooled_search(pool, xyz, hull, frequencies, pressures, cap, baseline, cfg,
                   tweeter, residual, runtime):
     sweeps = [('sweep', (direction, xyz, hull, frequencies, pressures, cap, cfg, tweeter, residual))
               for direction in ('up', 'down')]
-    paths = dict(_run(pool, sweeps, runtime, 'Stage 2 prediction directions', 2*len(frequencies)))
+    paths = dict(_run(pool, sweeps, runtime, 'Stage 2 - origin search (both directions)', 2*len(frequencies)))
     initial = {i: min((paths['up'][i], paths['down'][i]), key=lambda row: row['press_pct'])
                for i in range(len(frequencies))}
+    from .press_origins import announce_order_phase
+    announce_order_phase(frequencies, baseline, cap, runtime)
     tasks = [('refine', (i, xyz, pressures, frequencies, cap, baseline, initial, cfg, hull))
              for i in range(len(frequencies))]
     return dict(_run(pool, tasks, runtime, 'Stage 2 LF order comparisons', len(tasks)))

@@ -178,7 +178,7 @@ def search_origins(request, runtime, out, filename, input_name):
         from hals_studio.process_engine.utils import spherical_to_cartesian
         from hals_studio.process_engine.press_origins import VERSION
         if cfg.get('press_plan_version') != VERSION:
-            raise ValueError('Cached leave-one-out prediction results predate equal-weight-only fitting. Rerun Stage 2.')
+            raise ValueError('Cached origin-search results use an older format. Rerun Stage 2.')
         xyz = np.column_stack(spherical_to_cartesian(*geom))
         for f, row in rows.items():
             previous = row.get('press_evaluated_c', row.get('original_c', row['final_c']))
