@@ -29,4 +29,3 @@ def build_field_matrix(coords_sph, order_N, k, field="total"):
                 A_cols.append(jn * Y)
 
     return (np.column_stack(A_cols) if A_cols else np.empty((len(r), 0), complex)), final_N
-
