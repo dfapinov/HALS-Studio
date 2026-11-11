@@ -191,7 +191,7 @@ def draw_directivity_map(pane, frequencies, angles, values, *, bounded=False, cu
         ax.set_xticks(audio_ticks(*ax.get_xlim()))
         ax.xaxis.set_major_formatter(FuncFormatter(lambda value, _: audio_frequency(value)))
         fig.colorbar(image, ax=ax, label=level_label, pad=.02)
-        if cursor is not None: pane.frequency_marker = add_frequency_cursor(ax, cursor, extra_pixels=1)
+        if cursor is not None: pane.frequency_marker = add_frequency_cursor(ax, cursor, sonogram=True)
         pane.interaction.finish([ax])
         pane.cursor.bind_beamwidth(ax, frequencies, angles, values, c.get('beamwidth_threshold', -6.))
         if pane.frequency_marker is not None: pane.cursor.bind_marker(pane.frequency_marker)
