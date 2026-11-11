@@ -17,7 +17,8 @@ pytest-cache-files-*/
 build/
 dist/
 installer/
-tools/
+tools/*
+!tools/ir_capture_review/
 # Measurements, caches, test runs and logs
 artifacts/
 process_cache/

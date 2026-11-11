@@ -57,7 +57,8 @@ def compact(stage, result):
     if stage == 2:
         # Preserve the viewer tuple positions, without embedding input spectra.
         fields = ('final_c', 'original_c', 'error', 'original_error', 'grid',
-                  'X_vals', 'Y_vals', 'Z_vals')
+                  'X_vals', 'Y_vals', 'Z_vals', 'press_order', 'press_pct', 'press_candidates',
+                  'press_reference_settled', 'press_evaluated_c')
         rows = {f: {k: v for k, v in row.items() if k in fields}
                 for f, row in result[0].items()}
         return OriginResult(rows, None, None, None, None, result[5], None)
@@ -102,6 +103,9 @@ def hydrate_stage2(result, npz_path):
     """Reload spectra only for an explicit origin edit or grid rescan."""
     from hals_studio.process_engine.utils import load_and_parse_npz
     parsed = load_and_parse_npz(npz_path)
+    if result[5].get('press_enabled'):
+        from hals_studio.process_engine.press_origins import retained_data
+        parsed = retained_data(parsed, dict(names=result[5]['press_names']))
     source = parsed['raw_data']
     try:
         data = dict(source)
@@ -124,6 +128,9 @@ def hydrate_stage4(npz_path, coeff_path, *, process_pool=None, progress=None):
     she = load_she_h5(coeff_path)
     parsed = load_and_parse_npz(npz_path)
     try:
+        if she.get('measurement_filenames') is not None:
+            from hals_studio.process_engine.press_origins import retained_data
+            parsed = retained_data(parsed, dict(names=she['measurement_filenames']))
         freqs = parsed['freqs']
         indices = np.searchsorted(freqs, she['freqs'])
         if (np.any(indices >= len(freqs)) or

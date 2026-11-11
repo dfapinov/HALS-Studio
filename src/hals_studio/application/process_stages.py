@@ -62,6 +62,8 @@ def search_origins(request, runtime, out, filename, input_name):
         for freq, xyz in request.get("edits", []):
             result[0][float(freq)]["final_c"] = np.asarray(xyz)
         if request["action"] == "rescan":
+            if result[5].get('press_enabled'):
+                raise ValueError('Full-grid residual rescans are unavailable for leave-one-out prediction results.')
             from hals_studio.process_engine.stage2_centre_origin import (
                 get_order_for_frequency,
                 generate_3d_landscape_volumetric,
@@ -130,12 +132,16 @@ def search_origins(request, runtime, out, filename, input_name):
             read_cache_file=request.get("origin_cache", ""),
             hold_origin_lf=v.get("hold_origin_lf", True),
             hold_origin_hf=v.get("hold_origin_hf", True),
+            press_enabled=True,
+            press_residual_seed=v.get('press_residual_seed', False),
+            press_blacklist='',
+            kr_offset=float(request.get('press_kr_offset', 2.)),
             runtime=runtime,
         )
     if result is None:
         raise ValueError("Origin search returned no results")
     rows, freqs, keys, d, geom, cfg, data = result
-    if request.get("action") in ("rescan", "save_origins"):
+    if request.get("action") in ("rescan", "save_origins") and not cfg.get('press_enabled'):
         from hals_studio.process_engine.stage2_centre_origin import (
             solve_physics_3d,
             get_order_for_frequency,
@@ -165,6 +171,26 @@ def search_origins(request, runtime, out, filename, input_name):
     cfg.update(
         hold_origin_lf=v.get("hold_origin_lf", True), hold_origin_hf=v.get("hold_origin_hf", True)
     )
+    if cfg.get('press_enabled'):
+        if not np.isclose(float(request.get('press_kr_offset', cfg['kr_offset'])), cfg['kr_offset']):
+            raise ValueError('KR offset changed. Rerun Stage 2.')
+        from hals_studio.process_engine.press_fitting import basis, prediction_fit
+        from hals_studio.process_engine.utils import spherical_to_cartesian
+        from hals_studio.process_engine.press_origins import VERSION
+        if cfg.get('press_plan_version') != VERSION:
+            raise ValueError('Cached leave-one-out prediction results predate equal-weight-only fitting. Rerun Stage 2.')
+        xyz = np.column_stack(spherical_to_cartesian(*geom))
+        for f, row in rows.items():
+            previous = row.get('press_evaluated_c', row.get('original_c', row['final_c']))
+            if np.allclose(previous, row['final_c'], atol=1e-8, rtol=0):
+                continue
+            index = int(np.argmin(abs(freqs-f)))
+            pressure = np.array([d[name][index] for name in keys])
+            k = 2*np.pi*f/cfg['speed_of_sound']
+            _, metric = prediction_fit(basis(xyz, np.asarray(row['final_c'])/1000, row['press_order'], k), pressure)
+            row.update(error=metric['training_pct'], press_pct=metric['press_pct'],
+                       press_evaluated_c=np.asarray(row['final_c']).copy(), press_reference_settled=None)
+            runtime.print(f'Manual leave-one-out prediction origin at {f:g} Hz: fit error refreshed; original convergence check no longer applies.')
     if request.get("preview_only"):
         return process_cache.compact(2, result)
     return persist_origin_result(result, v, out, filename, runtime)
@@ -197,6 +223,7 @@ def persist_origin_result(result, settings, out, filename, runtime=None):
         hold_origin_lf=v.get("hold_origin_lf", True),
         hold_origin_hf=v.get("hold_origin_hf", True),
         runtime=runtime,
+        press_state=(rows, geom, cfg) if cfg.get('press_enabled') else None,
     )
     result = OriginResult(rows, freqs, keys, d, geom, cfg, dict(data))
 

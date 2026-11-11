@@ -78,9 +78,9 @@
       "help": "Upper boundary of the acoustic origin search. Set to the DUT's usable frequency range."
     },
     "target_n_max_origins": {
-      "label": "Max Harmonic Order (N)",
-      "default": "4",
-      "help": "Max cap on the spherical harmonic order."
+      "label": "Search Harmonic Order (N)",
+      "default": "7",
+      "help": "Order used to search for origins and provide the upper reference for LF comparisons. Higher orders take longer. Stage 4 has a separate maximum for the final solve."
     },
     "initial_simplex_step": {
       "label": "Initial Simplex Step (mm)",
@@ -89,8 +89,8 @@
     },
     "max_iterations": {
       "label": "Max Iterations",
-      "default": "50",
-      "help": "Maximum amoeba optimization steps per frequency."
+      "default": "250",
+      "help": "Maximum simplex iterations per frequency and candidate order."
     },
     "x_bounds": {
       "label": "X Bounds",
@@ -121,6 +121,11 @@
       "label": "HF",
       "default": true,
       "help": "Hold the highest tested coordinate above the origin test range. When off, apply no coordinate shift above the range."
+    },
+    "press_residual_seed": {
+      "label": "Residual seed pre-pass",
+      "default": false,
+      "help": "Try the earlier residual-error search first and use its results as extra starting positions. Leave-one-out prediction still chooses the result, alongside the normal upward and downward searches."
     }
   },
   "3": {
@@ -169,7 +174,7 @@
     "condition_preflight": {
       "label": "Optimise order growth before solve",
       "default": true,
-      "help": "When Use manual order table is unchecked, optimise the current maximum N and KR growth before solving. Each order is delayed to at most three times its original entry frequency, then activated even if the condition target is exceeded. The optimized schedule is kept separate from your manual table. Disable for pure KR growth."
+      "help": "Adjust the higher-frequency order growth before the final solve. The LF requirements saved by Stage 2 are retained. Changing this option or the final maximum does not require rerunning Stage 2."
     },
     "kr_offset": {
       "label": "KR Offset",

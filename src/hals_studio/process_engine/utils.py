@@ -104,6 +104,9 @@ def load_and_parse_npz(filepath: Union[str, Path]) -> Dict:
         'speed_of_sound_mps': loaded[schema.SPEED_OF_SOUND_MPS].item() if schema.SPEED_OF_SOUND_MPS in loaded else None,
         'stage3_rft_lower_hz': loaded[schema.STAGE3_RFT_LOWER_HZ].item() if schema.STAGE3_RFT_LOWER_HZ in loaded else None,
         'fs': loaded[schema.FS].item() if schema.FS in loaded else None,
+        'press_plan_json': loaded['press_plan_json'] if 'press_plan_json' in loaded else None,
+        'press_lf_orders': loaded['press_lf_orders'] if 'press_lf_orders' in loaded else None,
+        'press_origins_mm': loaded['press_origins_mm'] if 'press_origins_mm' in loaded else None,
         'raw_data': loaded
     }
 
@@ -123,7 +126,8 @@ def load_she_h5(source: Union[str, Path, Dict[str, np.ndarray]]) -> Dict[str, np
                 schema.N_USED: h[schema.N_USED][()].astype(int),
                 schema.ORIGINS_MM: origins_mm[()] if origins_mm is not None else None,
                 schema.SPEED_OF_SOUND_MPS: speed_val[()] if speed_val is not None else None,
-                schema.FS: fs_val[()] if fs_val is not None else None
+                schema.FS: fs_val[()] if fs_val is not None else None,
+                'measurement_filenames': h['measurement_filenames'].asstr()[:].tolist() if 'measurement_filenames' in h else None
             }
     elif isinstance(source, dict):
         return source
@@ -251,6 +255,13 @@ def get_grid_limit(th: np.ndarray, ph: np.ndarray) -> Tuple[int, int]:
     M_unique = len(np.unique(coords_stacked, axis=0))
     N_grid = int(math.floor(math.sqrt(M_unique / 2) - 1))
     return max(0, N_grid), M_unique
+
+def grid_reference(r, th, ph):
+    """Fixed full-grid envelope centre and radii, independent of coordinate zero."""
+    xyz = np.column_stack(spherical_to_cartesian(r, th, ph))
+    centre = (xyz.min(axis=0)+xyz.max(axis=0))/2
+    return centre, np.linalg.norm(xyz-centre, axis=1)
+
 
 def get_kr_limit(f_hz: float, r: Union[float, np.ndarray], c_sound: float = 343.0, kr_offset: float = 2.0) -> int:
     """

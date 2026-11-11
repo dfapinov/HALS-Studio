@@ -13,7 +13,13 @@ This help file is split into two parts:
 
 ## What Stage 2 Does
 
-Stage 2 searches for the origin coordinates that give a low fitting error at each tested frequency. It compares searches running from high to low and low to high frequencies, then keeps the better result at each frequency. The selected origins are interpolated within the test range and saved in the project's complex-data NPZ for later stages.
+Stage 2 searches for an origin that lets the model reliably predict withheld microphone recordings. This method is called **leave-one-out prediction**: we judge an origin by how well the model predicts data it has not used for the fit.
+
+The process approaches each frequency from both directions, high to low and low to high, then keeps the better result.
+
+At low frequencies it also checks how much harmonic order is needed to describe the speaker's sound. Starting with the user-defined **Search Harmonic Order (N)**, 7 by default, it tries lower orders and chooses the lowest one that gives a similar internal field and sound power. This helps avoid using extra terms where they add little useful information.
+
+The chosen origins and harmonic order requirements are interpolated between tested frequencies and saved in the project's complex-data NPZ for later stages. **How Do We Judge a Good Origin?** below explains the prediction and order checks in more detail.
 
 ## Why We Do This
 
@@ -24,26 +30,23 @@ The result is a best-fit mathematical origin, which need not sit exactly on a ph
 ## Quick Start
 
 1. Set **Lower Frequency** and **Upper Frequency** to the DUT's usable frequency range, using its measured response to avoid testing frequencies where the output is near the noise floor.
-2. Run Stage 2.
-3. Results always appear in the GUI. Review the origin paths and fitting errors. For example, where the tweeter dominates the output, the high-frequency origins should usually lie near its physical location.
+2. Check the tweeter coordinates under **HF search seed**. Leave **Search Harmonic Order (N)** at its default of 7 to begin with.
+3. Run Stage 2.
+4. Results always appear in the GUI. Review the origin paths and fitting errors. For example, where the tweeter dominates the output, the high-frequency origins should usually lie near its physical location.
 
 ## Results - How to interpret
 
-One the process compeltes, the user will be presented with a graph of the 3 cartiesian axis and the coordiantes found to provide low fit error.  
-
-Interpretation of this data can be quite enlighting about the device under test as well as help to confirm resaonable results.
+When the process completes, the graphs show how the chosen X, Y and Z coordinates change with frequency. Following these paths can help you understand how different parts of the loudspeaker contribute to its sound.
 
 ![stage2_graph_info](./images/stage2_graph_info.png)
 
-The unknown Y axis offset is is intreaging but does not itself give cause for worry - the fit error remains low and in a similar range as the surrounding coordiantes.  
+In this example, the Y-axis offset is unexpected, but that alone does not mean the result is wrong. Consider the error around it, any warnings in the log, and what the speaker is doing in that frequency range. A smooth path is reassuring, but it is not a guarantee of accuracy either.
 
-A 3D coordiante view is also avilible from the **Plot Type** menu, as well as **Rescan of selected frequency** - a pure grid based volumetric scan that can take considerable time.
+The plotted fitting error describes how closely the model matches the recordings used to fit it. The leave-one-out prediction error in the log asks a different question: how well can it predict a recording when that recording is left out? The search uses this prediction error to choose between origins.
 
-![grid_scan_settings](./images/grid_scan_settings-2.png)
+A 3D coordinate view is available from the **Plot Type** menu. The older full-grid residual rescan is not available for leave-one-out prediction results.
 
-![grid_scan_gif](./images/grid_scan_gif-2.gif)
-
-![grid_scan_result](./images/grid_scan_result-2.png)
+The log also reports which LF orders were selected. A **provisional** warning means the search or its checks have not given a settled answer at that frequency. This can happen if the optimiser runs out of iterations, prediction is poor, or the highest tested orders still disagree. See **Choosing the LF Order** below for more about that check.
 
 ### Waypoint References
 
@@ -55,7 +58,7 @@ Enable **✎ Draw** to edit the origin coordinates graphically. Left-click and d
 
 Press **Escape**, or release the mouse outside the graph, to cancel. Disable **Draw** when finished.
 
-**Manual edits need Save Project to apply.** Until then, coordinates and recalculated errors are an in-memory preview; the saved measurement data and origin cache remain unchanged. After saving the project, re-run subsequent processing stages to use the modified origins.
+**Manual edits need Save Project to apply.** Until then, coordinates and recalculated errors are an in-memory preview; the saved measurement data and origin cache remain unchanged. After saving the project, re-run subsequent processing stages to use the modified origins. Manual edits update the fitting error, but the earlier LF order checks no longer certify the edited origin. Rerun Stage 2 if you want the automatic checks applied again.
 
 Middle-mouse drag pans the X/Y/Z graphs. Use the mouse wheel to zoom at the cursor, or wheel over an axis to zoom just that axis. **Reset axes**, beside **Save image**, restores the full view. Error labels show whole percentages and alternate above and below the line. Click a point on any axis to highlight that frequency on all three graphs. A persistent readout in the upper-left margin of the plot canvas shows the selected frequency, fit error to two decimals, and X, Y and Z coordinates in millimetres. Selection also works with Draw enabled; a click selects while a drag edits.
 
@@ -85,34 +88,41 @@ Stage 2 tests frequencies spaced by a fraction of an octave rather than searchin
 
 The resulting X, Y and Z coordinates are interpolated between tested frequencies to provide an origin for every FFT bin within the selected range. This assumes the effective origin changes smoothly enough between samples.
 
-### HF Search Seed ? Tweeter X, Y and Z
+### HF Search Seed - Tweeter X, Y and Z
 
 The initial high-frequency search position in Cartesian millimetres: X is depth, Y is width and Z is height. Captured tweeter metadata supplies these coordinates. If no tweeter coordinate is available, Stage 2 estimates a seed using a 20 mm grid inside the measurement cylinder followed by simplex refinement.
 
-### Max Harmonic Order (N)
+### Search Harmonic Order (N)
 
-Caps the spherical-harmonic order used to compare origin fitting errors. The default is N=4; measurement-grid limits may reduce it further. Higher orders take longer and can describe more complex fields. Manual-edit error previews use the settings of the original search, so their errors remain comparable.
+Sets the order used to search for origins, and the upper reference for the LF order comparisons. The default is **N=7**. A higher order can describe a more complicated sound field, but takes longer to search and needs enough independent information in the measurements. The measurement grid may limit the order below the value you enter.
+
+This setting belongs to the origin search. **Stage 4 has its own maximum order for the final solve**, which can be higher.
+
+### Residual Seed Pre-pass
+
+An optional extra search to try before the leave-one-out prediction search. It uses the earlier method of finding origins from fitting error, then offers those positions as additional starting points for the new search.
+
+Leave it off for a normal run. It can be useful if you suspect the search is getting stuck around an unhelpful starting position, but it adds processing time. The normal upward and downward searches still run, and leave-one-out prediction still decides which result to keep.
 
 ### Initial Simplex Step (mm)
 
-Sets the initial size of the Nelder?Mead search simplex. A larger step explores a wider neighbourhood; a smaller step starts more locally around the seed.
+Sets the initial size of the Nelder-Mead search simplex. A larger step explores a wider neighbourhood; a smaller step starts more locally around the seed.
 
 ### Max Iterations
 
 Limits simplex optimisation steps per frequency. Increasing it gives difficult searches more time to converge, at the cost of a longer run.
 
-### Hold Coordinate Outside Test Range ? LF and HF
+### Hold Coordinate Outside Test Range - LF and HF
 
 LF holds the lowest tested origin below the lower test frequency; HF holds the highest tested origin above the upper test frequency. Both default to on. Turning either off applies zero coordinate shift outside that side of the test range. Coordinates inside the range are still interpolated. Save Project applies these settings when committing manual edits.
 
-### Full Grid Rescan Only ? X, Y and Z Bounds
+### Full Grid Rescan Settings
 
-Sets the minimum and maximum Cartesian coordinates in millimetres for a volumetric rescan of the selected frequency. Bounds default to the measurement extents. Narrowing the volume reduces work; widening it lets you inspect a larger region. These bounds apply to the full grid rescan, while the normal search uses the measurement cylinder.
+The XYZ bounds and grid resolution belong to the older full-grid residual diagnostic. They do not control the leave-one-out prediction search, which keeps candidate origins inside the microphone grid. Full-grid rescans are unavailable for the new results.
 
-### Full Grid Rescan Only ? Grid Res (mm)
+### Excluding Suspect Recordings
 
-Sets spacing between points in the rescan volume. Smaller spacing gives a finer error landscape but increases the number of solves sharply in three dimensions. The best grid point seeds a subsequent simplex refinement.
-
+Use the IR review app to inspect and rename recordings you want to exclude. **Rerun Stage 1 after renaming or replacing files**, so the NPZ used by Stage 2 contains the updated recording pool. Renaming a WAV does not remove its data from an existing NPZ.
 
 ---
 
@@ -156,10 +166,10 @@ Now, imagine we move that same balloon 1 meter to the left, but we keep our math
 From the perspective of our mathematical origin, the balloon no longer looks like a simple, single radius. To describe this shifted balloon using math anchored at (0,0,0), the solver has to account for the near surface, the far surface, and everything in between. It is forced to use a massive combination of N=1, N=2, N=3, and so on, stacking complex "lobes" and "dents" on top of each other just to describe a simple balloon from a distant perspective.
 
 ### The Consequences of Mismatched Origins
-When the acoustic origin is far from the mathematical origin, the required Order N explodes. This causes two massive problems for separating the internal speaker source from external room reflections:
+When the acoustic origin is far from the mathematical origin, more terms may be needed. That can make two problems more difficult for separating the internal speaker source from external room reflections:
 
-1.  **Noise Amplification:** Higher-order spherical harmonics are incredibly sensitive to tiny variations. If the solver is forced to use high orders just to map an off-center source, it will amplify background noise or slight measurement errors in the microphone positioning and data.
-2.  **Numerical Instability (Singularities):** The math required to calculate high-order wave propagation becomes fundamentally unstable. The matrices we use to solve the sound field lose their simplicity and become overly dependent on each other (a form of ill-conditioning called "linear dependence"), leading to mathematical singularities where the simulation falls apart.
+1.  **Noise Amplification:** Extra terms can start describing background noise or small measurement errors as well as useful acoustic detail. This becomes a concern when the recordings do not contain enough information to distinguish them.
+2.  **Numerical Instability (Singularities):** Some combinations of terms can become difficult to distinguish from one another. Small changes in the recordings can then lead to large changes in the fitted coefficients. This is called ill-conditioning.
 
 ---
 
@@ -174,27 +184,50 @@ Because of these interactions, a single manually chosen coordinate may not be eq
 
 ---
 
-## Optimization Strategies: The Simplex vs. The Brute Force Grid
+## How Do We Judge a Good Origin?
 
-To map this shifting path and keep the required Order N as low as physically possible, the script provides two distinct methods for finding the "global minimum" error in 3D space.
+Imagine asking someone to trace a curve through a set of dots. With enough freedom, they might draw a curve that passes through every dot, including a few that are in the wrong place. A close fit alone does not tell us how well that curve describes what lies between the dots.
 
-### 1. The 3D Simplex (The "Amoeba" Descent)
-The primary search tool is the **Nelder-Mead Simplex** algorithm.
-* **How it works:** It creates a small 3D tetrahedron (the simplex) in space and walks it through the error landscape by flipping, stretching, or shrinking the shape.
-* **Strengths:** It is incredibly fast and efficient once it is in the correct neighborhood of the goal.
-* **The Weakness:** It is a local optimizer. If it is dropped into a local valley (a false minimum), it will get stuck there and never find the true acoustic origin.
+The same problem occurs with our measurements. An origin can give a very small fitting error while the model is also describing noise or other capture errors.
 
-### 2. The Volumetric Grid Scan (The "Brute Force" Map)
-For cases where the sound field is particularly chaotic, or simply to visualize the acoustic landscape, the script can perform a full volumetric grid scan.
-* **How it works:** It divides the 3D search area into a grid and calculates the SHE residual error at every single point (to a limited order_N, e.g., N=6).
-* **Strengths:** It provides a "true" map of the error landscape, helping locate promising minima within the chosen bounds and grid resolution.
-* **The "Cost":** This method is computationally massive. While a Simplex search might require 50 solves per frequency, a full 3D landscape rendering for a single frequency might require 200,000. A single frequency full scan can take 5+ minutes. Running this across the entire spectrum could easily exceed hours of CPU time.
+**Leave-one-out prediction** gives the search a more useful question to answer. Imagine covering up one recording, fitting the model to the others, and asking it to predict the hidden recording. We do this for every recording in turn and combine the prediction errors. The search then looks for the origin that makes those predictions work best.
 
----
+All recordings take part; we do not reserve a separate 20% group in a normal run. A mathematical shortcut lets us calculate the leave-one-out errors without doing a separate solve for every recording. The statistical name for the score calculated from these prediction errors is **PRESS**, but we call the method leave-one-out prediction to make its purpose clearer.
 
-## Seeded Intelligence: Why Human Input is Critical
+### The 3D Simplex: Finding a Better Position
 
-Because the brute force method is too slow for everyday use, the script is designed to use human intelligence as the bridge. The optimization requires the user to provide the physical coordinates of the high-frequency driver as a starting point. This tends to have the smallest ‘acoustic origin’ footprint and is therefore most difficult to locate in a large volume of space without a hint. Dropping the Simplex close to the HF driver bypasses the need for a costly brute-force scan.
+The search still uses the **Nelder-Mead Simplex** algorithm. Think of it as a small tetrahedron that moves through the possible origin positions, stretching, shrinking and turning as it finds better prediction scores.
+
+It is good at finding a nearby minimum, but it cannot promise to find the best position everywhere. This is why we search from both ends of the frequency range, and why the optional residual seed pre-pass can sometimes help.
+
+### Choosing the LF Order
+
+A good origin helps us use the available harmonic terms efficiently. But at low frequencies we also need to ask whether we have allowed enough terms in the first place. A speaker with several contributing radiators may need more than the usual KR+2 rule suggests.
+
+Stage 2 first searches at the chosen **Search Harmonic Order (N)**. Where KR+2 calls for a lower order, it then tries lower orders, allowing each one to find its own origin. It compares the resulting internal field (the speaker's outgoing sound) with the upper-order result.
+
+We are looking for the point where adding more terms makes little useful difference. A lower order passes when:
+
+- The internal pressure differs by no more than **5% RMS**, including phase, over a spread of 120 directions at both 1 m and 2 m.
+- The internal sound power differs by no more than **1 dB**.
+
+The comparison points stay at the same physical locations for every candidate. Stage 2 chooses the lowest passing order at or above the KR baseline. The selected order can rise or fall as the frequency changes.
+
+The upper-order result is a reference, not a known perfect answer. Stage 2 also checks whether it agrees with the next lower tested order. If those still differ appreciably, the reference has not settled and the log calls the selection **provisional**. More search order may help, but weak output or suspect recordings can also be responsible. Where KR already reaches the search ceiling, the lower-order comparisons are skipped.
+
+This gives us two complementary checks: leave-one-out prediction helps choose an origin that predicts the measured total field, while the LF comparison checks whether the internal reconstruction has settled enough to use fewer terms.
+
+### Passing the Result to Stage 4
+
+KR is calculated around the centre of the microphone grid. Moving the search origin therefore cannot gain an advantage simply by unlocking another order.
+
+Stage 2 saves an interpolated origin path and LF order requirements for every frequency bin. Stage 4 combines these requirements with its usual KR order growth. Any optional growth optimisation at higher frequencies happens in Stage 4, leaving the LF requirements in place.
+
+You can therefore choose a modest search order such as N=7 even when the final high-frequency solve needs a higher maximum. Stage 2 does not have to search the whole bass range at that higher order.
+
+## Giving the Search a Useful Starting Point
+
+At high frequencies, wavelengths are short and the origin position matters more. Giving the search the tweeter's coordinates helps it start in a useful place. It can then follow the changing sound field down through the frequency range. If those coordinates are unavailable, Stage 2 estimates a starting position from a coarse search.
 
 ### Parallel Dual-Path Search
 
@@ -204,7 +237,7 @@ Because the brute force method is too slow for everyday use, the script is desig
 * **Path Tracking:** As the frequency drops and the origin shifts, the simplex follows the acoustic path downward.
 
 #### 2. Low-to-High Search (LF-to-HF)
-* **Initial Lock:** The algorithm begins at the lowest frequencies, where large wavelengths create a broad, stable gradient that is easy to "lock on" to.
+* **Initial Lock:** The algorithm begins at the lowest frequencies, starting at the measurement coordinate zero.
 * **The History Seed:** Similar to the HF search, each successful solve seeds the next step upward.
 * **Path Tracking:** As the frequency increases, the simplex tracks the shifting origin upward toward the crossover region and tweeter.
 
@@ -212,7 +245,7 @@ While each individual search branch is inherently sequential, they are independe
 
 Since each branch approaches the acoustic centre from a different starting position, they provide a "second opinion" on the origin's location. One search can occasionally find a lower error origin than the other.
 
-Once both branches complete, the script compares the results and selects the origin with the lower fitting error from either path.
+Once both branches complete, the script compares the results and selects the origin with the lower leave-one-out prediction error from either path. The optional LF order comparisons follow this search.
 
 These best-fit results are interpolated across the full frequency resolution within the selected test range.
 
@@ -220,10 +253,10 @@ These best-fit results are interpolated across the full frequency resolution wit
 
 Turning either option off applies **zero coordinate shift outside the selected test range** on that side. Interpolation inside the range is unchanged. Rerunning Stage 2, saving edited coordinates, or exporting a grid rescan applies the selected hold settings and replaces the saved origin array.
 
-### When to use the Grid Scan?
-The brute force grid scan is best reserved as a last resort for erroneous results or as a diagnostic tool. If the High-Frequency and Low-Frequency search branches fail to "meet in the middle" or provide results that do not seem to match the reality of the DUT, running a grid scan on the problematic frequencies can help determine if the simplex is getting stuck in a local valley.
-
 ### A Note on Reported Results
-Because the origin search is performed using a limited spatial resolution (Order N=4 by default) to maintain high solve speeds, the error percentages reported during this stage may appear higher than those of the final, high-order SHE reconstruction. You should expect to see a reasonably consistent error curve that rises slightly during complex spatial transitions—such as the crossover region—and generally trends upward toward the high frequencies.
+
+The origin search and final solve can use different harmonic orders, so their fitting errors need not match. The Stage 2 plot shows the fitting error, while the log includes the leave-one-out prediction score and the LF comparisons. They answer different questions and are most useful when read together.
+
+Unexpected origin movement is a reason to look more closely, rather than proof that a result is wrong. Check the DUT's output level, the quality of the recordings and any provisional warnings before deciding whether to change the search settings.
 
 <!-- help-group: process -->

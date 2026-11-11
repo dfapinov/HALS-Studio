@@ -264,6 +264,8 @@ class ProcessWorkspace(W.QWidget):
         if self.stage==3 and not self.rft_supplied:request['settings']['fdw_rft_ms']=5.0
         request['rft_supplied']=self.rft_supplied
         request['tweeter_supplied']=self.tweeter_supplied
+        if self.stage == 2:
+            request['press_kr_offset'] = float(self.values[4].get('kr_offset', 2.))
         if self.stage==1 and self.filter_ir_filenames:
             from hals_studio.application.ir_recovery import scan_ir_folder
             try:request['input_filenames'],_=scan_ir_folder(self.ir_folder.text())

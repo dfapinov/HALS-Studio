@@ -98,3 +98,25 @@ routing, manual-order/regularization controls, sparse-bin error recovery,
 surface/chart switching and reuse of the 3D scene between plot types.
 
 <!-- help-group: hidden -->
+
+## Leave-one-out origin search
+
+The application stage adapter selects leave-one-out prediction for new Stage 2
+runs. Numerical prediction fitting lives in `process_engine/press_fitting.py`;
+it uses the same `build_she_matrix` as the final coefficient solver and condition
+checks. This keeps harmonic ordering and radial conventions in one place.
+`press_origins.py` owns the bidirectional search, LF comparisons and saved-plan
+validation. Stage 4 consumes that plan and uses the existing condition-growth
+optimizer and final solver. Existing `press_*` NPZ keys remain stable for saved
+project compatibility; these names are not UI settings.
+
+The IR capture review utility is a separate application in
+`tools/ir_capture_review`, with its own dependencies, launcher, documentation
+and tests. Its numerical/file-review backend does not import Studio or Tkinter;
+the Tkinter frontend handles presentation and user confirmation. Studio does
+not import this utility. Renamed recordings enter Studio through a fresh Stage 1
+import, rather than through a second blacklist configuration.
+
+The added production tests cover numerical equivalence, prediction of omitted
+measurements, order selection, saved-plan integrity and end-to-end processing.
+UI wording and configurable defaults are not release contracts.
