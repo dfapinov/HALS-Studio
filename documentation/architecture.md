@@ -103,12 +103,24 @@ surface/chart switching and reuse of the 3D scene between plot types.
 
 The application stage adapter selects leave-one-out prediction for new Stage 2
 runs. Numerical prediction fitting lives in `process_engine/press_fitting.py`;
-it uses the same `build_she_matrix` as the final coefficient solver and condition
-checks. This keeps harmonic ordering and radial conventions in one place.
+it uses the same `harmonic_basis.build_field_matrix` as coefficient solving,
+condition checks and export pressure reconstruction. `build_she_matrix` remains
+the dual-field adapter for existing solver callers. Export can request just the
+internal or external columns without constructing the unused field.
 `press_origins.py` owns the bidirectional search, LF comparisons and saved-plan
 validation. Stage 4 consumes that plan and uses the existing condition-growth
 optimizer and final solver. Existing `press_*` NPZ keys remain stable for saved
 project compatibility; these names are not UI settings.
+
+`origin_workers.py` schedules complete directional sweeps on the app-owned pool.
+Each direction remains sequential across frequency and retains its continuation
+seed. LF comparisons are independent anchor tasks on that same pool. Numerical
+sweep and comparison functions are shared with the standalone thread fallback.
+A parent-side coordinator forwards progress/log messages and a spawn-safe
+cancellation signal is checked within simplex evaluations. Cancelling drains
+this operation before disposing of its communication proxies, keeping the
+shared pool available to later stages. The final Stage 4 solve continues to
+use the existing pool path. No worker recursively submits work to that pool.
 
 The IR capture review utility is a separate application in
 `tools/ir_capture_review`, with its own dependencies, launcher, documentation

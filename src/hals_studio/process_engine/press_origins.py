@@ -86,6 +86,60 @@ def select_local(candidates, baseline, ceiling):
     return min(choices) if choices else ceiling
 
 
+def sweep_direction(payload, runtime, advance):
+    direction, xyz, hull, anchor_f, pressures, cap, cfg, tweeter_mm, residual_seeds = payload
+    results = {}
+    seed = np.asarray(tweeter_mm)/1000 if direction == 'down' else np.zeros(3)
+    indices = range(len(anchor_f)-1, -1, -1) if direction == 'down' else range(len(anchor_f))
+    for i in indices:
+        f = float(anchor_f[i])
+        candidate = search_one(xyz, pressures[i], f, cap, seed, cfg, hull, runtime)
+        if residual_seeds is not None:
+            extra = search_one(xyz, pressures[i], f, cap, np.asarray(residual_seeds[f]['final_c'])/1000,
+                               cfg, hull, runtime)
+            candidate = min((candidate, extra), key=lambda c: c['press_pct'])
+        seed = candidate['origin']
+        results[i] = candidate
+        runtime.print(f'leave-one-out prediction unweighted {direction} {f:.2f} Hz N={cap}: {candidate["press_pct"]:.4g}%'+
+                      ('' if candidate['converged'] else ' (iteration limit; provisional)'))
+        advance()
+    return results
+
+
+def refine_anchor(payload, runtime):
+    i, xyz, pressures, anchor_f, cap, base, initial, cfg, hull = payload
+    f = anchor_f[i]
+    runtime.check()
+    top = initial[i]
+    candidates = {cap: top}
+    if base[i] < cap:
+        # Centre candidate avoids carrying a local basin through the LF band.
+        alternative = search_one(xyz, pressures[i], float(f), cap, np.asarray(cfg['grid_centre_m']), cfg, hull, runtime)
+        candidates[cap] = min((top, alternative), key=lambda c: c['press_pct'])
+        for n in range(int(base[i]), cap):
+            fitted = [search_one(xyz, pressures[i], float(f), n, seed, cfg, hull, runtime)
+                      for seed in (candidates[cap]['origin'], np.asarray(cfg['grid_centre_m']))]
+            candidates[n] = min(fitted, key=lambda c: c['press_pct'])
+        selected = select_local(candidates, int(base[i]), cap)
+    else:
+        selected = cap
+        top.update(field_difference_pct=0., power_difference_db=0., adequate=top['converged'] and top['press_pct'] < 100)
+    chosen = candidates[selected]
+    previous = candidates.get(cap-1)
+    settled = None if previous is None else bool(previous['converged'] and candidates[cap]['converged'] and
+        compare_fields(previous['field'], candidates[cap]['field']) <= 5 and abs(previous['power_db']-candidates[cap]['power_db']) <= 1)
+    diagnostic = [{k: v for k, v in c.items() if k not in ('field', 'origin')} |
+                  dict(origin_mm=(c['origin']*1000).tolist()) for n, c in sorted(candidates.items())]
+    row = dict(final_c=chosen['origin']*1000, original_c=chosen['origin']*1000,
+        error=chosen['training_pct'], grid=None, X_vals=None, Y_vals=None, Z_vals=None,
+        press_order=selected, press_pct=chosen['press_pct'], press_candidates=diagnostic,
+        press_reference_settled=settled)
+    runtime.print(f'LF/order {f:.2f} Hz: KR={base[i]}, selected N={selected}, upper reference settled={settled}')
+    if settled is False or not chosen['adequate']:
+        runtime.print(f'Warning: {f:.2f} Hz order selection is provisional; the upper reference or prediction has not passed the checks.')
+    return float(f), row
+
+
 def run_search(frequencies, anchor_indices, names, spectra, geometry, cfg, tweeter_mm, runtime, residual_seeds=None):
     xyz = np.column_stack(spherical_to_cartesian(*geometry))
     cap = min(int(cfg['target_n_max_origins']), cfg['N_grid'], int(np.sqrt((len(names)-1)/2)-1))
@@ -99,24 +153,15 @@ def run_search(frequencies, anchor_indices, names, spectra, geometry, cfg, tweet
     pressures = [np.array([spectra[name][i] for name in names]) for i in anchor_indices]
     base = plain_orders(anchor_f, cfg['grid_radius_m'], cfg['speed_of_sound'], cap, cfg['kr_offset'])
     runtime.print('Stage 2: equal-weight full-order leave-one-out prediction origins, then LF order comparisons.')
+    pool = runtime.borrow_pool() if cfg.get('use_process_pool', True) else None
+    if pool is not None:
+        from .origin_workers import pooled_search
+        return pooled_search(pool, xyz, hull, anchor_f, pressures, cap, base, cfg,
+                             tweeter_mm, residual_seeds, runtime)
     progress = runtime.progress('Stage 2 unweighted leave-one-out prediction directions', 2*len(anchor_f))
     def sweep(direction):
-        results = {}
-        seed = np.asarray(tweeter_mm)/1000 if direction == 'down' else np.zeros(3)
-        indices = range(len(anchor_f)-1, -1, -1) if direction == 'down' else range(len(anchor_f))
-        for i in indices:
-            f = float(anchor_f[i])
-            candidate = search_one(xyz, pressures[i], f, cap, seed, cfg, hull, runtime)
-            if residual_seeds is not None:
-                extra = search_one(xyz, pressures[i], f, cap, np.asarray(residual_seeds[f]['final_c'])/1000,
-                                   cfg, hull, runtime)
-                candidate = min((candidate, extra), key=lambda c: c['press_pct'])
-            seed = candidate['origin']
-            results[i] = candidate
-            runtime.print(f'leave-one-out prediction unweighted {direction} {f:.2f} Hz N={cap}: {candidate["press_pct"]:.4g}%'+
-                          ('' if candidate['converged'] else ' (iteration limit; provisional)'))
-            progress.advance()
-        return results
+        return sweep_direction((direction, xyz, hull, anchor_f, pressures, cap, cfg,
+                                tweeter_mm, residual_seeds), runtime, progress.advance)
     with ThreadPoolExecutor(max_workers=2) as executor:
         up = executor.submit(sweep, 'up')
         down = executor.submit(sweep, 'down')
@@ -125,36 +170,7 @@ def run_search(frequencies, anchor_indices, names, spectra, geometry, cfg, tweet
     rows = {}
     refining = runtime.progress('Stage 2 LF order comparisons', len(anchor_f))
     def refine(i):
-        f = anchor_f[i]
-        runtime.check()
-        top = initial[i]
-        candidates = {cap: top}
-        if base[i] < cap:
-            # Centre candidate avoids carrying a local basin through the LF band.
-            alternative = search_one(xyz, pressures[i], float(f), cap, np.asarray(cfg['grid_centre_m']), cfg, hull, runtime)
-            candidates[cap] = min((top, alternative), key=lambda c: c['press_pct'])
-            for n in range(int(base[i]), cap):
-                fitted = [search_one(xyz, pressures[i], float(f), n, seed, cfg, hull, runtime)
-                          for seed in (candidates[cap]['origin'], np.asarray(cfg['grid_centre_m']))]
-                candidates[n] = min(fitted, key=lambda c: c['press_pct'])
-            selected = select_local(candidates, int(base[i]), cap)
-        else:
-            selected = cap
-            top.update(field_difference_pct=0., power_difference_db=0., adequate=top['converged'] and top['press_pct'] < 100)
-        chosen = candidates[selected]
-        previous = candidates.get(cap-1)
-        settled = None if previous is None else bool(previous['converged'] and candidates[cap]['converged'] and
-            compare_fields(previous['field'], candidates[cap]['field']) <= 5 and abs(previous['power_db']-candidates[cap]['power_db']) <= 1)
-        diagnostic = [{k: v for k, v in c.items() if k not in ('field', 'origin')} |
-                      dict(origin_mm=(c['origin']*1000).tolist()) for n, c in sorted(candidates.items())]
-        row = dict(final_c=chosen['origin']*1000, original_c=chosen['origin']*1000,
-            error=chosen['training_pct'], grid=None, X_vals=None, Y_vals=None, Z_vals=None,
-            press_order=selected, press_pct=chosen['press_pct'], press_candidates=diagnostic,
-            press_reference_settled=settled)
-        runtime.print(f'LF/order {f:.2f} Hz: KR={base[i]}, selected N={selected}, upper reference settled={settled}')
-        if settled is False or not chosen['adequate']:
-            runtime.print(f'Warning: {f:.2f} Hz order selection is provisional; the upper reference or prediction has not passed the checks.')
-        return float(f), row
+        return refine_anchor((i, xyz, pressures, anchor_f, cap, base, initial, cfg, hull), runtime)
     with ThreadPoolExecutor(max_workers=4) as executor:
         for f, row in runtime.completed(executor, refine, range(len(anchor_f))):
             rows[f] = row

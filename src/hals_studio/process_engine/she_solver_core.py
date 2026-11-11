@@ -8,8 +8,7 @@ Updated with Two-Threshold Progressive Lambda (Generalized Tikhonov) regularizat
 from __future__ import annotations
 import numpy as np
 import math
-from scipy.special import spherical_jn, sph_harm_y_all
-from hals_studio.process_engine.utils import hankel2
+from .harmonic_basis import build_field_matrix
 
 # Attempt to import Speed of Sound and new solver configs
 try:
@@ -18,25 +17,8 @@ except ImportError:
     SPEED_OF_SOUND = None
 
 def build_she_matrix(coords_sph, order_N, k):
-    """Unscaled dual basis shared by the solver and condition preflight."""
-    r, th, ph = coords_sph
-    kr = r * k
-    # Evaluate angular terms together; origin searches call this shared builder often.
-    harmonics = sph_harm_y_all(order_N, order_N, th, ph)
-    # Build Matrix
-    A_cols = []
-    final_N = order_N
-    for n in range(order_N + 1):
-        hn = hankel2(n, kr)
-        jn = spherical_jn(n, kr)
-        if not (np.all(np.isfinite(hn)) and np.all(np.isfinite(jn))):
-            final_N = n - 1
-            break
-        for m_ord in range(-n, n + 1):
-            Y = harmonics[n, m_ord]
-            A_cols.extend([hn * Y, jn * Y])
-
-    return (np.column_stack(A_cols) if A_cols else np.empty((len(r), 0), complex)), final_N
+    """Dual-field matrix, preserving the solver's public interface."""
+    return build_field_matrix(coords_sph, order_N, k)
 
 
 def matrix_condition(coords_sph, order_N, k):

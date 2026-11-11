@@ -213,3 +213,49 @@ def test_stage4_saved_schedule_requires_only_one_final_fit(monkeypatch):
     monkeypatch.setattr(stage,'_solve_one_frequency',solve)
     result=stage._press_worker((0,1000.,pressure,np.full(40,.5),np.full(40,np.pi/2),np.linspace(0,2*np.pi,40),3,cfg))
     assert calls==[1000.] and len(result)==7
+
+
+def test_shared_pool_search_matches_threads_and_survives_cancellation():
+    import os
+    from hals_studio.process_engine import press_origins
+    from hals_studio.process_engine.session_pool import SessionPool, PoolView
+    from hals_studio.process_engine.runtime import ProcessingCancelled
+
+    rng = np.random.default_rng(923)
+    xyz = rng.normal(size=(90, 3))
+    xyz *= rng.uniform(.35, .5, (90, 1))/np.linalg.norm(xyz, axis=1)[:, None]
+    geometry = cartesian_to_spherical(*xyz.T)
+    frequencies = np.array([80., 300., 1500.])
+    names = [f'mic{i}' for i in range(len(xyz))]
+    pressure = np.array([basis(xyz, np.array([.03, .01, .02]), 2, 2*np.pi*f/343)[:, 0]
+                         for f in frequencies])
+    spectra = dict(zip(names, pressure.T))
+    cfg = dict(target_n_max_origins=3, N_grid=3, speed_of_sound=343.,
+               grid_radius_m=.5, grid_centre_m=[0., 0., 0.], kr_offset=2.,
+               initial_simplex_step=15., max_iterations=40)
+    def run(runtime):
+        return press_origins.run_search(frequencies, [0, 1, 2], names, spectra,
+                                        geometry, cfg.copy(), [30., 10., 20.], runtime)
+    reference = run(EngineRuntime(output=lambda _: None))
+    pool = SessionPool(2)
+    try:
+        pool.start()
+        events = []
+        runtime = EngineRuntime(output=lambda _: None, on_progress=events.append,
+                                pool_factory=lambda _: PoolView(pool))
+        actual = run(runtime)
+        for f in frequencies:
+            np.testing.assert_allclose(actual[f]['final_c'], reference[f]['final_c'], atol=1e-8)
+            assert actual[f]['press_order'] == reference[f]['press_order']
+            assert actual[f]['press_pct'] == pytest.approx(reference[f]['press_pct'])
+        assert any(e['completed'] == e['total'] and e['total'] > 0 for e in events)
+        cancelled = [False]
+        def progress(event):
+            if event['completed']:
+                cancelled[0] = True
+        with pytest.raises(ProcessingCancelled):
+            run(EngineRuntime(output=lambda _: None, on_progress=progress,
+                cancelled=lambda: cancelled[0], pool_factory=lambda _: PoolView(pool)))
+        assert pool.executor().submit(os.getpid).result(timeout=10) > 0
+    finally:
+        pool.close()
