@@ -88,8 +88,8 @@ def select_local(candidates, baseline, ceiling):
 
 def sweep_direction(payload, runtime, advance):
     direction, xyz, hull, anchor_f, pressures, cap, cfg, tweeter_mm, residual_seeds = payload
-    label = 'High to low' if direction == 'down' else 'Low to high'
-    runtime.print(f'{label} pass starting: N={cap}, {len(anchor_f)} frequencies.')
+    label = 'HF->LF' if direction == 'down' else 'LF->HF'
+    runtime.print(f'{label}: starting from '+('the tweeter seed.' if direction == 'down' else 'coordinate zero.'))
     results = {}
     seed = np.asarray(tweeter_mm)/1000 if direction == 'down' else np.zeros(3)
     indices = range(len(anchor_f)-1, -1, -1) if direction == 'down' else range(len(anchor_f))
@@ -102,10 +102,10 @@ def sweep_direction(payload, runtime, advance):
             candidate = min((candidate, extra), key=lambda c: c['press_pct'])
         seed = candidate['origin']
         results[i] = candidate
-        runtime.print(f'[{label}] {len(results)}/{len(anchor_f)} | {f:.2f} Hz | N={cap} | prediction error {candidate["press_pct"]:.3f}%'+
-                      ('' if candidate['converged'] else ' (iteration limit; provisional)'))
+        runtime.print(f'{label}  {len(results):2d}/{len(anchor_f)} | {f:8.1f} Hz | error {candidate["press_pct"]:6.2f}%'+
+                      ('' if candidate['converged'] else ' [limit]'))
         advance()
-    runtime.print(f'{label} pass complete.')
+    runtime.print(f'{label}: complete.')
     return results
 
 
@@ -138,9 +138,8 @@ def refine_anchor(payload, runtime):
         press_order=selected, press_pct=chosen['press_pct'], press_candidates=diagnostic,
         press_reference_settled=settled)
     if base[i] < cap:
-        runtime.print(f'[LF order] {f:.2f} Hz | tested N={int(base[i])} to {cap} | selected N={selected} | '
-                      f'internal pressure change {chosen["field_difference_pct"]:.2f}% | '
-                      f'power change {abs(chosen["power_difference_db"]):.2f} dB')
+        runtime.print(f'{f:8.1f} Hz | N={selected} | pressure {chosen["field_difference_pct"]:.1f}% | '
+                      f'power {abs(chosen["power_difference_db"]):.2f} dB')
     reasons = []
     if not chosen['converged']:
         reasons.append('selected origin reached the iteration limit')
@@ -158,18 +157,17 @@ def refine_anchor(payload, runtime):
 
 def announce_order_phase(frequencies, baseline, cap, runtime):
     count = int(np.count_nonzero(baseline < cap))
-    runtime.print('\nBoth origin passes complete; keeping the lower prediction error at each frequency.')
-    runtime.print('2. LF order selection - comparing the internal field and sound power')
-    runtime.print(f'{count} frequencies need lower-order comparisons; '
-                  f'{len(frequencies)-count} already reach the search ceiling under KR.')
-    runtime.print('Acceptable change from the upper-order reference: 5% pressure and 1 dB sound power.')
+    runtime.print('\n--- 2. LF order selection ---')
+    runtime.print('Using the better origin from the two search directions.')
+    runtime.print(f'{count} frequencies to compare; {len(frequencies)-count} use KR directly.')
+    runtime.print(f'Reference: N={cap}. Limits: 5% pressure, 1 dB power.')
 
 
 def report_order_completion(rows, cfg, runtime):
     runtime.print('\nLF order selection complete.')
     crossover = max(0., cfg['press_search_cap']-cfg['kr_offset'])*cfg['speed_of_sound']/(2*np.pi*cfg['grid_radius_m'])
     runtime.print(f'Handover to the KR rule at about {crossover:.1f} Hz, where KR reaches N={cfg["press_search_cap"]}.')
-    runtime.print('Above this handover, Stage 4 controls order growth; origins were still searched across the full test range.')
+    runtime.print('Stage 4 controls order growth above this frequency.')
     provisional = sum(row['press_reference_settled'] is False or any(
         c['order'] == row['press_order'] and not c['adequate'] for c in row['press_candidates'])
         for row in rows.values())
@@ -189,22 +187,23 @@ def run_search(frequencies, anchor_indices, names, spectra, geometry, cfg, tweet
     anchor_f = np.asarray(frequencies)[anchor_indices]
     pressures = [np.array([spectra[name][i] for name in names]) for i in anchor_indices]
     base = plain_orders(anchor_f, cfg['grid_radius_m'], cfg['speed_of_sound'], cap, cfg['kr_offset'])
-    runtime.print(f'\n1. Origin search - leave-one-out prediction')
+    runtime.print('\n--- 1. Origin search ---')
+    runtime.print('Method: leave-one-out prediction')
     runtime.print(f'{len(names)} recordings | {len(anchor_f)} frequencies | '
-                  f'{anchor_f[0]:.2f} to {anchor_f[-1]:.2f} Hz | search order N={cap}')
+                  f'{anchor_f[0]:.1f}-{anchor_f[-1]:.1f} Hz')
+    runtime.print(f'Search N={cap} | prediction error (%) | [limit] = iteration limit')
     if cap < int(cfg['target_n_max_origins']):
         runtime.print(f'Requested N={cfg["target_n_max_origins"]} reduced to N={cap} by measurement support.')
-    runtime.print('Two passes run together: low to high from coordinate zero; high to low from the tweeter seed.')
+    runtime.print('LF->HF = low to high; HF->LF = high to low.')
     pool = runtime.borrow_pool() if cfg.get('use_process_pool', True) else None
     if pool is not None:
         from .origin_workers import pooled_search
-        runtime.print(f'Using the shared pool ({pool.workers} workers).')
         rows = pooled_search(pool, xyz, hull, anchor_f, pressures, cap, base, cfg,
                              tweeter_mm, residual_seeds, runtime)
         report_order_completion(rows, cfg, runtime)
         return rows
     runtime.print('Using local threads.')
-    progress = runtime.progress('Stage 2 - origin search (both directions)', 2*len(anchor_f))
+    progress = runtime.progress('Stage 2 - origin search (both directions)', 2*len(anchor_f), console=False)
     def sweep(direction):
         return sweep_direction((direction, xyz, hull, anchor_f, pressures, cap, cfg,
                                 tweeter_mm, residual_seeds), runtime, progress.advance)
@@ -215,7 +214,7 @@ def run_search(frequencies, anchor_indices, names, spectra, geometry, cfg, tweet
     initial = {i: min((up[i], down[i]), key=lambda c: c['press_pct']) for i in range(len(anchor_f))}
     rows = {}
     announce_order_phase(anchor_f, base, cap, runtime)
-    refining = runtime.progress('Stage 2 LF order comparisons', len(anchor_f))
+    refining = runtime.progress('Stage 2 LF order comparisons', len(anchor_f), console=False)
     def refine(i):
         return refine_anchor((i, xyz, pressures, anchor_f, cap, base, initial, cfg, hull), runtime)
     with ThreadPoolExecutor(max_workers=4) as executor:

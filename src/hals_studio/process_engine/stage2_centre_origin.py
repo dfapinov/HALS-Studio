@@ -742,14 +742,10 @@ def run_origin_search(
     stage_start_time = time.time()
 
     runtime.print("--- Stage 2 Acoustic Origin Search ---")
-    runtime.print(
-        "Search method: leave-one-out prediction with simplex optimisation."
-        if press_enabled else
-        "Search mode: full volumetric grid scan with simplex refinement."
-        if enable_full_grid_scan else
-        "Search mode: simplex origin search (full grid scan disabled)."
-    )
-    
+    if not press_enabled:
+        runtime.print("Search mode: full grid scan with simplex refinement."
+                      if enable_full_grid_scan else "Search mode: simplex origin search.")
+
     if isinstance(x_bounds, (int, float)): x_bounds = (-float(x_bounds), float(x_bounds))
     if isinstance(y_bounds, (int, float)): y_bounds = (-float(y_bounds), float(y_bounds))
     if isinstance(z_bounds, (int, float)): z_bounds = (-float(z_bounds), float(z_bounds))
@@ -808,7 +804,8 @@ def run_origin_search(
     if not enable_full_grid_scan:
         from .origin_scan_region import measurement_cylinder
         cfg.update(measurement_cylinder(r_arr, th_arr))
-        runtime.print(f"Automatic scan cylinder: radius {cfg['scan_radius_mm']:g} mm; "
+        if not press_enabled:
+            runtime.print(f"Automatic scan cylinder: radius {cfg['scan_radius_mm']:g} mm; "
                       f"Z {cfg['z_bounds'][0]:g} to {cfg['z_bounds'][1]:g} mm")
 
 
@@ -848,7 +845,8 @@ def run_origin_search(
         if press_residual_seed:
             runtime.print('Residual pre-pass complete; its origins will provide extra prediction-search seeds.')
         sweep_results = run_search(f_all, f_indices_asc, keys, d_dict, geometry, cfg, tweeter_coords_mm, runtime, seeds)
-        runtime.print('\n3. Preparing results - interpolating origins and LF orders onto the full frequency grid.')
+        runtime.print('\n--- 3. Preparing results ---')
+        runtime.print('Interpolating origins and LF orders onto the full frequency grid.')
         finalize(sweep_results, f_all, geometry, cfg, runtime)
         runtime.print(f'Stage 2 search complete in {time.time()-stage_start_time:.1f} seconds.')
         if return_state:

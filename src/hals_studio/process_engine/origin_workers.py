@@ -34,7 +34,7 @@ def _run(pool, tasks, runtime, label, total):
         # Drain this operation before releasing its proxies; worker cancellation
         # is cooperative, and must not close or poison the app-owned pool.
         view.cancelled = lambda: False
-        progress = runtime.progress(label, total)
+        progress = runtime.progress(label, total, console=False)
         payloads = [(kind, data, cancelled, messages) for kind, data in tasks]
         def collect():
             return list(view.imap_unordered(_worker, payloads))
