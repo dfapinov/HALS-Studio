@@ -31,7 +31,8 @@ def main():
     schema = json.loads((bootstrap.RESOURCES/'process_schema.json').read_text(encoding='utf-8'))
     values = {int(stage): {k:v['default'] for k,v in fields.items()} for stage,fields in schema.items()}
     values[1].update(fdw_max_cap_ms='40')
-    values[2].update(freq_start_hz='1000', freq_end_hz='2100', octave_resolution='1', target_n_max_origins='1', max_iterations='3', x_bounds='-20,20', y_bounds='-20,20', z_bounds='-20,20', grid_res_mm='20')
+    # Production leave-one-out origin searches require a maximum of at least N2.
+    values[2].update(freq_start_hz='1000', freq_end_hz='2100', octave_resolution='1', target_n_max_origins='2', max_iterations='3', x_bounds='-20,20', y_bounds='-20,20', z_bounds='-20,20', grid_res_mm='20')
     values[3].update(freq_start_hz='1000', freq_end_hz='1100', test_order_range='1, 2', octave_resolution='1', spl_sphere_points='30')
     values[4].update(target_n_max='2')
     pool = WarmPool(2); original = Path.cwd()
