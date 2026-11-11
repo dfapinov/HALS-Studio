@@ -259,3 +259,41 @@ def test_shared_pool_search_matches_threads_and_survives_cancellation():
         assert pool.executor().submit(os.getpid).result(timeout=10) > 0
     finally:
         pool.close()
+
+
+def test_prediction_grid_returns_both_scores_without_kr_order_changes(monkeypatch):
+    from scipy.spatial import ConvexHull
+    from hals_studio.process_engine import stage2_centre_origin as stage
+    rng = np.random.default_rng(912)
+    xyz = rng.normal(size=(70, 3))*.3
+    geometry = cartesian_to_spherical(*xyz.T)
+    pressure = rng.normal(size=70)+1j*rng.normal(size=70)
+    cfg = dict(origin_grid_metric='prediction', origin_grid_xyz=xyz,
+               origin_grid_hull=ConvexHull(xyz).equations, use_process_pool=False,
+               grid_res_mm=10., x_bounds=(-5., 5.), y_bounds=(-5., 5.), z_bounds=(-5., 5.))
+    context = ([(60., 2*np.pi*60/343, pressure)], *geometry, 3, cfg)
+    monkeypatch.setattr(stage, 'get_kr_limit', lambda *a, **k: pytest.fail('Grid order must stay fixed'))
+    _, metrics = prediction_fit(basis(xyz, np.zeros(3), 3, 2*np.pi*60/343), pressure)
+    predicted, residual = stage.prediction_grid_scores(0, 0, 0, context)
+    assert predicted == pytest.approx(metrics['press_pct'])
+    assert residual == pytest.approx(metrics['training_pct'])
+    assert not np.isfinite(stage.prediction_grid_scores(1e6, 0, 0, context)).any()
+    x, y, z, grid = stage.generate_3d_landscape_volumetric(context)
+    assert grid.shape == cfg['origin_grid_residuals'].shape == (2, 2, 2)
+    assert np.isfinite(grid).all()
+    assert np.all(grid >= cfg['origin_grid_residuals'])
+
+
+def test_rescan_score_maps_survive_viewer_cache_roundtrip(tmp_path):
+    from hals_studio.persistence import process_cache
+    grid = np.arange(8.).reshape(2, 2, 2)
+    rows = {100.: dict(final_c=np.zeros(3), error=1., press_pct=2.,
+        original_press_pct=3., grid=grid, grid_residual=grid/2, grid_metric='prediction')}
+    result = (rows, None, None, None, None, {}, None)
+    path = tmp_path/'origins.pkl'
+    process_cache.save(path, 2, result)
+    restored = process_cache.load(path, 2)[0][100.]
+    np.testing.assert_array_equal(restored['grid'], grid)
+    np.testing.assert_array_equal(restored['grid_residual'], grid/2)
+    assert restored['grid_metric'] == 'prediction'
+    assert restored['original_press_pct'] == 3.

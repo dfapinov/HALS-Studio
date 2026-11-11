@@ -44,9 +44,15 @@ In this example, the Y-axis offset is unexpected, but that alone does not mean t
 
 The plotted fitting error describes how closely the model matches the recordings used to fit it. The leave-one-out prediction error in the log asks a different question: how well can it predict a recording when that recording is left out? The search uses this prediction error to choose between origins.
 
-A 3D coordinate view is available from the **Plot Type** menu. The older full-grid residual rescan is not available for leave-one-out prediction results.
+A 3D coordinate view is available from the **Plot Type** menu. **Rescan of selected frequency** maps the leave-one-out prediction error over a grid, then refines the best grid position. It uses the selected harmonic order for that frequency. This can help you see whether the original search missed a better position.
 
 The log also reports which LF orders were selected. A **provisional** warning means the search or its checks have not given a settled answer at that frequency. This can happen if the optimiser runs out of iterations, prediction is poor, or the highest tested orders still disagree. See **Choosing the LF Order** below for more about that check.
+
+### Choosing the Displayed Score
+
+Use **Score** to switch between **Residual error** and **Leave-one-out prediction**. The choice changes the percentages on the main origin graphs, the selected-point readout and the colour scale on a grid landscape. The origin search and grid refinement still use leave-one-out prediction.
+
+New grid rescans calculate both scores together, so switching the display does not require another scan. Older saved grids may contain only residual scores; rescan the frequency to obtain both. A grid rescan stays at the selected order for that frequency and does not repeat the LF order comparisons.
 
 ### Waypoint References
 
@@ -118,7 +124,7 @@ LF holds the lowest tested origin below the lower test frequency; HF holds the h
 
 ### Full Grid Rescan Settings
 
-The XYZ bounds and grid resolution belong to the older full-grid residual diagnostic. They do not control the leave-one-out prediction search, which keeps candidate origins inside the microphone grid. Full-grid rescans are unavailable for the new results.
+The XYZ bounds and grid resolution control **Rescan of selected frequency**. Start with a small region around the speaker and a coarse spacing: a fine grid over a large volume can take a long time. Positions outside the microphone grid are excluded. These settings do not constrain the normal directional origin search. A rescan updates the origin at the selected order; it does not repeat the LF order comparisons. After applying a rescan, those earlier comparisons no longer certify the changed origin.
 
 ### Excluding Suspect Recordings
 

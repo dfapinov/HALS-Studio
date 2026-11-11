@@ -58,7 +58,8 @@ def compact(stage, result):
         # Preserve the viewer tuple positions, without embedding input spectra.
         fields = ('final_c', 'original_c', 'error', 'original_error', 'grid',
                   'X_vals', 'Y_vals', 'Z_vals', 'press_order', 'press_pct', 'press_candidates',
-                  'press_reference_settled', 'press_evaluated_c')
+                  'press_reference_settled', 'press_evaluated_c', 'original_press_pct',
+                  'grid_metric', 'grid_residual', 'grid_prediction')
         rows = {f: {k: v for k, v in row.items() if k in fields}
                 for f, row in result[0].items()}
         return OriginResult(rows, None, None, None, None, result[5], None)

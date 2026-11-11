@@ -340,10 +340,29 @@ def run_speed_of_sound_candidate_batch(
 # 1. 3D PHYSICS ENGINE
 # =============================================================================
 
+def prediction_grid_scores(x, y, z, context):
+    """Prediction and training errors from one fit at a fixed grid order."""
+    freq_data_list, _, _, _, order, cfg = context
+    from .press_fitting import basis, prediction_fit
+    offset = np.array([x, y, z])/1000.
+    hull = cfg['origin_grid_hull']
+    if np.any(hull[:, :3] @ offset + hull[:, 3] >= -1e-10):
+        return float('inf'), float('inf')
+    try:
+        metrics = [prediction_fit(basis(cfg['origin_grid_xyz'], offset, order, k), pressure)[1]
+                   for _, k, pressure in freq_data_list]
+        return tuple(float(np.mean([m[key] for m in metrics])) for key in ('press_pct', 'training_pct'))
+    except (ValueError, np.linalg.LinAlgError):
+        return float('inf'), float('inf')
+
+
 def solve_physics_3d(x, y, z, context):
     freq_data_list, r_geom, th_geom, ph_geom, order, cfg = context
     off_vec = np.array([x, y, z]) / 1000.0
     
+    if cfg.get('origin_grid_metric') == 'prediction':
+        return prediction_grid_scores(x, y, z, context)[0]
+
     r_n, th_n, ph_n = translate_coordinates(r_geom, th_geom, ph_geom, off_vec)
     
     avg_resid_pct = 0.0
@@ -468,6 +487,8 @@ def estimate_hf_seed(freqs, spectra, keys, geometry, cfg, end_hz, runtime):
 
 def _worker_landscape_3d(args):
     x, y, z, context = args
+    if context[-1].get("origin_grid_metric") == "prediction":
+        return prediction_grid_scores(x, y, z, context)
     return solve_physics_3d(x, y, z, context)
 
 def generate_3d_landscape_volumetric(context, runtime=None, *, cylindrical=False
@@ -508,7 +529,14 @@ def generate_3d_landscape_volumetric(context, runtime=None, *, cylindrical=False
     from hals_studio.process_engine.process_progress import collect_tasks
     def collect(pool):
         values = runtime.collect(pool, _worker_landscape_3d, pixels, 'Stage 2 grid scan', chunksize=200)
-        grid.flat[indices] = np.asarray(values)
+        if cfg.get('origin_grid_metric') == 'prediction':
+            scores = np.asarray(values).reshape(-1, 2)
+            grid.flat[indices] = scores[:, 0]
+            residuals = np.full(grid.shape, np.inf)
+            residuals.flat[indices] = scores[:, 1]
+            cfg['origin_grid_residuals'] = residuals
+        else:
+            grid.flat[indices] = np.asarray(values)
     if cfg.get('use_process_pool', True):
         with shared_pool or get_context('spawn').Pool(grid_workers) as pool:
             collect(pool)

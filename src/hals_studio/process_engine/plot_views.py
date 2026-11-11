@@ -231,7 +231,7 @@ class FrequencyBrowser3DView:
 
         self.ax.view_init(elev=30, azim=-45, roll=0, vertical_axis='z')
 
-    def update_view(self, f, grid_3d, xv, yv, zv, final_c, plane, val):
+    def update_view(self, f, grid_3d, xv, yv, zv, final_c, plane, val, metric="residual"):
         while self.ax.collections: self.ax.collections[0].remove()
         for line in self.ax.lines: line.remove()
             
@@ -274,11 +274,11 @@ class FrequencyBrowser3DView:
             
             if self.cbar is None: self.cbar = self.fig.colorbar(sm, cax=self.cbar_ax)
             else: self.cbar.update_normal(sm)
-            self.cbar.set_label('Residual Error (%)')
+            self.cbar.set_label('Prediction Error (%)' if metric == 'prediction' else 'Residual Error (%)')
             grid_min_text = f"{finite_values.min():.2f}%"
         else:
-            grid_min_text = ("N/A (Bypassed)" if grid_3d is None
-                             else "N/A (No finite residuals)")
+            grid_min_text = ("N/A (rescan to calculate this score)" if grid_3d is None
+                             else "N/A (no usable scores)")
             if self.cbar is not None:
                 self.cbar_ax.clear()
                 self.cbar = None
@@ -352,7 +352,7 @@ class ValidationView:
         self.fig.subplots_adjust(bottom=0.1, top=0.95, right=0.95, left=0.1)
 
     @silence_log_warnings
-    def update_view(self, history_freq, history_search, history_orig, history_err_search, history_err_orig):
+    def update_view(self, history_freq, history_search, history_orig, history_err_search, history_err_orig, metric="residual"):
         axes = [self.ax_x, self.ax_y, self.ax_z]
         labels = ['X (Depth)', 'Y (Width)', 'Z (Height)']
                
@@ -369,7 +369,7 @@ class ValidationView:
                      label='Current Result' if i == 0 else '')
             for j, f in enumerate(history_freq):
                 offset=7 if j % 2 == 0 else -7
-                sax.annotate(f"{history_err_search[j]:.0f}%",
+                sax.annotate(f"{history_err_search[j]:.0f}%" if np.isfinite(history_err_search[j]) else "N/A",
                              (f, history_search[i][j]), xytext=(0, offset),
                              textcoords='offset points', color='blue', fontsize=7,
                              ha='center', va='bottom' if offset>0 else 'top', alpha=0.85)
@@ -381,7 +381,7 @@ class ValidationView:
             sax.set_ylabel(f'{labels[i]} (mm)')
             sax.grid(True, which='both', ls='--', alpha=0.3)
             if i == 0:
-                sax.set_title('Frequency Sweep Validation: Coordinates & Residual Error Labels', fontweight='bold')
+                sax.set_title('Origin Coordinates - '+('Prediction Error (%)' if metric == 'prediction' else 'Residual Error (%)'), fontweight='bold')
 
         self.ax_z.set_xlabel('Frequency (Hz)')
         self.fig.canvas.draw_idle()

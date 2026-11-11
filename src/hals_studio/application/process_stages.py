@@ -46,6 +46,8 @@ def prepare_measurements(request, runtime, out, filename, input_name):
 
 
 def search_origins(request, runtime, out, filename, input_name):
+    from hals_studio.process_engine.runtime import EngineRuntime
+    runtime = runtime or EngineRuntime()
     v = request["settings"]
     name = request["name"]
     from hals_studio.process_engine.stage2_centre_origin import (
@@ -59,11 +61,11 @@ def search_origins(request, runtime, out, filename, input_name):
         for row in result[0].values():
             row.setdefault("original_c", np.array(row["final_c"]).copy())
             row.setdefault("original_error", row["error"])
+            if "press_pct" in row:
+                row.setdefault("original_press_pct", row["press_pct"])
         for freq, xyz in request.get("edits", []):
             result[0][float(freq)]["final_c"] = np.asarray(xyz)
         if request["action"] == "rescan":
-            if result[5].get('press_enabled'):
-                raise ValueError('Full-grid residual rescans are unavailable for leave-one-out prediction results.')
             from hals_studio.process_engine.stage2_centre_origin import (
                 get_order_for_frequency,
                 generate_3d_landscape_volumetric,
@@ -79,6 +81,13 @@ def search_origins(request, runtime, out, filename, input_name):
                 )
             cfg.pop("scan_radius_mm", None)  # Full grid re-scans use only manual XYZ bounds.
             cfg["grid_res_mm"] = float(v["grid_res_mm"])
+            if cfg.get('press_enabled'):
+                from scipy.spatial import ConvexHull
+                from hals_studio.process_engine.utils import spherical_to_cartesian
+                xyz = np.column_stack(spherical_to_cartesian(*geom))
+                cfg.update(origin_grid_metric='prediction', origin_grid_xyz=xyz,
+                           origin_grid_hull=ConvexHull(xyz).equations)
+                runtime.print('Grid rescan: leave-one-out prediction at the selected order. This does not repeat LF order selection.')
             for f in request["rescan"]:
                 i = np.argmin(abs(freqs - f))
                 N = get_order_for_frequency(
@@ -87,6 +96,9 @@ def search_origins(request, runtime, out, filename, input_name):
                     cfg.get("target_n_max_origins", 4),
                     cfg.get("N_grid", 999),
                 )
+                if cfg.get('press_enabled'):
+                    N = rows[f]['press_order']
+                runtime.print(f'Rescanning {f:.1f} Hz at N={N}.')
                 pc = (
                     [
                         (
@@ -100,13 +112,18 @@ def search_origins(request, runtime, out, filename, input_name):
                     cfg,
                 )
                 x, y, z, grid = generate_3d_landscape_volumetric(pc, runtime=runtime)
+                if not np.isfinite(grid).any():
+                    raise ValueError('No usable origin in this grid. Choose bounds inside the microphone grid or a finer grid spacing.')
                 idx = np.unravel_index(np.argmin(grid), grid.shape)
                 seed = (x[idx[0]], y[idx[1]], z[idx[2]])
                 from hals_studio.process_engine.process_progress import Progress
 
                 refining = runtime.progress("Stage 2 refining grid origin", 1)
                 centre, path = run_simplex_descent_3d(seed, pc, runtime=runtime)
-                rows[f].update(grid=grid, X_vals=x, Y_vals=y, Z_vals=z, final_c=centre, path=path)
+                from hals_studio.process_engine.stage2_centre_origin import solve_physics_3d
+                if solve_physics_3d(*centre, pc) > grid[idx]:
+                    centre = np.asarray(seed)
+                rows[f].update(grid_residual=cfg.pop('origin_grid_residuals', None), grid_metric='prediction' if cfg.get('press_enabled') else 'residual', grid=grid, X_vals=x, Y_vals=y, Z_vals=z, final_c=centre, path=path)
                 refining.advance()
     else:
         result = run_origin_search(
