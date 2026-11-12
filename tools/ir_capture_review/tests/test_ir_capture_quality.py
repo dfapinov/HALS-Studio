@@ -1,11 +1,13 @@
 """Raw-IR diagnosis and reversible exclusion contracts, independent of SHE."""
 import importlib.util
+import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
 from scipy.io import wavfile
 
+sys.path.insert(0, str(Path(__file__).parents[1]))
 spec = importlib.util.spec_from_file_location('ir_quality_test_backend', Path(__file__).parents[1]/'ir_capture_quality.py')
 quality = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(quality)

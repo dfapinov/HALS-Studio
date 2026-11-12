@@ -10,18 +10,25 @@ import queue
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-import warnings
 
 import numpy as np
-from scipy.io import wavfile
 from matplotlib.figure import Figure
 from matplotlib.ticker import NullFormatter
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
 from ir_capture_quality import FREQUENCIES, robust_predict, scan_directory, rename_reviewed
+from capture_diagnostics import REPORT_COLUMNS, read_audio, capture_path
 
 
-HELP = """How the scan works
+HELP = """Capture evidence and categories
+
+When debug captures and a single compatible shared reference are present, the scanner reads the declared loopback/microphone channels and timing. It builds a median loopback from up to 31 spread-out captures (at least nine), checks majority agreement, aligns constant latency and gain, and checks 10 ms residual blocks at 24 kHz plus full-rate amplitude envelopes. Digital clipping and silent channels are checked at the original sample rate. Electrical/capture means the fault is visible electrically; it does not prove an audio driver fault.
+
+Microphone pre-silence (after the first 50 ms of settling) and the final 200 ms tail are compared with robust session and spatial-neighbour baselines. Full IRs are matched to their actual crop; far-prefix energy is compared locally. These checks produce review findings, since background noise, room decay and legitimate distortion need interpretation. The first 50 ms level is reported for inspection only.
+
+The main plots show the full captures and full IR alongside the LF response and measurement locations. The category and coverage fields explain which evidence was available. Missing optional files retain the original IR-only checks. Multiple references without an explicit capture association are not guessed. CSV exports include all metrics and issue details. Suspect/Okay correspond to the existing repeat/pass report codes. The LF score and LF band refer only to the spatial check; capture issue scores are separate in the evidence.
+
+How the spatial scan works
 
 1. Read coordinates from each *_r..._ph..._z..._ir.wav filename and the first 0.35 seconds of its IR. Report unreadable, short, silent, constant or non-finite leading data separately.
 2. Downsample to 4 kHz and calculate 37 complex response samples from 40 to 320 Hz. Use a 200 ms taper after the detected arrival, preserving timing between recordings.
@@ -30,7 +37,7 @@ HELP = """How the scan works
 
 Score 1 is the repeat threshold; a score is not a probability of corruption. For 'review' rows the maximum single-neighbourhood score can exceed 1 even when the displayed consensus score does not.
 
-The check needs at least 25 unique valid positions. It does not run SHE or need driver locations. It checks 40–320 Hz, not the whole audible range or the complete late IR. Genuine localized behaviour, wrong coordinates, gain or timing changes can also trigger flags. Shared errors across the whole scan can pass.
+The spatial check needs at least 25 unique valid positions and covers 40–320 Hz. It does not run SHE or need driver locations. Optional capture checks extend coverage as described above. Genuine localized behaviour, wrong coordinates, gain or timing changes can also trigger flags. Shared errors across the whole scan can pass.
 
 Inspect and re-measure suspects when possible. Mark only files you want excluded, then confirm Rename marked. This adds .blacklisted after .wav, preserving the original bytes. Restore selected removes that suffix, unless a replacement capture already occupies the original name.
 
@@ -38,48 +45,49 @@ After renaming, re-run Stage 1 and subsequent stages to rebuild existing HALS da
 """
 
 
-def read_waveform(path):
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore', wavfile.WavFileWarning)
-        try:
-            rate, raw = wavfile.read(path, mmap=True)
-        except ValueError as error:
-            if 'mmap' not in str(error):
-                raise
-            rate, raw = wavfile.read(path, mmap=False)
-    signal = np.array(raw[:int(.35*rate)], dtype=float)
-    if np.issubdtype(raw.dtype, np.integer):
-        if raw.dtype == np.uint8:
-            signal -= 128
-            signal /= 128
-        else:
-            signal /= float(np.iinfo(raw.dtype).max)+1
-    if signal.ndim != 1:
-        raise ValueError('Expected mono IR for waveform inspection.')
-    return np.arange(len(signal))*1000/rate, signal
+def draw_capture_evidence(axes, folder, row):
+    for ax, title in zip(axes, ('Electrical loopback', 'Microphone capture', 'Full IR before cropping')):
+        ax.set(title=title, xlabel='Time (s)', ylabel='Amplitude')
+    try:
+        fs, raw = read_audio(capture_path(folder, row))
+        if raw.ndim != 2 or raw.shape[1] != 2:
+            raise ValueError('Expected a two-channel capture')
+        # Min/max envelopes preserve short glitches when drawing long captures.
+        for channel in range(2):
+            plot_envelope(axes[channel], raw[:, channel], fs)
+        event = row.get('metrics', {}).get('loopback_event_s')
+        if event is not None:
+            axes[0].axvline(event, color='tab:red', ls=':', label='Largest residual')
+            axes[0].legend()
+    except (OSError, ValueError, EOFError) as error:
+        axes[0].text(.02, .8, str(error), transform=axes[0].transAxes)
+    try:
+        name = row['filename'].replace('_ir.wav', '_ir_dist.wav')
+        fs, full = read_audio(folder/'Distortion'/name)
+        plot_envelope(axes[2], full, fs)
+        origin = row.get('metrics', {}).get('full_ir_origin_s')
+        if origin is not None:
+            axes[2].axvline(origin, color='tab:red', ls=':', label='Verified crop origin')
+            axes[2].legend()
+    except (OSError, ValueError, EOFError) as error:
+        axes[2].text(.02, .8, str(error), transform=axes[2].transAxes)
 
 
 def draw_inspection(figure, folder, row, rows):
-    """Render the selected waveform, physical LF response and microphone map."""
+    """Render full capture evidence, LF predictions and measurement locations."""
     figure.clear()
-    axes = figure.subplots(1, 3)
-    waveform, spectrum, spatial = axes
-    waveform.set(title='Leading IR (original timing)', xlabel='Time (ms)', ylabel='Amplitude')
+    grid = figure.add_gridspec(6, 2, width_ratios=(1.35, 1))
+    loopback = figure.add_subplot(grid[0:2, 0])
+    microphone = figure.add_subplot(grid[2:4, 0], sharex=loopback)
+    full_ir = figure.add_subplot(grid[4:6, 0])
+    spectrum = figure.add_subplot(grid[0:3, 1])
+    spatial = figure.add_subplot(grid[3:6, 1])
+    axes = (loopback, microphone, full_ir, spectrum, spatial)
+    draw_capture_evidence(axes[:3], folder, row)
     spectrum.set(title='LF response and local predictions', xlabel='Frequency (Hz)', ylabel='Magnitude (dB, common reference)')
     spatial.set(title='Measurement locations', xlabel='Azimuth (degrees)', ylabel='Height (mm)')
     lookup = {r['filename']: r for r in rows}
     neighbours = [lookup[name] for name in row.get('neighbours', [])]
-    try:
-        time, signal = read_waveform(folder/row['filename'])
-        for neighbour in neighbours[:3]:
-            nt, ns = read_waveform(folder/neighbour['filename'])
-            waveform.plot(nt, ns, color='0.7', alpha=.6, lw=.6)
-        waveform.plot(time, signal, color='tab:red', lw=.8, label='Selected')
-        if 'arrival_ms' in row:
-            waveform.axvline(row['arrival_ms'], color='k', ls=':', lw=.7, label='Detected arrival')
-        waveform.legend(fontsize=8)
-    except (ValueError, OSError, EOFError) as error:
-        waveform.text(.04, .9, str(error), transform=waveform.transAxes, wrap=True, va='top')
     if 'response' in row:
         level = lambda response: 20*np.log10(np.maximum(abs(response), 1e-30))
         for neighbour in neighbours:
@@ -112,12 +120,22 @@ def draw_inspection(figure, folder, row, rows):
     return axes
 
 
+def plot_envelope(ax, signal, fs):
+    if signal.ndim != 1:
+        raise ValueError('Expected mono signal')
+    size = max(1, len(signal)//2500)
+    count = len(signal)//size
+    blocks = signal[:count*size].reshape(count, size)
+    time = (np.arange(count)+.5)*size/fs
+    ax.fill_between(time, blocks.min(axis=1), blocks.max(axis=1), alpha=.7)
+
+
 class ReviewApp:
     def __init__(self, root, folder=''):
         self.root = root
         self.root.title('HALS IR Capture Review')
-        self.root.geometry('1280x850')
-        self.root.minsize(960, 650)
+        self.root.geometry('1400x1000')
+        self.root.minsize(1100, 800)
         self.directory = tk.StringVar(value=str(folder))
         self.status = tk.StringVar(value='Choose the folder containing the raw IR WAVs, then Scan.')
         self.filter = tk.StringVar(value='Needs review')
@@ -153,23 +171,26 @@ class ReviewApp:
         self.button(tools, 'Export report', self.export_report)
         self.button(tools, 'Export blacklist', self.export_blacklist)
         table = ttk.Frame(outer)
-        table.pack(fill='both', expand=True)
-        columns = ('marked', 'status', 'score', 'band', 'filename')
-        self.tree = ttk.Treeview(table, columns=columns, show='headings', selectmode='extended', height=10)
-        for column, title, width in zip(columns, ('Exclude?', 'Finding', 'Score', 'Band (Hz)', 'Filename'), (65, 160, 65, 85, 600)):
+        table.pack(fill='x')
+        columns = ('marked', 'status', 'category', 'score', 'band', 'filename')
+        self.tree = ttk.Treeview(table, columns=columns, show='headings', selectmode='extended', height=6)
+        for column, title, width in zip(columns, ('Exclude?', 'Finding', 'Issue description', 'LF score', 'LF band (Hz)', 'Filename'), (65, 100, 480, 65, 85, 400)):
             self.tree.heading(column, text=title)
             self.tree.column(column, width=width, minwidth=width if column != 'filename' else 200, stretch=column=='filename')
         self.tree.pack(side='left', fill='both', expand=True)
         scroll = ttk.Scrollbar(table, orient='vertical', command=self.tree.yview)
         scroll.pack(side='right', fill='y')
         self.tree.configure(yscrollcommand=scroll.set)
+        horizontal = ttk.Scrollbar(outer, orient='horizontal', command=self.tree.xview)
+        horizontal.pack(fill='x')
+        self.tree.configure(xscrollcommand=horizontal.set)
         self.tree.tag_configure('repeat', foreground='#9b3200')
         self.tree.tag_configure('technical', foreground='#a00000')
         self.tree.bind('<<TreeviewSelect>>', self.inspect)
         self.tree.bind('<Button-1>', self.toggle_mark)
-        self.details = tk.StringVar(value='Select a recording to inspect it. Grey traces show neighbouring recordings; red is the selected recording.')
+        self.details = tk.StringVar(value='Select a recording to inspect its full capture, full IR, LF response and measurement locations.')
         ttk.Label(outer, textvariable=self.details, wraplength=1200, justify='left').pack(fill='x', pady=5)
-        self.figure = Figure(figsize=(12, 3.2), dpi=100, layout='constrained')
+        self.figure = Figure(figsize=(12, 6), dpi=100, layout='constrained')
         self.canvas = FigureCanvasTkAgg(self.figure, master=outer)
         self.canvas.get_tk_widget().pack(fill='both', expand=True)
         NavigationToolbar2Tk(self.canvas, outer, pack_toolbar=False).pack(fill='x')
@@ -258,7 +279,7 @@ class ReviewApp:
                 continue
             band = f"{row['band_low_hz']:.0f}–{row['band_high_hz']:.0f}" if 'band_low_hz' in row else ''
             score = f"{row['score']:.2f}" if row['status'] in ('repeat', 'review', 'pass') else ''
-            self.tree.insert('', 'end', iid=str(i), values=('Yes' if row['marked'] else '', row['status'].replace('_', ' '), score, band, row['filename']), tags=(row['status'],))
+            self.tree.insert('', 'end', iid=str(i), values=('Yes' if row['marked'] else '', {'repeat': 'Suspect', 'pass': 'Okay'}.get(row['status'], row['status'].replace('_', ' ')), row.get('reason', ''), score, band, row['filename']), tags=(row['status'],))
         self.rename_button.configure(text=f"Rename marked ({sum(r['marked'] for r in self.rows)})")
         self.tree.selection_set([i for i in selected if self.tree.exists(i)])
 
@@ -284,13 +305,14 @@ class ReviewApp:
             return
         row = self.rows[int(self.tree.selection()[0])]
         description = f"{row['filename']} — {row['status'].replace('_', ' ')}. "
-        description += row.get('reason', '')
+        description += row.get('reason', '') + '  Coverage: ' + row.get('coverage', 'Cropped IR') + '. '
         if row.get('bands'):
             description += '  '.join(f"{band['low_hz']:.0f}–{band['high_hz']:.0f} Hz: 12/24-neighbour scores " + '/'.join(f"{check['score']:.2f}" for check in band['checks']) for band in row['bands'])
         if 'cylindrical' in row:
             r, phi, z = row['cylindrical']
             description += f'  Position: r={r:g} mm, azimuth={phi:g}°, z={z:g} mm.'
-        self.details.set(description)
+        metrics = '  '.join(f'{key}: {value:.4g}' for key, value in row.get('metrics', {}).items())
+        self.details.set(description+'\n'+metrics)
         try:
             draw_inspection(self.figure, self.folder, row, self.rows)
         except Exception as error:
@@ -331,7 +353,7 @@ class ReviewApp:
         path = filedialog.asksaveasfilename(parent=self.root, title='Save scan report', defaultextension='.csv', initialfile='ir_quality_report.csv', filetypes=[('CSV', '*.csv')])
         if path:
             try:
-                columns = ['filename', 'status', 'score', 'band_low_hz', 'band_high_hz', 'marked', 'reason']
+                columns = REPORT_COLUMNS + ['marked']
                 with open(path, 'w', newline='', encoding='utf-8') as stream:
                     writer = csv.DictWriter(stream, fieldnames=columns, extrasaction='ignore')
                     writer.writeheader()

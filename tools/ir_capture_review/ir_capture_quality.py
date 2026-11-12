@@ -10,6 +10,7 @@ import numpy as np
 from scipy.io import wavfile
 from scipy.signal import resample_poly,find_peaks
 from scipy.spatial import cKDTree
+from capture_diagnostics import augment_rows, REPORT_COLUMNS
 
 FREQUENCIES=40*2**(np.arange(37)/12)
 BANDS=((40,80),(80,160),(160,321))
@@ -147,8 +148,10 @@ def scan_directory(folder, progress=lambda phase, done, total: None, cancelled=l
             progress('Comparing neighbours', i+1, len(valid))
     for path in excluded_files:
         rows.append(dict(filename=path.name, status='excluded', score=0., reason='Renamed; ignored by WAV processing.', marked=False, identity=file_identity(path)))
+    augment_rows(folder, rows, progress, cancelled)
     rank = {'technical': 0, 'repeat': 1, 'review': 2, 'insufficient_neighbours': 3, 'pass': 4, 'excluded': 5}
-    rows.sort(key=lambda row: (rank[row['status']], -row['score'], row['filename']))
+    rows.sort(key=lambda row: (row.get('primary_issue') != 'loopback_dropout',
+                              rank[row['status']], -row['score'], row['filename']))
     return rows
 
 
@@ -212,7 +215,7 @@ def main():
     args = parser.parse_args()
     rows = scan_directory(args.ir_folder)
     args.output.mkdir(parents=True, exist_ok=True)
-    columns = ['filename', 'status', 'score', 'band_low_hz', 'band_high_hz', 'reason']
+    columns = REPORT_COLUMNS
     with (args.output/'recording_quality.csv').open('w', newline='', encoding='utf-8') as stream:
         writer = csv.DictWriter(stream, fieldnames=columns, extrasaction='ignore')
         writer.writeheader()
