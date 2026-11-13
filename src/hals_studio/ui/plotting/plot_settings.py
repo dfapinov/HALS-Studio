@@ -62,8 +62,17 @@ def selected_magnitudes(config):
             and (key in GROUPS['CEA2034']) == cta]
 
 
+def csd_level_reference(value):
+    """Keep saved boolean and former named references compatible."""
+    if value is True or value == 'IR peak slice per frequency':
+        return 't=0 slice'
+    if value is False:
+        return 'Off'
+    return value
+
+
 DECAY_DEFAULTS = dict(
-    csd_level_reference=False,
+    csd_level_reference="Full IR",
     wavelet_level_reference=False,
     wavelet_time_reference=False,
     csd_method="CSD",
@@ -158,7 +167,7 @@ SPECS = {
     "directivity_contour_step": ("Contours Step / dB", (0.5, 60.0)),
     "beamwidth_threshold": ("Beam width threshold / dB", (-60.0, -0.1)),
     "directivity_display": ("Display", ["Sonogram", "Waterfall"]),
-    "csd_level_reference": ("SPL - normalize", bool),
+    "csd_level_reference": ("SPL reference", ["Off", "Full IR", "t=0 slice"]),
     "wavelet_level_reference": ("SPL - normalize", bool),
     "wavelet_time_reference": ("Time - normalize to peak arrival", bool),
     "wavelet_units": ("Time axis", ["Milliseconds", "Cycles"]),

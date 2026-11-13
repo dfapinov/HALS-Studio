@@ -7,7 +7,7 @@ from matplotlib.ticker import FuncFormatter
 from hals_studio.ui.plotting.plots import Chart, audio_ticks, audio_frequency
 from hals_studio.ui.plotting.plot_interaction import PlotInteraction
 
-from hals_studio.ui.plotting.plot_settings import decay_setting_keys
+from hals_studio.ui.plotting.plot_settings import decay_setting_keys, csd_level_reference
 
 from hals_studio.ui.plotting.plot_settings import DECAY_DEFAULTS as DEFAULTS
 
@@ -47,7 +47,12 @@ def decay_map(ir, fs, config):
     frequency = np.geomspace(low, high, 320)
     amplitude = np.array([np.interp(frequency, f, row) for row in magnitude])
     reference = max(float(amplitude[0].max()), 1e-30)
-    if config.get('csd_level_reference') in (True, 'IR peak slice per frequency'):
+    level_reference = csd_level_reference(config.get('csd_level_reference', DEFAULTS['csd_level_reference']))
+    if level_reference == 'Full IR':
+        full_magnitude = abs(np.fft.rfft(np.asarray(ir, float), n=2*(len(f)-1)))
+        reference = np.maximum(np.interp(frequency, f, full_magnitude),
+                               max(float(full_magnitude.max()), 1e-30)*1e-12)
+    elif level_reference == 't=0 slice':
         zero_f, _, zero_magnitude = decay(ir, fs, .001, window, slices=2, pre_time=0.)
         reference = np.maximum(np.interp(frequency, zero_f, zero_magnitude[0]), reference*1e-12)
     db = 20*np.log10(np.maximum(amplitude/reference, 1e-12))
@@ -55,7 +60,7 @@ def decay_map(ir, fs, config):
         visible = np.flatnonzero(np.max(db, axis=1) >= -config['csd_span'])
         last = min((int(visible[-1]) if len(visible) else 0)+2, len(t)-1)
         duration = max(t[last], .1)
-        # Resample the useful interval, retaining the same time-zero reference.
+        # Resample the useful interval, retaining the same level reference.
         f, t, magnitude = decay(ir, fs, duration, window, pre_time=pre_time)
         amplitude = np.array([np.interp(frequency, f, row) for row in magnitude])
         db = 20*np.log10(np.maximum(amplitude/reference, 1e-12))
@@ -70,16 +75,20 @@ def decay_map(ir, fs, config):
         if window is not None:
             fade=min(end,max(2,round(.1*end))); signal[-fade:] *= np.cos(np.linspace(0,np.pi/2,fade))**2
         amplitude = np.zeros((len(coordinate),len(frequency)))
+        full_reference = np.zeros(len(frequency))
         for j,hz in enumerate(frequency):
             values = signal*np.exp(-2j*np.pi*hz*np.arange(end)/fs)
             tail = np.r_[np.cumsum(values[::-1])[::-1],0j]
+            full_reference[j] = abs(tail[0])
             cuts = peak+coordinate/hz*fs
             full = np.clip(np.ceil(cuts).astype(int),0,end)
             indices = np.ceil(cuts).astype(int)[:,None]-np.arange(1,shoulder+1)[None,:]
             weights = np.sin(np.clip((indices-cuts[:,None])/shoulder+1,0,1)*np.pi/2)**2
             valid=(indices>=0)&(indices<end)
             amplitude[:,j]=abs(tail[full]+np.sum(values[np.clip(indices,0,end-1)]*weights*valid,axis=1))
-        if config.get('csd_level_reference') in (True, 'IR peak slice per frequency'):
+        if level_reference == 'Full IR':
+            reference = np.maximum(full_reference, max(float(full_reference.max()), 1e-30)*1e-12)
+        elif level_reference == 't=0 slice':
             reference=np.maximum(amplitude[coordinate==0][0],np.max(amplitude)*1e-12+1e-30)
         db=20*np.log10(np.maximum(amplitude/reference,1e-12)); t=coordinate
     return frequency, t, db

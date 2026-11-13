@@ -77,6 +77,26 @@ def test_csd_cycles_and_normalization():
     np.testing.assert_allclose(db[t==0],0.,atol=1e-9)
 
 
+def test_csd_full_ir_reference_retains_pre_peak_content():
+    from hals_studio.ui.plotting.csd_plot import decay_map
+    ir = np.zeros(4800); ir[1000] = 1.; ir[960] = .7; ir[1100] = .3
+    for units in ['Milliseconds', 'Cycles']:
+        options = config(wavelet_units=units, csd_level_reference='Full IR',
+                         wavelet_pre=4., wavelet_duration=12.)
+        _, t, db = decay_map(ir, 48000, options)
+        # An early gate retains the entire response, including pre-peak content.
+        np.testing.assert_allclose(db[0], 0., atol=1e-9)
+        assert np.max(abs(db[t == 0])) > 1.
+        # The reference does not depend on the earliest displayed gate.
+        _, shorter_t, shorter_db = decay_map(ir, 48000,
+            {**options, 'csd_pre_time': 0., 'wavelet_pre': 0.})
+        np.testing.assert_allclose(db[t == 0], shorter_db[shorter_t == 0], atol=1e-9)
+        # The alternative retains the original flat time-zero behaviour.
+        _, zero_t, zero_db = decay_map(ir, 48000,
+            {**options, 'csd_level_reference': 't=0 slice', 'csd_auto_time': True})
+        np.testing.assert_allclose(zero_db[zero_t == 0], 0., atol=1e-9)
+
+
 def test_boolean_wavelet_normalization():
     ir=np.zeros(4800); ir[1000]=1.; ir[1100]=.3
     f,t,db=wavelet_map(ir,48000,config(wavelet_time_reference=True,wavelet_level_reference=True))

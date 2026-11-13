@@ -37,6 +37,28 @@ def pump_until(app, predicate, timeout=5):
     assert predicate()
 
 
+def test_csd_reference_editor_and_saved_settings():
+    from hals_studio.ui.pane_setup import editor
+    from hals_studio.ui.plotting.plot_settings import DECAY_DEFAULTS
+    from hals_studio.ui.view_state import restore_pane
+
+    app = W.QApplication.instance() or W.QApplication([])
+    assert DECAY_DEFAULTS['csd_level_reference'] == 'Full IR'
+    for saved, expected in [(False, 'Off'), (True, 't=0 slice'),
+                            ('IR peak slice per frequency', 't=0 slice'),
+                            ('Full IR', 'Full IR'), ('t=0 slice', 't=0 slice')]:
+        restored = restore_pane(dict(kind='csd', csd_level_reference=saved))
+        assert restored['csd_level_reference'] == expected
+        changes = []
+        control = editor('csd_level_reference', saved, changes.append)
+        assert isinstance(control, W.QComboBox)
+        assert control.currentText() == expected
+        control.setCurrentText('Full IR' if expected != 'Full IR' else 'Off')
+        assert changes == [control.currentText()]
+        control.close()
+    app.processEvents()
+
+
 def test_beamwidth_threshold_setting_updates_configuration(window):
     from hals_studio.ui.pane_setup import Setup
 

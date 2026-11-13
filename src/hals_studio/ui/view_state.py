@@ -70,6 +70,8 @@ def valid_view(view):
 
 def restore_pane(config):
     result = dict(default_config(config["kind"]), **deepcopy(config))
+    from hals_studio.ui.plotting.plot_settings import csd_level_reference
+    result['csd_level_reference'] = csd_level_reference(result['csd_level_reference'])
     from hals_studio.analysis.acoustics import directivity_normalization
     result['directivity_normalization'] = directivity_normalization(config)
     result.pop('directivity_on_axis', None)

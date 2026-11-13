@@ -14,6 +14,9 @@ from hals_studio.ui.plotting.plot_settings import (
 
 def editor(key, value, callback, options=None):
     spec = options if options is not None else SPECS[key][1]
+    if key == 'csd_level_reference':
+        from hals_studio.ui.plotting.plot_settings import csd_level_reference
+        value = csd_level_reference(value)
     if key == "opacity_low":
         w = W.QSlider(C.Qt.Horizontal)
         w.setRange(0, 95)
@@ -48,6 +51,10 @@ def editor(key, value, callback, options=None):
         w.setCurrentText(
             "Waterfall" if key == "directivity_display" and value == "3D surface" else value
         )
+        if key == 'csd_level_reference':
+            w.setToolTip('Full IR: reference each frequency to the ungated full impulse response.\n'
+                         't=0 slice: reference each frequency to the gated slice at the IR peak.\n'
+                         'Off: use one shared level reference across frequencies.')
         w.currentTextChanged.connect(callback)
     else:
         w = W.QDoubleSpinBox()
