@@ -63,6 +63,12 @@ class PlotPane(W.QFrame):
         self.sweep_button=W.QPushButton('\u25b8 Sweep'); self.sweep_button.setCheckable(True); self.sweep_button.setFixedWidth(70)
         self.sweep_button.clicked.connect(lambda:owner.play.click()); owner.play.toggled.connect(self.sweep_button.setChecked); owner.play.toggled.connect(lambda active:self.sweep_button.setText('\u2161 Pause' if active else '\u25b8 Sweep')); frequency_row.addWidget(self.sweep_button)
         next_button=W.QPushButton('\u203a'); next_button.setFixedWidth(54); next_button.clicked.connect(owner.advance); frequency_row.addWidget(next_button)
+        self.rotate_button = W.QPushButton('Rotate'); self.rotate_button.setCheckable(True)
+        self.rotate_button.setToolTip('Rotate the balloon about its vertical axis; drag to adjust the camera')
+        from hals_studio.ui.plotting.balloon_animation import BalloonAnimation
+        self.balloon_animation = BalloonAnimation(self)
+        self.rotate_button.toggled.connect(self.balloon_animation.set_running)
+        frequency_row.addWidget(self.rotate_button)
         frequency_row.addStretch()
         self.reconstruction_radius = W.QLabel()
         self.reconstruction_radius.setAlignment(C.Qt.AlignRight | C.Qt.AlignVCenter)
@@ -146,11 +152,16 @@ class PlotPane(W.QFrame):
                 camera.addAction(name, lambda n=name: self.camera(n))
         menu.addAction('Export plot image…', self.export)
         if self.config['kind'] == 'balloon':
+            menu.addAction('Export animated GIF\N{HORIZONTAL ELLIPSIS}', self.export_gif)
             menu.addAction('Export displayed mesh…', self.export_mesh)
         elif self.config['kind'] not in ('polar', 'globe_hv', 'globe_h', 'globe_v'):
             menu.addAction('Export plotted data CSV…', self.export_csv)
         menu.exec(position)
         self._magnitude_actions = {}; menu.deleteLater()
+
+    def export_gif(self):
+        from hals_studio.ui.plotting.balloon_animation import export_gif
+        export_gif(self)
 
     def export_mesh(self):
         path, _ = W.QFileDialog.getSaveFileName(self, 'Export VTK structured grid', '', 'VTK grid (*.vts)')
@@ -365,9 +376,16 @@ class PlotPane(W.QFrame):
         self.plotter.render()
 
     def drag(self, point, widget):
+        if self.config['kind'] == 'balloon':
+            from hals_studio.ui.plotting.balloon_animation import rotate_point
+            point = rotate_point(point, -self.balloon_animation.angle)
         norm = np.linalg.norm(point)
         if norm < 1e-8: return
-        d = np.asarray(point)/norm; widget.SetCenter(d*1.06)
+        d = np.asarray(point)/norm
+        if self.config['kind'] == 'balloon':
+            widget.SetCenter(rotate_point(d*1.06, self.balloon_animation.angle))
+        else:
+            widget.SetCenter(d*1.06)
         self.owner.azimuth.setValue(float(np.degrees(np.arctan2(d[1], d[0]))))
         self.owner.elevation.setValue(float(np.degrees(np.arcsin(np.clip(d[2], -1, 1)))))
 

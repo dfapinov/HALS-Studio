@@ -34,6 +34,8 @@ def balloon(self, s, rel, i):
         self.handle.SetScale(False)
     else: self.handle.SetCenter(point)
     p.add_mesh(pv.Line((0, 0, 0), point), name='probe', color='#90ffbf', line_width=2, reset_camera=False)
+    from hals_studio.ui.plotting.balloon_animation import apply_rotation
+    apply_rotation(self)
     p.render(); self.note.setText('Drag green handle to probe · Drag to orbit · Wheel to zoom')
 
 

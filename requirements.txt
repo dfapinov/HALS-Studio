@@ -2,6 +2,7 @@ numpy>=2.0
 scipy>=1.15
 pandas>=2.2
 matplotlib>=3.9
+Pillow>=10
 h5py>=3.11
 soundfile>=0.12
 PySide6>=6.8,<7

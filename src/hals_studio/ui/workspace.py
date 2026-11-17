@@ -791,6 +791,7 @@ class Workspace(W.QMainWindow):
         self.settings.setValue('last_view', self.current_view)
         self.play_timer.stop(); self.refresh_timer.stop(); self.pool_timer.stop()
         for pane in self.panes:
+            pane.balloon_animation.timer.stop()
             if pane.plotter: pane.plotter.close()
             if hasattr(pane, 'csd_view'): pane.csd_view.shutdown()
         if self.export_workspace: self.export_workspace.shutdown()
