@@ -115,6 +115,10 @@ def export_frames(pane, path, fps, width, height, seconds, progress):
             else:
                 marker = None
             plotter.add_axes()
+            from hals_studio.ui.viewer_theme import colour
+            plotter.add_text(pane.probe_frequency.text(), position='upper_left',
+                             font_size=max(10, round(min(width, height)/40)),
+                             color=colour('#eef6ff'), name='frequency')
             plotter.camera.DeepCopy(source.camera)
             plotter.show(auto_close=False, interactive=False)
             def capture(angle):

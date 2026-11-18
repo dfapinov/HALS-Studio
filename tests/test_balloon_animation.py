@@ -25,6 +25,7 @@ def scene():
     plotter.show(auto_close=False, interactive=False)
     pane = SimpleNamespace(
         plotter=plotter, mesh=mesh, handle=Mock(),
+        probe_frequency=SimpleNamespace(text=lambda: '180 Hz'),
         balloon_animation=SimpleNamespace(angle=45.),
         owner=SimpleNamespace(azimuth=Mock(value=lambda: 0.),
                               elevation=Mock(value=lambda: 0.), sphere=object()),
