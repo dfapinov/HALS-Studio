@@ -8,7 +8,6 @@ into a time-domain impulse response.
 
 from __future__ import annotations
 import numpy as np
-from scipy.fft import next_fast_len
 
 def complex_to_ir(
     p_complex: np.ndarray,
@@ -33,7 +32,7 @@ def complex_to_ir(
     """
     target_fs = float(target_fs) if target_fs is not None else (44100 if freqs[-1] < 23000.0 else 48000)
 
-    # 1. Determine original and target FFT lengths using frequency resolution
+    # 1. Determine the original FFT length using frequency resolution
     df = freqs[1] - freqs[0] if len(freqs) > 1 else 1.0
     n_fft_original = int(np.round(target_fs / df))
     if preserve_spectrum:
@@ -41,7 +40,9 @@ def complex_to_ir(
         if expected.shape != freqs.shape or not np.allclose(expected, freqs):
             raise ValueError('Exact IR export requires complete, uniformly spaced FFT bins.')
         return np.fft.irfft(p_complex, n=n_fft_original)
-    n_fft_target = next_fast_len(n_fft_original)
+    # Keep the original grid: rounding up to a fast FFT length and assigning
+    # nearest bins would leave artificial gaps between measured frequencies.
+    n_fft_target = n_fft_original
 
     # 2. Create the full one-sided spectrum for the target FFT size
     n_freq_target = n_fft_target // 2 + 1
