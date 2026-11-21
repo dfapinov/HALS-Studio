@@ -134,6 +134,7 @@ def run_condition_preflight(data, cfg, *, runtime=None):
     speed = float(cfg.get('speed_of_sound') or data.get('speed_of_sound_mps') or 343.)
     from .utils import grid_reference
     cfg = dict(cfg, speed_of_sound=speed, kr_reference_radii=grid_reference(*static)[1])
+    room_args = (translate_coordinates(*static, grid_reference(*static)[0]),) if cfg.get("fixed_room_origin") else ()
     def coords(i):
         origin = np.zeros(3) if origins is None else origins[indices[i]]/1000.
         return translate_coordinates(*static, origin)
@@ -141,7 +142,7 @@ def run_condition_preflight(data, cfg, *, runtime=None):
     proposed = [proposed_order(f, coords(i)[0], grid, cfg)[0] for i, f in enumerate(freqs)]
     def condition(n, i):
         runtime.check()
-        value = matrix_condition(coords(i), n, 2*np.pi*freqs[i]/speed)
+        value = matrix_condition(coords(i), n, 2*np.pi*freqs[i]/speed, *room_args)
         runtime.print(f'Preflight N={n} at {freqs[i]:.2f} Hz: condition={value:.3g}', flush=True)
         return value
     result = optimise_transitions(freqs, proposed, condition, runtime=runtime)

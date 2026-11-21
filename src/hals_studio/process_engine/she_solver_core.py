@@ -16,14 +16,14 @@ try:
 except ImportError:
     SPEED_OF_SOUND = None
 
-def build_she_matrix(coords_sph, order_N, k):
+def build_she_matrix(coords_sph, order_N, k, room_coords=None):
     """Dual-field matrix, preserving the solver's public interface."""
-    return build_field_matrix(coords_sph, order_N, k)
+    return build_field_matrix(coords_sph, order_N, k, room_coords=room_coords)
 
 
-def matrix_condition(coords_sph, order_N, k):
+def matrix_condition(coords_sph, order_N, k, room_coords=None):
     """Raw 2-norm condition, without coefficients or regularization."""
-    matrix, final_n = build_she_matrix(coords_sph, order_N, k)
+    matrix, final_n = build_she_matrix(coords_sph, order_N, k, room_coords)
     if final_n != order_N or matrix.shape[0] < matrix.shape[1]:
         return float('inf')
     try:
@@ -42,7 +42,8 @@ def _solve_one_frequency(
     CONDITION_METRICS: bool = False,
     noise_floor_start_db: float | None = None,
     noise_floor_max_db: float | None = None,
-    max_lambda: float | None = None
+    max_lambda: float | None = None,
+    room_coords=None
 ) -> tuple[np.ndarray, dict]:
     """
     Solves for SHE coefficients for a single frequency using a Dual Basis.
@@ -57,7 +58,7 @@ def _solve_one_frequency(
         k = 2 * math.pi * f_hz / SPEED_OF_SOUND
 
     base_norm = np.linalg.norm(P_complex)
-    A_solve, final_N = build_she_matrix(coords_sph, order_N, k)
+    A_solve, final_N = build_she_matrix(coords_sph, order_N, k, room_coords)
     if final_N < 0:
         return np.array([]), {'residual_norm': base_norm, 'cond_pre': 0.0, 'cond_post': 0.0, 'final_N': -1, 'stop_reason': "Instability"}
 

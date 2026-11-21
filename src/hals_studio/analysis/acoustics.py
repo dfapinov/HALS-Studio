@@ -311,7 +311,7 @@ def reconstruct(path, step=5, bins=480, radius=2., mode="Internal", fmin=20., fm
             local = np.arange(start, min(start+4, len(indices)))
             source = indices[local]
             yield (local, all_f[source], data[schema.COEFFS][source], data[schema.N_USED][source],
-                   r, th, ph, origin_data[source], mode, speed)
+                   r, th, ph, origin_data[source], mode, speed, data.get(schema.ROOM_ORIGIN_MM))
     progress(0, f"Reconstructing {len(indices)} unique native bins ({bins or len(indices)} requested)")
     results = pool.map(tasks(), cancelled) if pool else map(evaluate_task, tasks())
     done = 0

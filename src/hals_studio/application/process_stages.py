@@ -333,6 +333,7 @@ def solve_model(request, runtime, out, filename, input_name):
         jobs=None,
         show_plot=False,
         use_process_pool=True,
+        fixed_room_origin=v.get("fixed_room_origin", False),
         condition_preflight=v.get("condition_preflight", True),
         runtime=runtime,
     )

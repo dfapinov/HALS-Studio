@@ -171,6 +171,11 @@
       "default": "8",
       "help": "Hard upper cap on harmonic order N, applied after the KR limit and order-table limit."
     },
+    "fixed_room_origin": {
+      "label": "Fix room origin at scan centre",
+      "default": false,
+      "help": "Use the midpoint of the full measurement grid bounds for the room field at every frequency. The outgoing field still uses the selected acoustic origins. Uncheck to use the same origin for both fields."
+    },
     "condition_preflight": {
       "label": "Optimise order growth before solve",
       "default": true,

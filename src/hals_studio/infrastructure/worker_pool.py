@@ -9,7 +9,7 @@ def evaluate_task(task):
     """Keep HALS's vectorized harmonic/point engine; bound temporary arrays."""
     from hals_studio.process_engine.extract_pressures_core import _worker_calc_chunk
 
-    indices, freqs, coeffs, orders, r, theta, phi, origins, mode, speed = task
+    indices, freqs, coeffs, orders, r, theta, phi, origins, mode, speed, *room = task
     size = max(16, min(4096, 250000 // max((int(np.max(orders)) + 1) ** 2, 1)))
     result = np.empty((len(freqs), len(r)), complex)
     for start in range(0, len(r), size):
@@ -26,6 +26,7 @@ def evaluate_task(task):
                 origins,
                 mode,
                 speed,
+                *room,
             )
         )
     return indices, result

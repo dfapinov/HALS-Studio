@@ -113,7 +113,7 @@ def _worker_wrapper(args: Tuple) \
         P_complex=Pk,
         coords_sph=(r, th, ph),
         order_N=N_target,
-        k_val=kw,
+        k_val=kw, room_coords=cfg.get('room_coords'),
         CONDITION_METRICS=cfg['condition_metrics'],
         noise_floor_start_db=cfg['noise_floor_start_db'],
         noise_floor_max_db=cfg['noise_floor_max_db'],
@@ -153,7 +153,7 @@ def _worker_wrapper(args: Tuple) \
 def _press_worker(args):
     k_idx, f, pressure, r, th, ph, grid, cfg = args
     k = 2*np.pi*f/cfg['speed_of_sound']
-    coeff, metrics = _solve_one_frequency(f, pressure, (r, th, ph), cfg['press_order'], k_val=k,
+    coeff, metrics = _solve_one_frequency(f, pressure, (r, th, ph), cfg['press_order'], k_val=k, room_coords=cfg.get('room_coords'),
         CONDITION_METRICS=cfg['condition_metrics'], noise_floor_start_db=cfg['noise_floor_start_db'],
         noise_floor_max_db=cfg['noise_floor_max_db'], max_lambda=cfg['max_lambda'])
     error = 100*metrics['residual_norm']/max(np.linalg.norm(pressure), 1e-20)
@@ -182,7 +182,8 @@ def run_she_solve(
     use_process_pool: bool = True,
     condition_preflight: bool = False,
     runtime=None,
-    use_saved_speed=True
+    use_saved_speed=True,
+    fixed_room_origin=False
 ) -> Dict:
     from hals_studio.process_engine.runtime import EngineRuntime
     runtime = runtime or EngineRuntime()
@@ -249,12 +250,17 @@ def run_she_solve(
         }
         from .utils import grid_reference
         worker_cfg['kr_reference_radii'] = float(max(grid_reference(parsed_data['r_arr'], parsed_data['th_arr'], parsed_data['ph_arr'])[1]))
+        room_origin = (grid_reference(parsed_data['r_arr'], parsed_data['th_arr'], parsed_data['ph_arr'])[0]
+                       if fixed_room_origin else None)
+        if fixed_room_origin:
+            logger.info('Fixed room origin (mm): %s', room_origin * 1000)
         saved_orders = None
         press_growth_result = None
         if press_plan is not None:
             lf_orders = validate_saved(parsed_data, press_plan, speed_of_sound, target_n_max,
                                          use_manual_table, use_optimized_origins, kr_offset)
             parsed_data = retained_data(parsed_data, press_plan)
+            parsed_data["room_origin_m"] = room_origin
             saved_orders, press_growth_result = solve_schedule(parsed_data, press_plan, lf_orders, target_n_max,
                                                               condition_preflight, runtime)
             logger.info('Using Stage 2 origins and LF orders; KR controls higher-frequency order growth.')
@@ -267,7 +273,7 @@ def run_she_solve(
             logger.info('Optimising order growth for Stage 4 target N=%s (maximum frequency delay: 3x).', target_n_max)
             # The optimized schedule is private to this solve; never overwrite the
             # user's manual table or use it as the starting point for optimization.
-            cfg = dict(worker_cfg, use_optimized_origins=use_optimized_origins,
+            cfg = dict(worker_cfg, fixed_room_origin=fixed_room_origin, use_optimized_origins=use_optimized_origins,
                        use_manual_table=False, manual_order_table={})
             preflight = run_condition_preflight(parsed_data, cfg, runtime=runtime)
             worker_cfg.update(use_manual_table=False, manual_order_table={})
@@ -286,6 +292,8 @@ def run_she_solve(
         r_static = parsed_data['r_arr']
         th_static = parsed_data['th_arr']
         ph_static = parsed_data['ph_arr']
+        if fixed_room_origin:
+            worker_cfg['room_coords'] = translate_coordinates(r_static, th_static, ph_static, room_origin)
         fs_common = parsed_data.get('fs')
     
         # 2. Optimized Origin Loading
@@ -367,6 +375,8 @@ def run_she_solve(
                 h[schema.N_USED] = res_N
                 h[schema.RESIDUAL] = res_resid
                 h[schema.COND] = res_cond
+                if fixed_room_origin:
+                    h[schema.ROOM_ORIGIN_MM] = room_origin * 1000
                 h[schema.ORIGINS_MM] = origins_sel_mm # Saved so reconstruction scripts can extract and shift observation coords
                 h[schema.PCT_ERROR] = pct_error
                 h[schema.SPEED_OF_SOUND_MPS] = np.array(float(speed_of_sound), dtype=np.float64)
@@ -392,6 +402,7 @@ def run_she_solve(
                 schema.FREQS: f_sel,
                 schema.COEFFS: res_coeffs,
                 schema.N_USED: res_N,
+                schema.ROOM_ORIGIN_MM: room_origin * 1000 if fixed_room_origin else None,
                 schema.ORIGINS_MM: origins_sel_mm
             }
             coords_sph = np.column_stack((np.degrees(th_static), np.degrees(ph_static), r_static))
@@ -406,6 +417,7 @@ def run_she_solve(
             "cond": res_cond,
             "N_used": res_N,
             "origins_mm": origins_sel_mm,
+            schema.ROOM_ORIGIN_MM: room_origin * 1000 if fixed_room_origin else None,
             "speed_of_sound_mps": speed_of_sound,
             "residual": res_resid,
             "P_measured": P,

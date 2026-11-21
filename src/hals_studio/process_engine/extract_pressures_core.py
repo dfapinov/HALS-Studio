@@ -54,7 +54,7 @@ IR_CAPTURE_PADDING_SAMPLES = DEFAULT_IR_CAPTURE_PADDING_SAMPLES
 
 def _worker_calc_chunk(args):
     (indices, freqs_sub, coeffs_sub, n_used_sub,
-     r_base, theta_base, phi_base, origins_mm_sub, obs_mode, c_sound) = args
+     r_base, theta_base, phi_base, origins_mm_sub, obs_mode, c_sound, *room) = args
      
     num_pts = len(r_base)
     num_freqs_chunk = len(freqs_sub)
@@ -63,6 +63,9 @@ def _worker_calc_chunk(args):
     is_internal = obs_mode.lower() == "internal"
     is_external = obs_mode.lower() == "external"
 
+    room_coords = None
+    if room and room[0] is not None and not is_internal:
+        room_coords = translate_coordinates(r_base, theta_base, phi_base, np.asarray(room[0])/1000)
     for local_idx, f in enumerate(freqs_sub):
         
         # --- 1. Inverse Coordinate Translation ---
@@ -77,7 +80,7 @@ def _worker_calc_chunk(args):
         k_wave = 2 * math.pi * f / c_sound
 
         matrix, actual_order = build_field_matrix(
-            (r_eval, theta_eval, phi_eval), N_max, k_wave, obs_mode)
+            (r_eval, theta_eval, phi_eval), N_max, k_wave, obs_mode, room_coords)
         if actual_order != N_max:
             raise ValueError('Nonfinite harmonic basis during pressure reconstruction.')
         modes = (N_max+1)**2
@@ -143,7 +146,7 @@ def evaluate_she_field(
         if len(chunk_idx) == 0: continue
         # Pass the spherical base and the origin slice to the worker
         tasks.append((chunk_idx, freqs[chunk_idx], coeffs[chunk_idx], n_used[chunk_idx],
-                      r_base, theta_base, phi_base, origins_mm[chunk_idx], obs_mode, c_sound))
+                      r_base, theta_base, phi_base, origins_mm[chunk_idx], obs_mode, c_sound, data.get(schema.ROOM_ORIGIN_MM)))
 
     pressures_all = np.zeros((num_freqs, num_pts), dtype=np.complex128)
     backend = "processes" if use_process_pool else "threads"

@@ -124,6 +124,7 @@ def load_she_h5(source: Union[str, Path, Dict[str, np.ndarray]]) -> Dict[str, np
                 schema.FREQS: h[schema.FREQS][()],
                 schema.COEFFS: h[schema.COEFFS][()],
                 schema.N_USED: h[schema.N_USED][()].astype(int),
+                schema.ROOM_ORIGIN_MM: h[schema.ROOM_ORIGIN_MM][()] if schema.ROOM_ORIGIN_MM in h else None,
                 schema.ORIGINS_MM: origins_mm[()] if origins_mm is not None else None,
                 schema.SPEED_OF_SOUND_MPS: speed_val[()] if speed_val is not None else None,
                 schema.FS: fs_val[()] if fs_val is not None else None,

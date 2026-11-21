@@ -118,7 +118,8 @@ def test_stage2_npz_to_stage4_and_change_final_cap_without_searching(tmp_path,mo
     saved=parsed['press_lf_orders'].copy();assert 'growth' not in plan
     parsed['raw_data'].close()
     solved=run_she_solve(path.name,'coeff.h5',str(tmp_path),str(tmp_path),5,save_to_disk=True,
-        show_plot=False,use_process_pool=False,jobs=1,condition_preflight=True,runtime=runtime)
+        show_plot=False,use_process_pool=False,jobs=1,condition_preflight=True,runtime=runtime,
+        fixed_room_origin=prepass)
     assert np.all(solved['N_used']>=saved[1:])
     assert solved['condition_preflight']['reference_order']==3
     np.testing.assert_array_equal(solved['N_used'],solved['press_order_schedule'])
@@ -128,6 +129,18 @@ def test_stage2_npz_to_stage4_and_change_final_cap_without_searching(tmp_path,mo
         assert not plan['weighting']
         assert np.isfinite(h['coeffs'][:]).all()
         assert 'press_pilot_origins_mm' not in h
+        if prepass:
+            np.testing.assert_allclose(h['room_origin_mm'][:], (xyz.min(axis=0)+xyz.max(axis=0))*500)
+        else:
+            assert 'room_origin_mm' not in h
+    from hals_studio.process_engine.extract_pressures_core import evaluate_she_field
+    def reconstruct(field):
+        return evaluate_she_field(solved['coords_sph'], tmp_path/'coeff.h5', obs_mode=field,
+            c_sound=solved['speed_of_sound_mps'], corr_ir_pad_phase=False,
+            use_process_pool=False, show_progress=False)['complex']
+    total = reconstruct('Total')
+    np.testing.assert_allclose(total, solved['P_measured']-solved['residual_vector'], atol=1e-8)
+    np.testing.assert_allclose(total, reconstruct('Internal')+reconstruct('External'), atol=1e-8)
     from hals_studio.process_engine import spatial_error_viewer
     def spatial(she,measured,coords,*args,**kwargs):
         assert measured.shape[1]==99 and len(coords)==99

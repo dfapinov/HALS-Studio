@@ -70,6 +70,7 @@ def compute_spatial_error_data(she_dict, p_measured_all, coords_sph, c_sound=343
         schema.FREQS: sub_freqs,
         schema.COEFFS: sub_coeffs,
         schema.N_USED: sub_n_used,
+        schema.ROOM_ORIGIN_MM: she_dict.get(schema.ROOM_ORIGIN_MM),
         schema.ORIGINS_MM: sub_origins
     }
     
@@ -193,6 +194,7 @@ class SpatialErrorViewerApp:
                     schema.FREQS: h[schema.FREQS][()],
                     schema.COEFFS: h[schema.COEFFS][()],
                     schema.N_USED: h[schema.N_USED][()].astype(int),
+                    schema.ROOM_ORIGIN_MM: h[schema.ROOM_ORIGIN_MM][()] if schema.ROOM_ORIGIN_MM in h else None,
                     schema.ORIGINS_MM: h[schema.ORIGINS_MM][()] if schema.ORIGINS_MM in h else np.zeros((len(h[schema.FREQS][()]), 3))
                 }
 

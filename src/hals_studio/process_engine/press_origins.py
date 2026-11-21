@@ -327,11 +327,13 @@ def solve_schedule(data, plan, lf_orders, target, optimize_growth, runtime):
     reference = np.flatnonzero(ordinary[positive] >= cap)
     if optimize_growth and target > cap and reference.size:
         xyz = np.column_stack(spherical_to_cartesian(data['r_arr'], data['th_arr'], data['ph_arr']))
+        room_origin = data.get("room_origin_m")
+        room_coords = None if room_origin is None else cartesian_to_spherical(*(xyz-room_origin).T)
         def condition(n, i):
             runtime.check()
             j = positive[i]
             return matrix_condition(cartesian_to_spherical(*(xyz-data['origins_mm'][j]/1000).T),
-                                    n, 2*np.pi*f[j]/plan['speed'])
+                                    n, 2*np.pi*f[j]/plan['speed'], room_coords)
         growth = optimise_transitions(f[positive], ordinary[positive], condition, runtime=runtime,
             reference_order=cap, reference_index=int(reference[0]), label_prefix='Stage 4 HF growth')
         if growth['status'] == 'ok':

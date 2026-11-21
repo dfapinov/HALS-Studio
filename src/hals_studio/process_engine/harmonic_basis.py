@@ -4,10 +4,22 @@ from scipy.special import spherical_jn, sph_harm_y_all
 from .utils import hankel2
 
 
-def build_field_matrix(coords_sph, order_N, k, field="total"):
+def build_field_matrix(coords_sph, order_N, k, field="total", room_coords=None):
     """Evaluate the common acoustic basis; columns follow coefficient order."""
     internal = field.lower() == "internal"
     external = field.lower() == "external"
+    if room_coords is not None and not internal:
+        if external:
+            coords_sph = room_coords
+        else:
+            outgoing, ni = build_field_matrix(coords_sph, order_N, k, "internal")
+            room, ne = build_field_matrix(room_coords, order_N, k, "external")
+            order = min(ni, ne)
+            modes = (order + 1)**2
+            matrix = np.empty((len(outgoing), 2*modes), complex)
+            matrix[:, ::2] = outgoing[:, :modes]
+            matrix[:, 1::2] = room[:, :modes]
+            return matrix, order
     r, th, ph = coords_sph
     kr = r * k
     # Evaluate angular terms together; origin searches call this shared builder often.
